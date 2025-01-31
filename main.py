@@ -1,22 +1,13 @@
-from flask import Flask, render_template
-import webbrowser
+# run.py
+
 import socket
-
-app = Flask(__name__)
-
-
-@app.route("/")
-def index():
-    """
-    Render our main page that shows the sample graph.
-    """
-    return render_template("index.html")
+from app import create_app
 
 
 def get_local_ip():
     """
-    Simple helper to get the local network IP address if you want to
-    open the page from the Windows side. For WSL, you can also use 'localhost'.
+    Helper to get local IP if you want to open from Windows side.
+    Usually 'localhost' or '127.0.0.1' also works for WSL usage.
     """
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -29,14 +20,19 @@ def get_local_ip():
     return ip
 
 
-if __name__ == "__main__":
-    # Choose a port to run on
-    port = 5000
-    url = f"http://{get_local_ip()}:{port}"
+def main():
+    # Create the Dash app (optionally pass IR file path)
+    app = create_app()
 
-    print(f"Server starting. Go to {url} in your browser.")
+    port = 8050
+    host_ip = get_local_ip()
+    url = f"http://{host_ip}:{port}"
 
-    # Optionally, open automatically in browser (sometimes fails in WSL)
-    # webbrowser.open(url)
+    print(f"Starting Dash server. Visit {url} in your browser, or use http://localhost:{port}.")
 
-    app.run(host="0.0.0.0", port=port, debug=True)
+    # Run on 0.0.0.0 to allow external access (e.g. from Windows)
+    app.run_server(debug=True, host='0.0.0.0', port=port)
+
+
+if __name__ == '__main__':
+    main()
