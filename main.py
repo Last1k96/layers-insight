@@ -1,14 +1,12 @@
 # run.py
 
 import socket
+import sys
 from app import create_app
 
 
 def get_local_ip():
-    """
-    Helper to get local IP if you want to open from Windows side.
-    Usually 'localhost' or '127.0.0.1' also works for WSL usage.
-    """
+    """ Helper to get local IP if you want to open from Windows side. """
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         s.connect(("8.8.8.8", 80))
@@ -20,19 +18,22 @@ def get_local_ip():
     return ip
 
 
-def main():
-    # Create the Dash app (optionally pass IR file path)
-    app = create_app()
+def run_app():
+    # Optional: read IR path from command line or hardcode
+    # e.g. python run.py path/to/age_gender.xml
+    ir_path = None
+    if len(sys.argv) > 1:
+        ir_path = sys.argv[1]
+
+    app = create_app(ir_xml_path=ir_path)
 
     port = 8050
-    host_ip = get_local_ip()
-    url = f"http://{host_ip}:{port}"
+    local_ip = get_local_ip()
+    url = f"http://{local_ip}:{port}"
 
-    print(f"Starting Dash server. Visit {url} in your browser, or use http://localhost:{port}.")
-
-    # Run on 0.0.0.0 to allow external access (e.g. from Windows)
+    print(f"Starting Dash server. Visit {url} in your browser (or http://localhost:{port}).")
     app.run_server(debug=True, host='0.0.0.0', port=port)
 
 
 if __name__ == '__main__':
-    main()
+    run_app()
