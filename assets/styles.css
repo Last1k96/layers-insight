@@ -1,15 +1,41 @@
-/* assets/style.css */
-html, body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  background-color: #404040; /* dark gray */
-  color: #F0F0F0;           /* default text color */
-  font-family: sans-serif;
+.main-container {
+  display: flex;
+  /* Remove overflow: hidden or set it to visible/auto if you want to see the panel expand */
+  width: 100vw;
+  height: 100vh;
+  /* overflow: visible; or overflow: auto; */
 }
 
-h3, h1, h2, h4, h5, h6 {
-  color: #F0F0F0;   /* ensure headings are white */
-  margin: 0.5em 0;
+#ir-graph {
+  flex: 1; /* Let the left side fill up remaining space */
+  /* or 'flex: 1 1 auto;' */
+  min-width: 0; /* prevents overflow issues in flex containers */
+  height: 100%;
+
+}
+
+#inference-output {
+  /* Turn off the strict flex basis so we can rely on width. */
+  flex: none;
+
+  /* Provide an explicit width so the browser knows how to resize. */
+  width: 300px;
+  min-width: 200px;
+  max-width: 50vw;
+
+  /* For vertical height you can do: */
+  height: 100%;
+
+  background: #f9f9f9;
+  border-left: 2px solid #ccc;
+  padding: 10px;
+
+  /* The critical pieces for native resizing: */
+  resize: horizontal;        /* enable horizontal resize */
+  overflow: auto;           /* or overflow: hidden; both can work, but not visible */
+
+  box-sizing: border-box;    /* recommended to avoid weird behavior with borders/padding */
+
+  /* Optional: if you want a default mouse pointer on the right corner, do not force col-resize. */
+  cursor: auto;
 }

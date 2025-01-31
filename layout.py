@@ -15,17 +15,14 @@ def build_dynamic_stylesheet(elements):
                 'width': 'label',
                 'height': 'label',
                 'shape': 'round-rectangle',
-                'border-radius': '6px',
-                'border-width': 1,
-                'border-color': '#333',
+                'border-width': 2,
+                'border-color': '#111',
                 'padding': '10px',
                 'font-size': '12px',
                 'text-wrap': 'wrap',
                 'text-max-width': 80,
                 'text-valign': 'center',
                 'text-halign': 'center',
-
-                # We'll default to a medium gray if we don't find a color
                 'background-color': '#666',
                 'color': '#fff',
             }
@@ -74,14 +71,17 @@ def build_dynamic_stylesheet(elements):
 def create_layout(elements):
     dynamic_stylesheet = build_dynamic_stylesheet(elements)
 
-    # Notice we are not setting backgroundColor or color inline here,
-    # because we handle that globally in assets/style.css
     return html.Div([
-        html.H3("IR Graph: Dark Color Palette"),
+        # Cytoscape Graph (Left Side)
         cyto.Cytoscape(
             id='ir-graph',
             elements=elements,
-            style={'width': '100%', 'height': '800px'},
+            style={
+                'height': '100%',
+                'width': '100%',
+                'minWidth': '0',  # Critical for resize
+                'minHeight': '0'  # Critical for resize
+            },
             layout={
                 'name': 'dagre',
                 'directed': True,
@@ -89,8 +89,10 @@ def create_layout(elements):
                 'nodeSep': 25,
                 'rankSep': 50,
             },
-            autoungrabify=True,  # Automatically disable grabbing
+            autoungrabify=True,
             stylesheet=dynamic_stylesheet
         ),
-        html.Div(id='inference-output', style={'fontSize': '16px'})
-    ])
+        html.Div(id='splitter', className='splitter'),
+        html.Div(id='inference-output')
+    ], className="main-container")
+
