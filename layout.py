@@ -36,8 +36,7 @@ def build_dynamic_stylesheet(elements):
                 'width': 2,
                 'line-color': '#888',
                 'target-arrow-color': '#888',
-                'target-arrow-shape': 'triangle',
-                'arrow-scale': 1
+                'target-arrow-shape': 'triangle'
             }
         }
     ]
@@ -85,10 +84,12 @@ def create_layout(elements):
             style={'width': '100%', 'height': '800px'},
             layout={
                 'name': 'dagre',
+                'directed': True,
                 'rankDir': 'TB',
-                'nodeSep': 40,
-                'rankSep': 80
+                'nodeSep': 25,
+                'rankSep': 50,
             },
+            autoungrabify=True,  # Automatically disable grabbing
             stylesheet=dynamic_stylesheet
         ),
         html.Div(id='inference-output', style={'fontSize': '16px'})

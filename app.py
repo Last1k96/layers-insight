@@ -21,8 +21,8 @@ def create_app(ir_xml_path=None):
 
     # If no path provided, use a default or raise an error
     if ir_xml_path is None:
-        ir_xml_path = "/home/mkurin/models/bert-large-uncased-whole-word-masking-squad-int8-0001/bert-large-uncased-whole-word-masking-squad-int8-0001.xml"
-        # ir_xml_path = "/home/mkurin/models/age-gender-recognition-retail-0013/age-gender-recognition-retail-0013.xml"  # Replace with a valid path or handle differently
+        #ir_xml_path = "/home/mkurin/models/bert-large-uncased-whole-word-masking-squad-int8-0001/bert-large-uncased-whole-word-masking-squad-int8-0001.xml"
+        ir_xml_path = "/home/mkurin/models/age-gender-recognition-retail-0013/age-gender-recognition-retail-0013.xml"  # Replace with a valid path or handle differently
 
     # Parse IR => Cytoscape elements
     elements = parse_openvino_ir(ir_xml_path)

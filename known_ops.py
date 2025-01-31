@@ -4,7 +4,7 @@
 COLOR_PALETTE = [
     "#303030",  # 0
     "#4CAF50",  # 1
-    "#FF9800",  # 2
+    "#5F4A45",  # 2
     "#9C27B0",  # 3
     "#00BCD4",  # 4
     "#E91E63",  # 5
@@ -27,6 +27,7 @@ OPENVINO_OP_COLORS_DARK = {
     "ConvertLike":         COLOR_PALETTE[0],
     "ConvertPromoteTypes": COLOR_PALETTE[0],
     "Pad":                 COLOR_PALETTE[0],
+    "MatMul": COLOR_PALETTE[0],
 
     #
     # 2) Convolution & Deconvolution
@@ -147,26 +148,20 @@ OPENVINO_OP_COLORS_DARK = {
     "RNNSequence": COLOR_PALETTE[6],
 
     #
-    # 11) MatMul & Similar
     #
-    "MatMul":                    COLOR_PALETTE[7],
     "Einsum":                    COLOR_PALETTE[7],
     "ScaledDotProductAttention": COLOR_PALETTE[7],
-
-    #
-    # 12) Softmax / LogSoftmax
-    #
     "SoftMax":    COLOR_PALETTE[7],
     "LogSoftmax": COLOR_PALETTE[7],
 
     #
     # 13) Transform / Shape Ops
     #
-    "Concat":               COLOR_PALETTE[0],
-    "Reshape":              COLOR_PALETTE[0],
-    "StridedSlice":         COLOR_PALETTE[0],
-    "Squeeze":              COLOR_PALETTE[0],
-    "Unsqueeze":            COLOR_PALETTE[0],
+    "Concat":               COLOR_PALETTE[2],
+    "Reshape":              COLOR_PALETTE[2],
+    "StridedSlice":         COLOR_PALETTE[2],
+    "Squeeze":              COLOR_PALETTE[2],
+    "Unsqueeze":            COLOR_PALETTE[2],
 
     "ShuffleChannels":      COLOR_PALETTE[7],
     "DepthToSpace":         COLOR_PALETTE[7],
