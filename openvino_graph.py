@@ -4,9 +4,10 @@ import xml.etree.ElementTree as ET
 
 def parse_openvino_ir(xml_file_path):
     """
-    Parse an OpenVINO IR .xml file and return a list of Cytoscape elements (nodes + edges).
-    Each 'layer' is a node; each 'edge' is a directed edge from-layer -> to-layer.
+    Parse an OpenVINO IR .xml file and return Cytoscape elements (nodes + edges).
+    We also parse the shape attribute to show in the node label.
     """
+
     tree = ET.parse(xml_file_path)
     root = tree.getroot()
 
@@ -21,12 +22,31 @@ def parse_openvino_ir(xml_file_path):
         layer_id = layer.get('id')
         layer_name = layer.get('name')
         layer_type = layer.get('type')
-        label_str = f"{layer_name}\n({layer_type})"
+
+        # Try to find a <data> sub-element to get the shape attribute.
+        data_elem = layer.find('data')
+        shape_str = None
+        if data_elem is not None:
+            shape_str = data_elem.get('shape')  # e.g. "48,3,3,3"
+
+        # Build a user-friendly label. Netron often shows the op name + shape or weights
+        # For example: "Convolution\nweights: 48×3×3×3"
+        # Or for Add: "Add\nB: 1×48×1×1"
+        # You can decide how to parse shape or display it; here’s a simple approach:
+        if shape_str:
+            display_label = f"{layer_type}\n{shape_str}"
+        else:
+            display_label = layer_type
+
+        # You might also want to show the original layer name, e.g.:
+        #   display_label = f"{layer_name}\n({layer_type}: {shape_str})"
+        # Adjust as needed.
 
         node_elements.append({
             'data': {
                 'id': layer_id,
-                'label': label_str
+                'type': layer_type,         # used for stylesheet-based coloring
+                'display_label': display_label
             }
         })
 
