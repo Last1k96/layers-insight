@@ -1,0 +1,15 @@
+/* assets/style.css */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #404040; /* dark gray */
+  color: #F0F0F0;           /* default text color */
+  font-family: sans-serif;
+}
+
+h3, h1, h2, h4, h5, h6 {
+  color: #F0F0F0;   /* ensure headings are white */
+  margin: 0.5em 0;
+}

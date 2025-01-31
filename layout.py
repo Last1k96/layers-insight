@@ -1,123 +1,95 @@
 # my_dash_ir_app/layout.py
 
+import random
 from dash import html
 import dash_cytoscape as cyto
+from known_ops import OPENVINO_OP_COLORS_DARK
+
+def build_dynamic_stylesheet(elements):
+    # Base node/edge styles
+    stylesheet = [
+        {
+            'selector': 'node',
+            'style': {
+                'content': 'data(display_label)',
+                'width': 'label',
+                'height': 'label',
+                'shape': 'round-rectangle',
+                'border-radius': '6px',
+                'border-width': 1,
+                'border-color': '#333',
+                'padding': '10px',
+                'font-size': '12px',
+                'text-wrap': 'wrap',
+                'text-max-width': 80,
+                'text-valign': 'center',
+                'text-halign': 'center',
+
+                # We'll default to a medium gray if we don't find a color
+                'background-color': '#666',
+                'color': '#fff',
+            }
+        },
+        {
+            'selector': 'edge',
+            'style': {
+                'width': 2,
+                'line-color': '#888',
+                'target-arrow-color': '#888',
+                'target-arrow-shape': 'triangle',
+                'arrow-scale': 1
+            }
+        }
+    ]
+
+    # Collect distinct op types
+    op_types = set()
+    for el in elements:
+        if 'data' in el and 'type' in el['data']:
+            op_types.add(el['data']['type'])
+
+    used_random_colors = {}
+    for op_type in op_types:
+        # Check if op_type is in OPENVINO_OP_COLORS_DARK
+        if op_type in OPENVINO_OP_COLORS_DARK:
+            color = OPENVINO_OP_COLORS_DARK[op_type]
+        else:
+            # Fallback: generate random subdued color
+            if op_type not in used_random_colors:
+                r = random.randint(40, 160)
+                g = random.randint(40, 160)
+                b = random.randint(40, 160)
+                used_random_colors[op_type] = f"#{r:02X}{g:02X}{b:02X}"
+            color = used_random_colors[op_type]
+
+        # Add a rule for that op_type
+        stylesheet.append({
+            'selector': f'node[type="{op_type}"]',
+            'style': {
+                'background-color': color
+            }
+        })
+
+    return stylesheet
 
 def create_layout(elements):
-    """
-    Return Dash layout with a DAG-based ('dagre') layout,
-    and node styling that auto-sizes around the label text
-    (rounded corners, margin, color-coded by type).
-    """
-    return html.Div([
-        html.H3("IR Graph (Netron-like style: auto-sized round rectangles)"),
+    dynamic_stylesheet = build_dynamic_stylesheet(elements)
 
-        # Cytoscape graph
+    # Notice we are not setting backgroundColor or color inline here,
+    # because we handle that globally in assets/style.css
+    return html.Div([
+        html.H3("IR Graph: Dark Color Palette"),
         cyto.Cytoscape(
             id='ir-graph',
             elements=elements,
             style={'width': '100%', 'height': '800px'},
-
-            # DAG layout
             layout={
                 'name': 'dagre',
-                'rankDir': 'TB',   # 'TB' = top->bottom, or 'LR' for left->right
+                'rankDir': 'TB',
                 'nodeSep': 40,
                 'rankSep': 80
             },
-
-            # Stylesheet
-            stylesheet=[
-
-                # (1) Default node style: auto-sized "round-rectangle" with wrapped text
-                {
-                    'selector': 'node',
-                    'style': {
-                        # Show the label stored in data['display_label']
-                        'content': 'data(display_label)',
-
-                        # Auto-fit the node size to its label text
-                        'width': 'label',
-                        'height': 'label',
-
-                        'shape': 'round-rectangle',
-                        'border-radius': '6px',
-                        'border-width': 1,
-                        'border-color': '#333',
-
-                        # Provide space around the text
-                        'padding': '10px',
-
-                        # Text styling
-                        'font-size': '12px',
-                        'text-wrap': 'wrap',
-                        'text-max-width': 80,   # break text after ~80px
-                        'text-valign': 'center',
-                        'text-halign': 'center',
-
-                        # Default background/text color
-                        'background-color': '#777',
-                        'color': '#fff',
-                    }
-                },
-
-                # (2) Convolution = Blue
-                {
-                    'selector': 'node[type="Convolution"]',
-                    'style': {
-                        'background-color': '#337ab7',
-                    }
-                },
-
-                # (3) Add = Dark Gray
-                {
-                    'selector': 'node[type="Add"]',
-                    'style': {
-                        'background-color': '#424242',
-                    }
-                },
-
-                # (4) ReLU = Red
-                {
-                    'selector': 'node[type="ReLU"]',
-                    'style': {
-                        'background-color': '#c0392b',
-                    }
-                },
-
-                # (5) MaxPool = Green
-                {
-                    'selector': 'node[type="MaxPool"]',
-                    'style': {
-                        'background-color': '#239B56',
-                    }
-                },
-
-                # (6) Parameter (e.g., "data") = Gray
-                {
-                    'selector': 'node[type="Parameter"]',
-                    'style': {
-                        'background-color': '#888',
-                    }
-                },
-
-                # (7) Edges
-                {
-                    'selector': 'edge',
-                    'style': {
-                        'width': 2,
-                        'line-color': '#bbb',
-                        'target-arrow-color': '#bbb',
-                        'target-arrow-shape': 'triangle',
-                        'arrow-scale': 1
-                    }
-                }
-            ]
+            stylesheet=dynamic_stylesheet
         ),
-
-        # Div for inference or logging output
-        html.Div(
-            id='inference-output',
-            style={'marginTop': 10, 'fontSize': '16px'}
-        )
+        html.Div(id='inference-output', style={'fontSize': '16px'})
     ])
