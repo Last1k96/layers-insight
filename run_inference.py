@@ -61,12 +61,16 @@ def run_inference(openvino_bin, model_xml, device):
 
     # Create the Inference Engine core object.
     core = ov.Core()
+
+    # Register TEMPLATE plugin
+    template_plugin = f"{openvino_bin}/libopenvino_template_plugin.so"
+    if os.path.exists(template_plugin):
+        core.register_plugin(template_plugin, "TEMPLATE")
+
     print(f"Available devices: {core.available_devices}")
 
     print(f"Reading network from '{model_xml}'...")
     model = core.read_model(model=model_xml)
-
-    print(model)
 
     print(f"Loading network on device '{device}'...")
     compiled_model = core.compile_model(model, device)
