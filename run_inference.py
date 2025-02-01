@@ -32,23 +32,6 @@ def setup_environment(openvino_bin):
     else:
         print(f"Warning: Python directory '{python_dir}' not found in the OpenVINO bin folder.")
 
-    # Set up native library search paths so that the plugins from the build are used.
-    if sys.platform.startswith('win'):
-        # On Windows, add the bin folder to the DLL search directories.
-        try:
-            os.add_dll_directory(openvino_bin)
-            print(f"Added '{openvino_bin}' to DLL search directories.")
-        except Exception as e:
-            print(f"Error adding DLL directory: {e}")
-    else:
-        # On Linux and macOS, prepend the bin folder to LD_LIBRARY_PATH.
-        ld_library_path = os.environ.get("LD_LIBRARY_PATH", "")
-        new_ld_library_path = openvino_bin + os.pathsep + ld_library_path
-
-        os.environ["LD_LIBRARY_PATH"] = f"{new_ld_library_path}:/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
-        os.environ["LD_PRELOAD"] = "/usr/lib/x86_64-linux-gnu/libstdc++.so.6"
-        print(f"Updated LD_LIBRARY_PATH to include '{openvino_bin}'.")
-
 def run_inference(openvino_bin, model_xml, device):
     """
     Loads an IR model and runs inference on the given device.
