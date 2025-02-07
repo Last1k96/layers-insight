@@ -1,7 +1,9 @@
 import random
 from dash import dcc, html, Input, Output, State
 import dash_cytoscape as cyto
+from openvino_graph import parse_openvino_ir
 from known_ops import OPENVINO_OP_COLORS_DARK
+
 
 def build_dynamic_stylesheet(elements):
     # Base node/edge styles
@@ -13,7 +15,7 @@ def build_dynamic_stylesheet(elements):
                 'width': 'label',
                 'height': 'label',
                 'shape': 'round-rectangle',
-                'border-width': '1.5',
+                'border-width': '1',
                 'border-color': '#000',
                 'padding': '6px',
                 'font-size': '12px',
@@ -80,8 +82,16 @@ def build_dynamic_stylesheet(elements):
     return stylesheet
 
 
-def create_layout(elements):
+def create_layout(openvino_path, ir_xml_path):
+    elements = parse_openvino_ir(ir_xml_path)
     dynamic_stylesheet = build_dynamic_stylesheet(elements)
+
+    table_data = [
+        {"id": "model-xml-input", "label": "Model XML Path", "value": ir_xml_path},
+        {"id": "input-file-input", "label": "Input file", "value": ""},
+    ]
+
+    max_label_width = max(len(row["label"]) for row in table_data) * 10  # Approx. pixel estimation
 
     return html.Div([
         # Cytoscape Graph (Left Side)
@@ -96,49 +106,53 @@ def create_layout(elements):
                 'nodeSep': 25,
                 'rankSep': 50,
             },
-            # autoungrabify=True,
+            autoungrabify=True,
             wheelSensitivity=0.2,  # Adjusts the zoom speed when scrolling
             stylesheet=dynamic_stylesheet
         ),
         html.Div([
-            html.H3("Left Panel (e.g., Workspace Selection)"),
-            html.H3("Select / Delete Workspace"),
-            dcc.Dropdown(id='workspace-select-dropdown', options=[], value=None),
-            html.Button("Delete Selected Workspace", id='delete-workspace-btn', style={"marginTop": "5px"}),
+            html.Div([
+                html.H3("Left Panel (e.g., Workspace Selection)"),
+                html.H3("Select / Delete Workspace"),
+                dcc.Dropdown(id='workspace-select-dropdown', options=[], value=None),
+                html.Button("Delete Selected Workspace", id='delete-workspace-btn', style={"marginTop": "5px"}),
 
-            dcc.Input(id='workspace-label-input', type='text', placeholder='Friendly name', value='My Workspace'),
-            dcc.Input(id='model-xml-input', type='text', placeholder='Model XML Path', value=''),
-            dcc.Input(id='input-file-input', type='text', placeholder='Input file', value=''),
+                html.Div(
+                    dcc.Input(id='workspace-label-input', type='text', placeholder='Friendly name',
+                              value='My Workspace'),
+                ),
 
-            html.Div("Reference Plugin:"),
-            dcc.Dropdown(id='reference-plugin-dropdown', options=[], value=None, clearable=False),
+                html.Div([
+                    html.Div([
+                        html.Div(row["label"], style={"whiteSpace": "nowrap", "width": f"{max_label_width}px"}),
+                        html.Div(dcc.Input(id=row["id"], type="text", value=row["value"], style={"width": "100%"})),
+                    ])
+                    for row in table_data
+                ]),
 
-            html.Div("Other Plugin:"),
-            dcc.Dropdown(id='other-plugin-dropdown', options=[], value=None, clearable=False),
+                html.Div("Reference Plugin:"),
+                dcc.Dropdown(id='reference-plugin-dropdown', options=[], value=None, clearable=False),
 
-            html.Button("Create Workspace", id='create-workspace-btn'),
-            html.Label("OpenVINO bin folder:"),
-            dcc.Input(id='openvino-bin-input', type='text', placeholder='/path/to/openvino_bin', value=''),
-            html.Button("Find Plugins", id='find-plugins-btn'),
-            html.Div("Available Plugins:", style={"marginTop": "10px"}),
-            html.Div(id='available-plugins-list', style={"whiteSpace": "pre-line"}),
+                html.Div("Other Plugin:"),
+                dcc.Dropdown(id='other-plugin-dropdown', options=[], value=None, clearable=False),
 
-            # The drag handle can be its own sub-div on the right edge
-            html.Div(id="left-drag-handle", className="drag-handle-left")
-        ],
-            id="left-panel",
-            className="panel-left"),
-        html.Div([
-            html.H3("Right Panel (e.g., Partial Inference Output)"),
-            html.Div("Your inference results or analysis here..."),
+                html.Button("Create Workspace", id='create-workspace-btn'),
+                html.Label("OpenVINO bin folder:"),
+                dcc.Input(id='openvino-bin-input', type='text', placeholder='/path/to/openvino_bin',
+                          value=openvino_path),
+                html.Button("Find Plugins", id='find-plugins-btn'),
+                html.Div(id='available-plugins-list', style={"whiteSpace": "pre-line"}),
 
-            # The drag handle on the left edge
-            html.Div(id="right-drag-handle", className="drag-handle-right")
-        ],
-            id="right-panel",
-            className="panel-right"
+                # The drag handle can be its own sub-div on the right edge
+                html.Div(id="left-drag-handle", className="drag-handle-left")
+            ], style={"margin": "10px"})
+        ], id="left-panel",
+           className="panel-left",
         ),
+        html.Div([
+            html.H3("Partial Inference Output"),
+            html.Div(id="right-drag-handle", className="drag-handle-right")
+        ], id="right-panel",
+            className="panel-right"),
     ], className="main-container",
         style={"position": "relative", "width": "100vw", "height": "100vh", "background-color": "#404040"})
-
-

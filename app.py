@@ -3,7 +3,6 @@ import uuid
 import dash
 import dash_cytoscape as cyto
 
-from openvino_graph import parse_openvino_ir
 from layout import create_layout
 from callbacks import register_callbacks
 
@@ -38,16 +37,11 @@ def delete_workspace(wksp_id):
         del workspaces[wksp_id]
 
 
-def create_app(ir_xml_path=None):
+def create_app(openvino_path, ir_xml_path):
     cyto.load_extra_layouts()
-    app = dash.Dash(__name__)
+    app = dash.Dash(title="Layers Insight")
 
-    if ir_xml_path is None:
-        #ir_xml_path = "/home/mkurin/models/bert-large-uncased-whole-word-masking-squad-int8-0001/bert-large-uncased-whole-word-masking-squad-int8-0001.xml"
-        ir_xml_path = "/home/mkurin/models/age-gender-recognition-retail-0013/age-gender-recognition-retail-0013.xml"  # Replace with a valid path or handle differently
-
-    elements = parse_openvino_ir(ir_xml_path)
-    app.layout = create_layout(elements)
+    app.layout = create_layout(openvino_path, ir_xml_path)
     register_callbacks(app)
 
     return app

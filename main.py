@@ -19,13 +19,11 @@ def get_local_ip():
 
 
 def run_app():
-    # Optional: read IR path from command line or hardcode
-    # e.g. python run.py path/to/age_gender.xml
-    ir_path = None
-    if len(sys.argv) > 1:
-        ir_path = sys.argv[1]
+    ir_path = "/home/mkurin/models/age-gender-recognition-retail-0013/age-gender-recognition-retail-0013.xml"
+    # ir_path = "/home/mkurin/models/bert-large-uncased-whole-word-masking-squad-int8-0001/bert-large-uncased-whole-word-masking-squad-int8-0001.xml"
+    openvino_path = "/home/mkurin/code/openvino/bin/intel64/Release"
 
-    app = create_app(ir_xml_path=ir_path)
+    app = create_app(openvino_path=openvino_path, ir_xml_path=ir_path)
 
     port = 8050
     local_ip = get_local_ip()
