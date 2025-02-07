@@ -1,13 +1,4 @@
 #!/usr/bin/env python3
-"""
-run_inference_from_build.py
-
-A simple script to run inference on an OpenVINO IR model using the Python libraries
-from a provided OpenVINO build folder.
-
-Usage:
-    python run_inference_from_build.py --openvino_bin /path/to/openvino/bin --model /path/to/model.xml --device CPU
-"""
 
 import os
 import sys
@@ -15,22 +6,33 @@ import argparse
 import numpy as np
 
 def setup_environment(openvino_bin):
-    """
-    Set up the environment so that:
-      1. The Python libraries from the OpenVINO build (in the "python" subfolder) are
-         added to sys.path.
-      2. The plugin libraries in the bin folder are available at runtime.
-
-    Args:
-        openvino_bin (str): Path to the OpenVINO build's bin folder.
-    """
-    # Add the "python" directory from the OpenVINO build to sys.path
     python_dir = os.path.join(openvino_bin, "python")
     if os.path.isdir(python_dir):
-        sys.path.insert(0, python_dir)
-        print(f"Added '{python_dir}' to sys.path.")
+        if python_dir not in sys.path:
+            sys.path.insert(0, python_dir)
+            print(f"Added '{python_dir}' to sys.path.")
     else:
         print(f"Warning: Python directory '{python_dir}' not found in the OpenVINO bin folder.")
+
+
+def get_available_plugins(openvino_bin):
+    setup_environment(openvino_bin)
+
+    try:
+        import openvino as ov
+    except ImportError as e:
+        sys.exit("Failed to import OpenVINO Inference Engine. "
+                 "Ensure that the python libraries from the provided OpenVINO build folder are accessible.\nError: " + str(e))
+
+    core = ov.Core()
+    # Example of registering a custom plugin if present
+    template_plugin = f"{openvino_bin}/libopenvino_template_plugin.so"
+    if os.path.exists(template_plugin):
+        core.register_plugin(template_plugin, "TEMPLATE")
+
+    # Return list of devices, e.g. ['CPU', 'GPU', 'TEMPLATE', ...]
+    return core.available_devices
+
 
 def run_inference(openvino_bin, model_xml, device):
     """
@@ -108,7 +110,7 @@ def main():
     )
     parser.add_argument(
         "--device", type=str, default="CPU",
-        help="Target device for inference (e.g., CPU, MYRIAD, GPU). Default is CPU.",
+        help="Target device for inference. Default is CPU.",
     )
     args = parser.parse_args()
 

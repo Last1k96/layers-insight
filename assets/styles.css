@@ -1,41 +1,56 @@
-.main-container {
-  display: flex;
-  /* Remove overflow: hidden or set it to visible/auto if you want to see the panel expand */
+#main-container {
+  position: relative;
   width: 100vw;
   height: 100vh;
-  /* overflow: visible; or overflow: auto; */
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* no scroll on container */
 }
 
-#ir-graph {
-  flex: 1; /* Let the left side fill up remaining space */
-  /* or 'flex: 1 1 auto;' */
-  min-width: 0; /* prevents overflow issues in flex containers */
-  height: 100%;
-
-}
-
-#inference-output {
-  /* Turn off the strict flex basis so we can rely on width. */
-  flex: none;
-
-  /* Provide an explicit width so the browser knows how to resize. */
+/* The left overlay (initially 300px wide) */
+.panel-left {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 300px;
-  min-width: 200px;
-  max-width: 50vw;
-
-  /* For vertical height you can do: */
   height: 100%;
+  background-color: rgba(240, 240, 240, 0.95);
+  border-right: 1px solid #ccc;
+  overflow: auto;
+  z-index: 10;
+}
 
-  background: #f9f9f9;
-  border-left: 2px solid #ccc;
-  padding: 10px;
+/* The "drag handle" on the right edge of the left panel */
+.drag-handle-left {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+  background-color: transparent;
+}
 
-  /* The critical pieces for native resizing: */
-  resize: horizontal;        /* enable horizontal resize */
-  overflow: auto;           /* or overflow: hidden; both can work, but not visible */
+/* The right overlay (initially 300px wide) */
+.panel-right {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 300px;
+  height: 100%;
+  background-color: rgba(240, 240, 240, 0.95);
+  border-left: 1px solid #ccc;
+  overflow: auto;
+  z-index: 10;
+}
 
-  box-sizing: border-box;    /* recommended to avoid weird behavior with borders/padding */
-
-  /* Optional: if you want a default mouse pointer on the right corner, do not force col-resize. */
-  cursor: auto;
+/* The "drag handle" on the left edge of the right panel */
+.drag-handle-right {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+  background-color: transparent;
 }

@@ -1,8 +1,0 @@
-.splitter {
-    width: 6px;
-    background-color: #888;
-    cursor: col-resize;
-    /* Make sure it stays on top when dragging */
-    z-index: 999;
-    box-sizing: border-box;    /* recommended to avoid weird behavior with borders/padding */
-}
