@@ -112,16 +112,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         ),
         html.Div([
             html.Div([
-                html.H3("Left Panel (e.g., Workspace Selection)"),
-                html.H3("Select / Delete Workspace"),
-                dcc.Dropdown(id='workspace-select-dropdown', options=[], value=None),
-                html.Button("Delete Selected Workspace", id='delete-workspace-btn', style={"marginTop": "5px"}),
-
-                html.Div(
-                    dcc.Input(id='workspace-label-input', type='text', placeholder='Friendly name',
-                              value='My Workspace'),
-                ),
-
                 html.Div([
                     html.Div([
                         html.Div(row["label"], style={"whiteSpace": "nowrap", "width": f"{max_label_width}px"}),
