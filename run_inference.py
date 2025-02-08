@@ -99,12 +99,29 @@ def run_partial_inference(openvino_bin, model_xml, node_name, ref_plugin, main_p
     ov, core = get_ov_core(openvino_bin)
     model = core.read_model(model=model_xml)
 
-    img = cv2.imread(input_path)
-    if img is None:
-        print("Failed to load image.")
-        return
+    # Define dimensions
+    batch_size = 1
+    seq_length = 384
+    vocab_size = 30522  # Typical BERT vocab size
 
-    img = preprocess_image_for_model(img, model)
+    # Generate random input_ids: integers in the range [0, vocab_size)
+    input_ids = np.random.randint(0, vocab_size, size=(batch_size, seq_length), dtype=np.int32)
+
+    # Generate attention_mask: all ones (shape: [1, 384])
+    attention_mask = np.ones((batch_size, seq_length), dtype=np.int32)
+
+    # Generate token_type_ids: all zeros (shape: [1, 384])
+    token_type_ids = np.zeros((batch_size, seq_length), dtype=np.int32)
+
+    # Bundle inputs in a list or dict as required by your inference code.
+    # For example, if your model expects a list:
+    inputs = [input_ids, attention_mask, token_type_ids]
+    #img = cv2.imread(input_path)
+    #if img is None:
+    #    print("Failed to load image.")
+    #    return
+
+    #img = preprocess_image_for_model(img, model)
 
     intermediate_nodes = [op for op in model.get_ops() if op.get_friendly_name() == node_name]
     if len(intermediate_nodes) != 1:
@@ -114,7 +131,7 @@ def run_partial_inference(openvino_bin, model_xml, node_name, ref_plugin, main_p
     parameters = [inp.get_node() for inp in model.inputs]
     sub_model = ov.Model([intermediate_nodes[0]], parameters, "sub_model")
 
-    inputs = [img]
+    #inputs = [img]
 
     results = []
     for plugin in [main_plugin, ref_plugin]:
