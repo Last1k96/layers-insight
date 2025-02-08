@@ -5,12 +5,12 @@ import sys
 import argparse
 import numpy as np
 
+
 def get_ov_core(openvino_bin):
     python_dir = os.path.join(openvino_bin, "python")
     if os.path.isdir(python_dir):
         if python_dir not in sys.path:
             sys.path.insert(0, python_dir)
-            print(f"Added '{python_dir}' to sys.path.")
     else:
         print(f"Warning: Python directory '{python_dir}' not found in the OpenVINO bin folder.")
 
@@ -18,7 +18,8 @@ def get_ov_core(openvino_bin):
         import openvino as ov
     except ImportError as e:
         print("Failed to import OpenVINO Inference Engine. "
-                 "Ensure that the python libraries from the provided OpenVINO build folder are accessible.\nError: " + str(e))
+              "Ensure that the python libraries from the provided OpenVINO build folder are accessible.\nError: " + str(
+            e))
         return
 
     core = ov.Core()
@@ -27,85 +28,55 @@ def get_ov_core(openvino_bin):
     if os.path.exists(template_plugin):
         core.register_plugin(template_plugin, "TEMPLATE")
 
-    return core
+    return ov, core
 
 
 def get_available_plugins(openvino_bin):
-    core = get_ov_core(openvino_bin)
+    ov, core = get_ov_core(openvino_bin)
 
     return core.available_devices
 
 
 def run_partial_inference(openvino_bin, model_xml, node_name, ref_plugin, main_plugin):
-    core = get_ov_core(openvino_bin)
+    ov, core = get_ov_core(openvino_bin)
     model = core.read_model(model=model_xml)
 
-    for op in model.get_ops():
-        if op.get_friendly_name() == node_name:
-            model.add_outputs(op.output(0))
-            break
-    else:
-        return f"NODE NOT FOUND: {node_name}"
+    intermediate_nodes = [op for op in model.get_ops() if op.get_friendly_name() == node_name]
+    if len(intermediate_nodes) != 1:
+        print(f"Failed to find one node '{node_name}'")
+        return
 
-    model = core.compile_model(model, ref_plugin)
+    parameters = [inp.get_node() for inp in model.inputs]
+    sub_model = ov.Model([intermediate_nodes[0]], parameters, "sub_model")
+
     inputs = [np.random.rand(*input_blob.shape).astype(np.float32) for input_blob in model.inputs]
-    result = model(inputs)
 
-    return result
+    results = []
+    for plugin in [main_plugin, ref_plugin]:
+        compiled_model = core.compile_model(sub_model, plugin)
+        inference_results = compiled_model(inputs)
+        results.append(inference_results)
 
+    def get_stats(data):
+        res = str()
+        res += "Min: " + str(np.min(main)) + "\r\n"
+        res += "Max: " + str(np.max(main)) + "\r\n"
+        res += "Mean: " + str(np.mean(main)) + "\r\n"
+        res += "Std: " + str(np.std(main)) + "\r\n"
+        return res
 
-def run_inference(openvino_bin, model_xml, device):
-    core = get_ov_core(openvino_bin)
+    stats = str()
+    for main_key, ref_key in zip(results[0].keys(), results[1].keys()):
+        main = results[0][main_key]
+        ref = results[1][ref_key]
 
-    print(f"Available devices: {core.available_devices}")
+        stats += "Main plugin\r\n"
+        stats += get_stats(main)
+        stats += "Ref plugin\r\n"
+        stats += get_stats(ref)
 
-    print(f"Reading network from '{model_xml}'...")
-    model = core.read_model(model=model_xml)
+        diff = main - ref
+        stats += "Difference\r\n"
+        stats += get_stats(diff)
 
-    print(f"Loading network on device '{device}'...")
-    compiled_model = core.compile_model(model, device)
-
-    # Retrieve the input blob name and its shape.
-    input_blob = next(iter(model.inputs))
-    input_shape = input_blob.shape
-    print(f"Input blob: {input_blob} with shape {input_shape}")
-
-    # Create dummy input data (using random values for demonstration).
-    dummy_input = np.random.rand(*input_shape).astype(np.float32)
-
-    print("Starting inference...")
-    result = compiled_model(dummy_input)
-
-    # Display the outputs.
-    for output_data in result:
-        print(f"Output blob: {output_data.any_name} has shape {output_data.shape}")
-
-    return result
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Run inference on an OpenVINO IR model using Python libraries from a given OpenVINO build folder."
-    )
-    parser.add_argument(
-        "--openvino_bin", type=str, required=False,
-        help="Path to the OpenVINO build's bin folder containing plugin libraries and the python folder.",
-        default="/home/mkurin/code/openvino/bin/intel64/Release"
-    )
-    parser.add_argument(
-        "--model", type=str, required=False,
-        help="Path to the OpenVINO IR .xml file.",
-        default="/home/mkurin/models/age-gender-recognition-retail-0013/age-gender-recognition-retail-0013.xml"
-    )
-    parser.add_argument(
-        "--device", type=str, default="CPU",
-        help="Target device for inference. Default is CPU.",
-    )
-    args = parser.parse_args()
-
-    # Run inference and capture the output.
-    result = run_inference(args.openvino_bin, args.model, args.device)
-    print("Inference completed successfully. Output keys:")
-    print(list(result.keys()))
-
-if __name__ == "__main__":
-    main()
+    return stats

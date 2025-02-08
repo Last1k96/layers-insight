@@ -17,13 +17,7 @@ def register_callbacks(app):
         prevent_initial_call=True
     )
     def on_node_click(tapped_node, openvino_bin, model_xml, ref_plugin, main_plugin):
-        print("on_node_click")
-        if tapped_node is None:
-            return "Click a node to see partial inference results."
         node_name = tapped_node['data']['layer_name']
-        for key in tapped_node:
-            print(f"{key}: {tapped_node[key]}")
-
         result = run_partial_inference(openvino_bin, model_xml, node_name, ref_plugin, main_plugin)
         return f"Partial Inference result: {result}"
 
