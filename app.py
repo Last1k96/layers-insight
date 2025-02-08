@@ -37,11 +37,11 @@ def delete_workspace(wksp_id):
         del workspaces[wksp_id]
 
 
-def create_app(openvino_path, ir_xml_path):
+def create_app(openvino_path, ir_xml_path, inputs_path):
     cyto.load_extra_layouts()
     app = dash.Dash(title="Layers Insight")
 
-    app.layout = create_layout(openvino_path, ir_xml_path)
+    app.layout = create_layout(openvino_path, ir_xml_path, inputs_path)
     register_callbacks(app)
 
     return app

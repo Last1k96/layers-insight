@@ -82,13 +82,13 @@ def build_dynamic_stylesheet(elements):
     return stylesheet
 
 
-def create_layout(openvino_path, ir_xml_path):
+def create_layout(openvino_path, ir_xml_path, inputs_path):
     elements = parse_openvino_ir(ir_xml_path)
     dynamic_stylesheet = build_dynamic_stylesheet(elements)
 
     table_data = [
         {"id": "model-xml-input", "label": "Model XML Path", "value": ir_xml_path},
-        {"id": "input-file-input", "label": "Input file", "value": ""},
+        {"id": "input-file-input", "label": "Input file", "value": inputs_path[0]},
     ]
 
     max_label_width = max(len(row["label"]) for row in table_data) * 10  # Approx. pixel estimation

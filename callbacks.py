@@ -14,11 +14,12 @@ def register_callbacks(app):
         State('model-xml-input', 'value'),
         State('reference-plugin-dropdown', 'value'),
         State('other-plugin-dropdown', 'value'),
+        State('input-file-input', 'value'),
         prevent_initial_call=True
     )
-    def on_node_click(tapped_node, openvino_bin, model_xml, ref_plugin, main_plugin):
+    def on_node_click(tapped_node, openvino_bin, model_xml, ref_plugin, main_plugin, input_path):
         node_name = tapped_node['data']['layer_name']
-        result = run_partial_inference(openvino_bin, model_xml, node_name, ref_plugin, main_plugin)
+        result = run_partial_inference(openvino_bin, model_xml, node_name, ref_plugin, main_plugin, input_path)
         return f"Partial Inference result: {result}"
 
     @app.callback(

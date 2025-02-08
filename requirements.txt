@@ -1,3 +1,5 @@
 dash==2.18.2
-dash-cytoscape==1.0.2
-numpy
+dash_cytoscape~=1.0.2
+numpy~=2.2.2
+opencv-python-headless
+
