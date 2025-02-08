@@ -139,13 +139,11 @@ def run_partial_inference(openvino_bin, model_xml, node_name, ref_plugin, main_p
     sub_model = ov.Model([intermediate_nodes[0]], parameters, "sub_model")
 
     # TODO figure out a way of differentiating between an image and a binary input to consider preprocessing
-    img = cv2.imread(input_path)
-    print(img.shape)
+    img = cv2.imread(input_path, cv2.IMREAD_COLOR_RGB)
     if img is None:
         print("Failed to load image.")
         return
 
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     img = np.expand_dims(img, axis=0)
 
     # Use runtime info from the original model because cut model loses that information for some reason
