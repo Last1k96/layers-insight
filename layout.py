@@ -136,16 +136,18 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
                 # The drag handle can be its own sub-div on the right edge
                 html.Div(id="left-drag-handle", className="drag-handle-left"),
-
-                dcc.Store(id='current-node-store'),
             ], style={"margin": "10px"})
         ], id="left-panel",
-           className="panel-left",
+            className="panel-left",
         ),
         html.Div([
             html.H3("Partial Inference Output"),
             html.Div(id="right-drag-handle", className="drag-handle-right")
         ], id="right-panel",
             className="panel-right"),
+
+        dcc.Interval(id='update-interval', interval=500, n_intervals=0),
+        dcc.Store(id='last-clicked-node', data=None),
+
     ], className="main-container",
         style={"position": "relative", "width": "100vw", "height": "100vh", "background-color": "#404040"})

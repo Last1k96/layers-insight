@@ -1,70 +1,115 @@
+import copy
 import os
 
 from dash import no_update, callback_context
 from dash.dependencies import Input, Output, State
-from run_inference import get_available_plugins, run_partial_inference
+from run_inference import get_available_plugins
 
-from cache import result_cache, task_queue, lock
+from cache import result_cache, task_queue, lock, processing_nodes
 
 
 def register_callbacks(app):
-
     @app.callback(
-        Output('current-node-store', 'data'),
         Output('right-panel', 'children'),
-        Output('ir-graph', 'elements'),  # Output for graph elements
+        Output('ir-graph', 'elements'),
+        Output('last-clicked-node', 'data'),  # We'll update this when a node is clicked
         Input('ir-graph', 'tapNode'),
+        Input('update-interval', 'n_intervals'),
+        State('ir-graph', 'elements'),
         State('openvino-bin-input', 'value'),
         State('model-xml-input', 'value'),
         State('reference-plugin-dropdown', 'value'),
         State('other-plugin-dropdown', 'value'),
         State('input-file-input', 'value'),
-        State('current-node-store', 'data'),
-        State('ir-graph', 'elements'),  # State for current graph elements
+        State('last-clicked-node', 'data'),  # We'll read the last clicked node state
         prevent_initial_call=True
     )
-    def on_node_click(clicked_node, openvino_bin, model_xml,
-                               ref_plugin, main_plugin, input_path, current_node, elements):
+    def handle_node_click_and_interval(
+            tap_node, n_intervals,
+            elements,
+            openvino_bin, model_xml,
+            ref_plugin, main_plugin, input_path,
+            last_clicked_node
+    ):
         ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update
+
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
-        if triggered_id == 'ir-graph':  # Node Click
-            if not clicked_node:
-                return no_update, "Click a node", no_update
+        if triggered_id == 'ir-graph':
+            # User just clicked a node
+            if not tap_node:
+                # No node info
+                return "Click a node", no_update, no_update
 
-            layer_name = clicked_node['data']['layer_name']
+            layer_name = tap_node['data']['layer_name']
 
             with lock:
                 cached_result = result_cache.get(layer_name)
 
-            if cached_result: #If already computed
-                return layer_name, f"Partial Inference result: {cached_result}", update_node_style(elements, layer_name, 'green')
+            if cached_result:
+                # We already have a result
+                return f"Partial Inference result: {cached_result}", elements, layer_name
 
             if not all([openvino_bin, model_xml, ref_plugin, main_plugin, input_path]):
-                return no_update, "Missing required parameters", no_update
+                return "Missing required parameters for inference", no_update, layer_name
 
-            # Mark node as processing (orange border)
-            elements = update_node_style(elements, layer_name, 'orange')
+            updated_elements = update_node_style(elements, layer_name, 'orange')
+
+            with lock:
+                processing_nodes.add(layer_name)
 
             task_queue.put((layer_name, openvino_bin, model_xml,
                             ref_plugin, main_plugin, input_path))
 
-            return layer_name, "Processing...", elements  # Return updated elements
+            # Set the last-clicked-node in the Store to this layer_name
+            return "Processing...", updated_elements, layer_name
 
+        elif triggered_id == 'update-interval':
+            # Periodic check to see if any nodes are done
+            have_updated_last_clicked = False
+            with lock:
+                if len(processing_nodes) == 0:
+                    return no_update, no_update, no_update
+
+                finished = []
+                for processed_layer_name in list(processing_nodes):
+                    if processed_layer_name in result_cache:
+                        finished.append(processed_layer_name)
+
+                if not finished:
+                    return no_update, no_update, no_update
+
+                # If we do get here, then the last clicked node has finished
+                for processed_layer_name in finished:
+                    result = result_cache[processed_layer_name]
+
+                    color = 'green'
+                    if isinstance(result, str) and result.startswith('Error:'):
+                        color = 'red'
+
+                    elements = update_node_style(elements, processed_layer_name, color)
+                    processing_nodes.remove(processed_layer_name)
+                    if processed_layer_name == last_clicked_node:
+                        have_updated_last_clicked = True
+
+            if have_updated_last_clicked:
+                return f"Partial Inference result: {result}", elements, last_clicked_node
+            else:
+                return no_update, elements, last_clicked_node
+
+        # Fallback
         return no_update, no_update, no_update
 
 
 
     def update_node_style(elements, layer_name, color):
-        new_elements = []  # Create a new list to avoid modifying the original directly.
         for element in elements:
-            new_element = element.copy() #Create a copy of the element
-            if 'layer_name' in new_element['data'] and new_element['data']['layer_name'] == layer_name:
-                new_element['data']['border_color'] = color
+            if 'layer_name' in element['data'] and element['data']['layer_name'] == layer_name:
+                element['data']['border_color'] = color
 
-            new_elements.append(new_element)
-
-        return new_elements
+        return elements
 
     @app.callback(
         Output('available-plugins-list', 'children'),
