@@ -1,60 +1,10 @@
 import os
 
-from dash import no_update, callback_context
+from dash import no_update, callback
 from dash.dependencies import Input, Output, State
 from run_inference import get_available_plugins, run_partial_inference
 
-from cache import result_cache, task_queue, lock
-
-
 def register_callbacks(app):
-
-    @app.callback(
-        Output('current-node-store', 'data'),
-        Output('right-panel', 'children'),
-        Output('ir-graph', 'elements'),  # Output for graph elements
-        Input('ir-graph', 'tapNode'),
-        State('openvino-bin-input', 'value'),
-        State('model-xml-input', 'value'),
-        State('reference-plugin-dropdown', 'value'),
-        State('other-plugin-dropdown', 'value'),
-        State('input-file-input', 'value'),
-        State('current-node-store', 'data'),
-        State('ir-graph', 'elements'),  # State for current graph elements
-        prevent_initial_call=True
-    )
-    def on_node_click(clicked_node, openvino_bin, model_xml,
-                               ref_plugin, main_plugin, input_path, current_node, elements):
-        ctx = callback_context
-        triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-        if triggered_id == 'ir-graph':  # Node Click
-            if not clicked_node:
-                return no_update, "Click a node", no_update
-
-            layer_name = clicked_node['data']['layer_name']
-
-            with lock:
-                cached_result = result_cache.get(layer_name)
-
-            if cached_result: #If already computed
-                return layer_name, f"Partial Inference result: {cached_result}", update_node_style(elements, layer_name, 'green')
-
-            if not all([openvino_bin, model_xml, ref_plugin, main_plugin, input_path]):
-                return no_update, "Missing required parameters", no_update
-
-            # Mark node as processing (orange border)
-            elements = update_node_style(elements, layer_name, 'orange')
-
-            task_queue.put((layer_name, openvino_bin, model_xml,
-                            ref_plugin, main_plugin, input_path))
-
-            return layer_name, "Processing...", elements  # Return updated elements
-
-        return no_update, no_update, no_update
-
-
-
     def update_node_style(elements, layer_name, color):
         new_elements = []  # Create a new list to avoid modifying the original directly.
         for element in elements:
@@ -65,6 +15,48 @@ def register_callbacks(app):
             new_elements.append(new_element)
 
         return new_elements
+
+    # Define the callback using background=True.
+    # This callback is triggered when a node is tapped.
+    @callback(
+        Output('current-node-store', 'data'),
+        Output('right-panel', 'children'),
+        Output('ir-graph', 'elements'),
+        Input('ir-graph', 'tapNode'),
+        State('openvino-bin-input', 'value'),
+        State('model-xml-input', 'value'),
+        State('reference-plugin-dropdown', 'value'),
+        State('other-plugin-dropdown', 'value'),
+        State('input-file-input', 'value'),
+        State('current-node-store', 'data'),
+        State('ir-graph', 'elements'),
+        background=True,  # This tells Dash to run the callback in the background.
+        prevent_initial_call=True
+    )
+    def on_node_click(clicked_node, openvino_bin, model_xml,
+                      ref_plugin, main_plugin, input_path, current_node, elements):
+        # If no node was clicked, do nothing.
+        if not clicked_node:
+            return no_update, "Click a node", no_update
+
+        layer_name = clicked_node['data']['layer_name']
+
+        # Check that all required parameters are provided.
+        if not all([openvino_bin, model_xml, ref_plugin, main_plugin, input_path]):
+            return no_update, "Missing required parameters", no_update
+
+        # Immediately update the node style to indicate processing (orange border).
+        orange_elements = update_node_style(elements, layer_name, 'orange')
+
+        # Now run the heavy work in the background.
+        result = run_partial_inference(openvino_bin, model_xml, layer_name,
+                                       ref_plugin, main_plugin, input_path)
+
+        # After the work is done, update the node style to finished (green border).
+        green_elements = update_node_style(orange_elements, layer_name, 'green')
+
+        # Return the final outputs: current node store, inference result message, and updated graph elements.
+        return layer_name, f"Partial Inference result: {result}", green_elements
 
     @app.callback(
         Output('available-plugins-list', 'children'),
