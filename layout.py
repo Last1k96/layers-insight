@@ -16,13 +16,14 @@ def build_dynamic_stylesheet(elements):
                 'height': 'label',
                 'shape': 'round-rectangle',
                 'border-width': '1',
-                'border-color': '#000',
+                'border-color': 'data(border_color)',
                 'padding': '6px',
                 'font-size': '12px',
                 'font-family': 'sans-serif',
                 'text-valign': 'center',
                 'text-halign': 'center',
                 'background-color': '#666',
+                'background-width': '2',
                 'color': '#fff',
             }
         },
@@ -134,7 +135,9 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                 html.Div(id='available-plugins-list', style={"whiteSpace": "pre-line"}),
 
                 # The drag handle can be its own sub-div on the right edge
-                html.Div(id="left-drag-handle", className="drag-handle-left")
+                html.Div(id="left-drag-handle", className="drag-handle-left"),
+
+                dcc.Store(id='current-node-store'),
             ], style={"margin": "10px"})
         ], id="left-panel",
            className="panel-left",
