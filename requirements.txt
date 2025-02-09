@@ -1,7 +1,5 @@
 dash==2.18.2
 dash_cytoscape~=1.0.2
-diskcache
-dash[diskcache]>=2.9.0
-numpy
+numpy~=2.2.2
 opencv-python-headless
 

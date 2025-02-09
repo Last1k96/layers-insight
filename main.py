@@ -1,8 +1,8 @@
 # run.py
 
 import socket
+import sys
 from app import create_app
-
 
 
 def get_local_ip():
@@ -31,7 +31,7 @@ def run_app():
     url = f"http://{local_ip}:{port}"
 
     print(f"Starting Dash server. Visit {url} in your browser (or http://localhost:{port}).")
-    app.run(debug=True, host='0.0.0.0', port=port)
+    app.run_server(debug=True, host='0.0.0.0', port=port)
 
 
 if __name__ == '__main__':

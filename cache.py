@@ -1,10 +1,9 @@
 from queue import Queue
 import threading
-import diskcache as dc
+from concurrent.futures import ThreadPoolExecutor
 
 # Shared resources
 result_cache = {}
 task_queue = Queue()
 lock = threading.Lock()
-
-cache = dc.Cache("./cache")
+executor = ThreadPoolExecutor(max_workers=1)
