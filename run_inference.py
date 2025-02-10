@@ -165,10 +165,10 @@ def run_partial_inference(openvino_bin, model_xml, node_name, ref_plugin, main_p
 
     def get_stats(data):
         res = str()
-        res += "Min: " + str(np.min(main)) + "\r\n"
-        res += "Max: " + str(np.max(main)) + "\r\n"
-        res += "Mean: " + str(np.mean(main)) + "\r\n"
-        res += "Std: " + str(np.std(main)) + "\r\n"
+        res += "Min: " + str(np.min(data)) + "\r\n"
+        res += "Max: " + str(np.max(data)) + "\r\n"
+        res += "Mean: " + str(np.mean(data)) + "\r\n"
+        res += "Std: " + str(np.std(data)) + "\r\n"
         return res
 
     stats = str()
