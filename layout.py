@@ -1,8 +1,12 @@
+import os
 import random
 from dash import dcc, html, Input, Output, State
 import dash_cytoscape as cyto
 from openvino_graph import parse_openvino_ir
 from known_ops import OPENVINO_OP_COLORS_DARK
+import dash_bootstrap_components as dbc
+
+from run_inference import get_available_plugins
 
 
 def build_dynamic_stylesheet(elements):
@@ -83,14 +87,127 @@ def build_dynamic_stylesheet(elements):
     return stylesheet
 
 
+def read_openvino_ir(model_xml_path):
+    from openvino import Core
+    core = Core()
+    model = core.read_model(model_xml_path)  # Read the IR model from disk
+
+    inputs_info = []
+    for input_node in model.inputs:
+        input_name = input_node.get_any_name()  # Get the input tensor name
+        input_shape = list(input_node.shape)    # Convert shape to a Python list
+        inputs_info.append({"name": input_name, "shape": input_shape})
+
+    return inputs_info
+
+
+def build_model_input_fields(model_path, inputs_path):
+    model_inputs = read_openvino_ir(model_path)
+
+    if len(inputs_path) == 0 or len(inputs_path) != len(model_inputs):
+        inputs_path = [""] * len(model_inputs)
+
+    # We'll build a list of Dash components and then wrap them in a Div at the end
+    components = []
+    for index, (model_input, input_path) in enumerate(zip(model_inputs, inputs_path), start=1):
+        name = model_input["name"]
+        shape = model_input["shape"]
+
+        components.append(
+            dbc.Label(f"Input #{index}: '{name}' with shape {shape}")
+        )
+        # Input field
+        components.append(
+            dbc.Input(
+                id=f"model-input-{name}",
+                type="text",
+                placeholder=f"Enter path for {name}",
+                value=input_path,
+            )
+        )
+        # Optional spacing
+        components.append(html.Br())
+
+    return html.Div(components)
+
 def create_layout(openvino_path, ir_xml_path, inputs_path):
     elements = parse_openvino_ir(ir_xml_path)
     dynamic_stylesheet = build_dynamic_stylesheet(elements)
+
+    if openvino_path and os.path.exists(openvino_path):
+        discovered_plugins = get_available_plugins(openvino_path)
+    else:
+        discovered_plugins = []
+
+    if "CPU" in discovered_plugins:
+        plugin1_value = "CPU"
+    else:
+        plugin1_value = discovered_plugins[0] if discovered_plugins else None
+
+    non_cpu_plugins = [p for p in discovered_plugins if p != "CPU"]
+    plugin2_value = non_cpu_plugins[0] if non_cpu_plugins else None
 
     table_data = [
         {"id": "model-xml-input", "label": "Model XML Path", "value": ir_xml_path},
         {"id": "input-file-input", "label": "Input file", "value": inputs_path[0]},
     ]
+
+    open_button = dbc.Button(
+        "⚙",
+        id="open-modal",
+        color="primary",
+        n_clicks=0,
+        style={"position": "absolute", "top": "20px", "left": "1000px"}
+    )
+
+    config_modal = dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle("Inference Configuration")),
+            dbc.ModalBody(
+                [
+                    # Model XML Path
+                    dbc.Label("Path to model.xml"),
+                    dbc.Input(id="model-xml-path", value=ir_xml_path, placeholder="Enter path to model.xml"),
+                    html.Br(),
+
+                    # Input files (example: two separate fields)
+                    build_model_input_fields(ir_xml_path, inputs_path),
+
+                    # OpenVINO bin folder
+                    dbc.Label("Path to OpenVINO bin folder"),
+                    dbc.Input(id="ov-bin-path", value=openvino_path, placeholder="Path to OpenVINO bin/ folder"),
+                    html.Br(),
+
+                    # Find Plugins Button
+                    dbc.Button("Find Plugins", id="find-plugins-button", color="primary", n_clicks=0),
+                    html.Br(),
+                    html.Br(),
+
+                    # Two Dropdowns for plugin selection
+                    dbc.Label("Reference Plugin"),
+                    dcc.Dropdown(
+                        id="plugin1-dropdown",
+                        options=discovered_plugins,
+                        value=plugin1_value,
+                        clearable=False,
+                    ),
+                    html.Br(),
+                    dbc.Label("Main Plugin"),
+                    dcc.Dropdown(
+                        id="plugin2-dropdown",
+                        options=discovered_plugins,
+                        value=plugin2_value,
+                        clearable=False,
+                    ),
+                ]
+            ),
+            dbc.ModalFooter(
+                dbc.Button("Close", id="close-modal", className="ms-auto", n_clicks=0)
+            ),
+        ],
+        id="config-modal",
+        is_open=False,  # Modal starts closed
+    )
 
     max_label_width = max(len(row["label"]) for row in table_data) * 10  # Approx. pixel estimation
 
@@ -111,6 +228,8 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             wheelSensitivity=0.2,  # Adjusts the zoom speed when scrolling
             stylesheet=dynamic_stylesheet
         ),
+        open_button,
+        config_modal,
         html.Div([
             html.Div([
                 html.Div([
@@ -147,7 +266,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             className="panel-right"),
 
         dcc.Interval(id='update-interval', interval=500, n_intervals=0),
-        dcc.Store(id='last-clicked-node', data=None),
+        dcc.Store(id='last-clicked-node', data=None), # TODO use cyto selectedNodeData instead
 
     ], className="main-container",
         style={"position": "relative", "width": "100vw", "height": "100vh", "background-color": "#404040"})

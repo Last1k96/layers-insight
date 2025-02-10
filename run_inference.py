@@ -35,6 +35,10 @@ def get_available_plugins(openvino_bin):
     return core.available_devices
 
 
+def get_input_names_from_model(model_path):
+    pass
+
+
 def do_image_preprocessing(img, input_shape, layout, mean_vals, scale_vals, reverse_channels):
     if layout and layout == "nhwc":
         target_h, target_w = input_shape[1], input_shape[2]
@@ -132,26 +136,26 @@ def run_partial_inference(openvino_bin, model_xml, node_name, ref_plugin, main_p
     sub_model = ov.Model([intermediate_nodes[0]], parameters, "sub_model")
 
     # TODO figure out a way of differentiating between an image and a binary input to consider preprocessing
-    # img = cv2.imread(input_path, cv2.IMREAD_COLOR_RGB)
-    # if img is None:
-    #     print("Failed to load image.")
-    #     return
-    #
-    # img = np.expand_dims(img, axis=0)
-    #
-    # # Use runtime info from the original model because cut model loses that information for some reason
-    # model_rt = model.get_rt_info()
-    # sub_model = configure_preprocessor(sub_model, model_rt, img)
-    # inputs = [img]
+    img = cv2.imread(input_path, cv2.IMREAD_COLOR_RGB)
+    if img is None:
+        print("Failed to load image.")
+        return
+
+    img = np.expand_dims(img, axis=0)
+
+    # Use runtime info from the original model because cut model loses that information for some reason
+    model_rt = model.get_rt_info()
+    sub_model = configure_preprocessor(sub_model, model_rt, img)
+    inputs = [img]
 
     # Define dimensions
-    batch_size = 1
-    seq_length = 384
-    vocab_size = 30522  # Typical BERT vocab size
-    input_ids = np.random.randint(0, vocab_size, size=(batch_size, seq_length), dtype=np.int32)
-    attention_mask = np.ones((batch_size, seq_length), dtype=np.int32)
-    token_type_ids = np.zeros((batch_size, seq_length), dtype=np.int32)
-    inputs = [input_ids, attention_mask, token_type_ids]
+    # batch_size = 1
+    # seq_length = 384
+    # vocab_size = 30522  # Typical BERT vocab size
+    # input_ids = np.random.randint(0, vocab_size, size=(batch_size, seq_length), dtype=np.int32)
+    # attention_mask = np.ones((batch_size, seq_length), dtype=np.int32)
+    # token_type_ids = np.zeros((batch_size, seq_length), dtype=np.int32)
+    # inputs = [input_ids, attention_mask, token_type_ids]
 
     results = []
     for plugin in [main_plugin, ref_plugin]:

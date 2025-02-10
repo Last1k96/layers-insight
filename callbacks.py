@@ -3,6 +3,8 @@ import os
 
 from dash import no_update, callback_context
 from dash.dependencies import Input, Output, State
+
+from layout import build_model_input_fields
 from run_inference import get_available_plugins
 
 from cache import result_cache, task_queue, lock, processing_nodes
@@ -102,7 +104,15 @@ def register_callbacks(app):
         # Fallback
         return no_update, no_update, no_update
 
-
+    @app.callback(
+        Output("config-modal", "is_open"),
+        [Input("open-modal", "n_clicks"), Input("close-modal", "n_clicks")],
+        [State("config-modal", "is_open")],
+    )
+    def toggle_modal(open_clicks, close_clicks, is_open):
+        if open_clicks or close_clicks:
+            return not is_open
+        return is_open
 
     def update_node_style(elements, layer_name, color):
         for element in elements:
@@ -110,6 +120,17 @@ def register_callbacks(app):
                 element['data']['border_color'] = color
 
         return elements
+
+    # @app.callback(
+    #     Output("dynamic-input-fields", "children"),
+    #     Input("model-xml-path", "value"),
+    #     prevent_initial_call=True
+    # )
+    # def update_model_inputs(model_path):
+    #     """Whenever the model-path input changes, rebuild the model input fields."""
+    #     if not model_path:
+    #         return []
+    #     return build_model_input_fields(model_path)
 
     @app.callback(
         Output('available-plugins-list', 'children'),
