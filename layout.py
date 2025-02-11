@@ -107,7 +107,6 @@ def build_model_input_fields(model_path, inputs_path):
     if len(inputs_path) == 0 or len(inputs_path) != len(model_inputs):
         inputs_path = [""] * len(model_inputs)
 
-    # We'll build a list of Dash components and then wrap them in a Div at the end
     components = []
     for index, (model_input, input_path) in enumerate(zip(model_inputs, inputs_path), start=1):
         name = model_input["name"]
@@ -116,16 +115,15 @@ def build_model_input_fields(model_path, inputs_path):
         components.append(
             dbc.Label(f"Input #{index}: '{name}' with shape {shape}")
         )
-        # Input field
+        # Use a *pattern-matching* dictionary for `id`
         components.append(
             dbc.Input(
-                id=f"model-input-{name}",
+                id={"type": "model-input", "name": name},  # <--- Pattern-matching ID
                 type="text",
                 placeholder=f"Enter path for {name}",
                 value=input_path,
             )
         )
-        # Optional spacing
         components.append(html.Br())
 
     return html.Div(components)
@@ -148,17 +146,9 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
     plugin2_value = non_cpu_plugins[0] if non_cpu_plugins else None
 
     table_data = [
-        {"id": "model-xml-input", "label": "Model XML Path", "value": ir_xml_path},
+        {"id": "model-xml-path", "label": "Model XML Path", "value": ir_xml_path},
         {"id": "input-file-input", "label": "Input file", "value": inputs_path[0]},
     ]
-
-    open_button = dbc.Button(
-        "⚙",
-        id="open-modal",
-        color="primary",
-        n_clicks=0,
-        style={"position": "absolute", "top": "20px", "left": "1000px"}
-    )
 
     config_modal = dbc.Modal(
         [
@@ -186,7 +176,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                     # Two Dropdowns for plugin selection
                     dbc.Label("Reference Plugin"),
                     dcc.Dropdown(
-                        id="plugin1-dropdown",
+                        id="reference-plugin-dropdown",
                         options=discovered_plugins,
                         value=plugin1_value,
                         clearable=False,
@@ -194,7 +184,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                     html.Br(),
                     dbc.Label("Main Plugin"),
                     dcc.Dropdown(
-                        id="plugin2-dropdown",
+                        id="main-plugin-dropdown",
                         options=discovered_plugins,
                         value=plugin2_value,
                         clearable=False,
@@ -208,6 +198,17 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         id="config-modal",
         is_open=False,  # Modal starts closed
     )
+
+    open_button = dbc.Button(
+        "⚙",
+        id="open-modal",
+        color="primary",
+        n_clicks=0,
+        style={"position": "absolute", "top": "20px", "left": "1000px"}
+    )
+
+    plugin_store = dcc.Store(id="plugin-store", data=[])
+    config_store = dcc.Store(id="config-store", data={})
 
     max_label_width = max(len(row["label"]) for row in table_data) * 10  # Approx. pixel estimation
 
@@ -230,35 +231,8 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         ),
         open_button,
         config_modal,
-        html.Div([
-            html.Div([
-                html.Div([
-                    html.Div([
-                        html.Div(row["label"], style={"whiteSpace": "nowrap", "width": f"{max_label_width}px"}),
-                        html.Div(dcc.Input(id=row["id"], type="text", value=row["value"], style={"width": "100%"})),
-                    ])
-                    for row in table_data
-                ]),
-
-                html.Div("Reference Plugin:"),
-                dcc.Dropdown(id='reference-plugin-dropdown', options=[], value=None, clearable=False),
-
-                html.Div("Other Plugin:"),
-                dcc.Dropdown(id='other-plugin-dropdown', options=[], value=None, clearable=False),
-
-                html.Button("Create Workspace", id='create-workspace-btn'),
-                html.Label("OpenVINO bin folder:"),
-                dcc.Input(id='openvino-bin-input', type='text', placeholder='/path/to/openvino_bin',
-                          value=openvino_path),
-                html.Button("Find Plugins", id='find-plugins-btn'),
-                html.Div(id='available-plugins-list', style={"whiteSpace": "pre-line"}),
-
-                # The drag handle can be its own sub-div on the right edge
-                html.Div(id="left-drag-handle", className="drag-handle-left"),
-            ], style={"margin": "10px"})
-        ], id="left-panel",
-            className="panel-left",
-        ),
+        plugin_store,
+        config_store,
         html.Div([
             html.H3("Partial Inference Output"),
             html.Div(id="right-drag-handle", className="drag-handle-right")

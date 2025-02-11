@@ -1,8 +1,8 @@
 import copy
 import os
 
-from dash import no_update, callback_context
-from dash.dependencies import Input, Output, State
+from dash import no_update, callback_context, exceptions
+from dash.dependencies import Input, Output, State, ALL
 
 from layout import build_model_input_fields
 from run_inference import get_available_plugins
@@ -14,25 +14,15 @@ def register_callbacks(app):
     @app.callback(
         Output('right-panel', 'children'),
         Output('ir-graph', 'elements'),
-        Output('last-clicked-node', 'data'),  # We'll update this when a node is clicked
+        Output('last-clicked-node', 'data'),
         Input('ir-graph', 'tapNode'),
         Input('update-interval', 'n_intervals'),
         State('ir-graph', 'elements'),
-        State('openvino-bin-input', 'value'),
-        State('model-xml-input', 'value'),
-        State('reference-plugin-dropdown', 'value'),
-        State('other-plugin-dropdown', 'value'),
-        State('input-file-input', 'value'),
-        State('last-clicked-node', 'data'),  # We'll read the last clicked node state
+        State('config-store', 'data'),  # <--- now read from config-store
+        State('last-clicked-node', 'data'),
         prevent_initial_call=True
     )
-    def handle_node_click_and_interval(
-            tap_node, n_intervals,
-            elements,
-            openvino_bin, model_xml,
-            ref_plugin, main_plugin, input_path,
-            last_clicked_node
-    ):
+    def handle_node_click_and_interval(tap_node, n_intervals, elements, config_data, last_clicked_node):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update
@@ -40,65 +30,80 @@ def register_callbacks(app):
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
         if triggered_id == 'ir-graph':
-            # User just clicked a node
+            # user clicked a node
             if not tap_node:
-                # No node info
                 return "Click a node", no_update, no_update
 
             layer_name = tap_node['data']['layer_name']
 
+            # Check if we already have a cached result
             with lock:
                 cached_result = result_cache.get(layer_name)
-
             if cached_result:
-                # We already have a result
                 return f"Partial Inference result: {cached_result}", elements, layer_name
 
-            if not all([openvino_bin, model_xml, ref_plugin, main_plugin, input_path]):
-                return "Missing required parameters for inference", no_update, layer_name
+            # Basic validation
+            if not config_data:
+                return "Config not set; please configure the model first.", no_update, layer_name
 
+            # Extract the fields you need
+            openvino_bin = config_data.get("ov_bin_path", "")
+            model_xml = config_data.get("model_xml", "")
+            ref_plugin = config_data.get("plugin1", "")
+            main_plugin = config_data.get("plugin2", "")
+            model_inputs = config_data.get("model_inputs", [])  # could be a list or dict
+
+            # Are any mandatory fields missing?
+            if not all([openvino_bin, model_xml, ref_plugin, main_plugin]):
+                return "Missing required parameters for partial inference", no_update, layer_name
+
+            # Mark the node as 'processing'
             updated_elements = update_node_style(elements, layer_name, 'orange')
-
             with lock:
                 processing_nodes.add(layer_name)
 
-            task_queue.put((layer_name, openvino_bin, model_xml,
-                            ref_plugin, main_plugin, input_path))
+            # Enqueue the entire config data plus the layer_name
+            # This way, process_tasks() can see all the inputs
+            task_queue.put((layer_name, config_data))
 
-            # Set the last-clicked-node in the Store to this layer_name
             return "Processing...", updated_elements, layer_name
+
+
 
         elif triggered_id == 'update-interval':
             # Periodic check to see if any nodes are done
-            have_updated_last_clicked = False
             with lock:
-                if len(processing_nodes) == 0:
+                if not processing_nodes:
                     return no_update, no_update, no_update
 
-                finished = []
-                for processed_layer_name in list(processing_nodes):
-                    if processed_layer_name in result_cache:
-                        finished.append(processed_layer_name)
+                # Gather all nodes that have completed inference
+                finished = [ln for ln in processing_nodes if ln in result_cache]
 
                 if not finished:
                     return no_update, no_update, no_update
 
-                # If we do get here, then the last clicked node has finished
+                last_node_result = None
+
+                # Update each finished node's color and remove from 'processing_nodes'
                 for processed_layer_name in finished:
                     result = result_cache[processed_layer_name]
-
                     color = 'green'
+
                     if isinstance(result, str) and result.startswith('Error:'):
                         color = 'red'
 
                     elements = update_node_style(elements, processed_layer_name, color)
                     processing_nodes.remove(processed_layer_name)
-                    if processed_layer_name == last_clicked_node:
-                        have_updated_last_clicked = True
 
-            if have_updated_last_clicked:
-                return f"Partial Inference result: {result}", elements, last_clicked_node
+                    # If this finished node is the "last clicked" node, keep track of its result
+                    if processed_layer_name == last_clicked_node:
+                        last_node_result = result
+
+            # If the last-clicked node just finished, display its result text
+            if last_node_result is not None:
+                return f"Partial Inference result: {last_node_result}", elements, last_clicked_node
             else:
+                # We have updated some nodes, but not the last-clicked one
                 return no_update, elements, last_clicked_node
 
         # Fallback
@@ -133,13 +138,13 @@ def register_callbacks(app):
     #     return build_model_input_fields(model_path)
 
     @app.callback(
-        Output('available-plugins-list', 'children'),
+        Output("plugin-store", "data"),
         Output('reference-plugin-dropdown', 'options'),
-        Output('other-plugin-dropdown', 'options'),
+        Output('main-plugin-dropdown', 'options'),
         Output('reference-plugin-dropdown', 'value'),
-        Output('other-plugin-dropdown', 'value'),
-        Input('find-plugins-btn', 'n_clicks'),
-        State('openvino-bin-input', 'value'),
+        Output('main-plugin-dropdown', 'value'),
+        Input('find-plugins-button', 'n_clicks'),
+        State('ov-bin-path', 'value'),
         prevent_initial_call=False
     )
     def find_plugins(n_clicks, openvino_bin):
@@ -160,7 +165,47 @@ def register_callbacks(app):
         return (
             "",  # Text listing of plugins
             device_options,  # reference-plugin-dropdown options
-            device_options,  # other-plugin-dropdown options
+            device_options,  # main-plugin-dropdown options
             ref_value,  # reference-plugin-dropdown value
-            other_value  # other-plugin-dropdown value
+            other_value  # main-plugin-dropdown value
         )
+
+    @app.callback(
+        Output("config-store", "data"),
+        Input("close-modal", "n_clicks"),  # or "save-button", whichever you prefer
+        [
+            State("model-xml-path", "value"),
+            State("ov-bin-path", "value"),
+            State("reference-plugin-dropdown", "value"),
+            State("main-plugin-dropdown", "value"),
+            State({"type": "model-input", "name": ALL}, "value"),  # Grab ALL dynamic inputs
+            State("config-store", "data"),
+        ],
+        prevent_initial_call=True
+    )
+    def save_config(
+            n_clicks_close,
+            model_xml,
+            bin_path,
+            ref_plugin,
+            other_plugin,
+            all_input_values,  # A list of strings
+            current_data
+    ):
+        # If the close button wasn't clicked, don't update anything
+        if not n_clicks_close:
+            raise exceptions.PreventUpdate
+
+        updated_data = current_data.copy() if current_data else {}
+
+        # Store "static" fields
+        updated_data["model_xml"] = model_xml
+        updated_data["ov_bin_path"] = bin_path
+        updated_data["plugin1"] = ref_plugin
+        updated_data["plugin2"] = other_plugin
+
+        # Store the dynamic input paths as a simple list
+        # (Optionally, you can also store them with their names; see below)
+        updated_data["model_inputs"] = all_input_values
+
+        return updated_data

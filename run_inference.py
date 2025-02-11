@@ -123,17 +123,20 @@ def configure_preprocessor(model, model_rt, img):
     return preprocessed_model
 
 
-def run_partial_inference(openvino_bin, model_xml, node_name, ref_plugin, main_plugin, input_path):
+def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs):
     ov, core = get_ov_core(openvino_bin)
     model = core.read_model(model=model_xml)
 
-    intermediate_nodes = [op for op in model.get_ops() if op.get_friendly_name() == node_name]
+    intermediate_nodes = [op for op in model.get_ops() if op.get_friendly_name() == layer_name]
     if len(intermediate_nodes) != 1:
-        print(f"Failed to find one node '{node_name}'")
+        print(f"Failed to find one node '{layer_name}'")
         return
 
     parameters = [inp.get_node() for inp in model.inputs]
     sub_model = ov.Model([intermediate_nodes[0]], parameters, "sub_model")
+
+    # TODO support multiple inputs
+    input_path = model_inputs[0]
 
     # TODO figure out a way of differentiating between an image and a binary input to consider preprocessing
     img = cv2.imread(input_path, cv2.IMREAD_COLOR_RGB)

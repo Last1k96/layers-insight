@@ -18,10 +18,30 @@ def process_tasks():
         if task is None:
             break
         try:
-            layer_name, openvino_bin, model_xml, ref_plugin, main_plugin, input_path = task
-            result = run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, input_path)
+            # task is now (layer_name, config_data)
+            layer_name, config_data = task
+
+            openvino_bin = config_data.get("ov_bin_path")
+            model_xml = config_data.get("model_xml")
+            ref_plugin = config_data.get("plugin1")
+            main_plugin = config_data.get("plugin2")
+            # This could be a list of input paths or a dict {input_name: path}
+            model_inputs = config_data.get("model_inputs", [])
+
+            # Call your partial inference function
+            # Modify run_partial_inference(...) to accept model_inputs
+            result = run_partial_inference(
+                openvino_bin=openvino_bin,
+                model_xml=model_xml,
+                layer_name=layer_name,
+                ref_plugin=ref_plugin,
+                main_plugin=main_plugin,
+                model_inputs=model_inputs
+            )
+
             with lock:
                 result_cache[layer_name] = result
+
         except Exception as e:
             with lock:
                 result_cache[layer_name] = f"Error: {str(e)}"

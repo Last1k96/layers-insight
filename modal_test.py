@@ -40,7 +40,7 @@ config_modal = dbc.Modal(
                 # Two Dropdowns for plugin selection
                 dbc.Label("Plugin #1"),
                 dcc.Dropdown(
-                    id="plugin1-dropdown",
+                    id="reference-plugin-dropdown",
                     options=[],
                     value=None,
                     placeholder="Select plugin #1"
@@ -48,7 +48,7 @@ config_modal = dbc.Modal(
                 html.Br(),
                 dbc.Label("Plugin #2"),
                 dcc.Dropdown(
-                    id="plugin2-dropdown",
+                    id="main-plugin-dropdown",
                     options=[],
                     value=None,
                     placeholder="Select plugin #2"
@@ -141,10 +141,10 @@ def get_available_plugins(openvino_bin):
 @app.callback(
     [
         Output("plugin-store", "data"),
-        Output("plugin1-dropdown", "options"),
-        Output("plugin2-dropdown", "options"),
-        Output("plugin1-dropdown", "value"),
-        Output("plugin2-dropdown", "value"),
+        Output("reference-plugin-dropdown", "options"),
+        Output("main-plugin-dropdown", "options"),
+        Output("reference-plugin-dropdown", "value"),
+        Output("main-plugin-dropdown", "value"),
     ],
     Input("find-plugins-button", "n_clicks"),
     State("ov-bin-path", "value"),
@@ -170,10 +170,10 @@ def find_plugins(n_clicks, ov_bin_path):
 
     return [
         discovered_plugins,  # plugin-store.data
-        plugin_options,  # plugin1-dropdown.options
-        plugin_options,  # plugin2-dropdown.options
-        plugin1_value,  # plugin1-dropdown.value
-        plugin2_value,  # plugin2-dropdown.value
+        plugin_options,  # reference-plugin-dropdown.options
+        plugin_options,  # main-plugin-dropdown.options
+        plugin1_value,  # reference-plugin-dropdown.value
+        plugin2_value,  # main-plugin-dropdown.value
     ]
 
 
@@ -186,8 +186,8 @@ def find_plugins(n_clicks, ov_bin_path):
         State("input-file-1", "value"),
         State("input-file-2", "value"),
         State("ov-bin-path", "value"),
-        State("plugin1-dropdown", "value"),
-        State("plugin2-dropdown", "value"),
+        State("reference-plugin-dropdown", "value"),
+        State("main-plugin-dropdown", "value"),
         State("config-store", "data"),
     ],
     prevent_initial_call=True
