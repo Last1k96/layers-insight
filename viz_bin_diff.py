@@ -138,12 +138,6 @@ def plot_diagnostics(cpu, xpu, n_blocks_per_row=4):
 
 
 def main():
-    """
-    For demonstration, generate two random arrays representing CPU and XPU outputs.
-    The arrays can be in HW, CHW, or NCHW layout.
-
-    Uncomment one of the demo blocks below to test a particular layout.
-    """
     # --- Demo 1: HW layout (2D) ---
     # H, W = 64, 64
     # cpu_input = np.random.rand(H, W).astype(np.float32) * 255
