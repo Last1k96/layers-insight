@@ -21,14 +21,14 @@ def build_dynamic_stylesheet(elements):
                 'width': 'label',
                 'height': 'label',
                 'shape': 'round-rectangle',
-                'border-width': '1',
+                'border-width': '2',
                 'border-color': 'data(border_color)',
                 'padding': '6px',
                 'font-size': '12px',
                 'font-family': 'sans-serif',
                 'text-valign': 'center',
                 'text-halign': 'center',
-                'background-color': '#666',
+                'background-color': 'primary',
                 'background-width': '2',
                 'color': '#fff',
             }
@@ -44,9 +44,9 @@ def build_dynamic_stylesheet(elements):
                 'label': 'data(display_label)',
                 'color': '#DCDCDC',
 
-                'text-outline-opacity': '1',
+                'text-outline-opacity': '0.8',
                 'text-outline-width': '2',
-                'text-outline-color': '#303436',
+                'text-outline-color': '#222',
 
                 'text-background-color': '#888',
                 'text-background-opacity': '0',
@@ -217,7 +217,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
     plugin_store = dcc.Store(id="plugin-store", data=discovered_plugins)
     config_store = dcc.Store(id="config-store", data=initial_config)
-
     return html.Div(
         [
             # Resizable panel, positioned on top of the graph.
@@ -229,7 +228,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                     cyto.Cytoscape(
                         id='ir-graph',
                         elements=elements,
-                        style={"width": "100%", "height": "100%"},
+                        style={"width": "100%", "height": "100%", 'color': 'primary'},
                         layout={
                             'name': 'dagre',
                             'directed': True,
@@ -242,11 +241,15 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                         stylesheet=dynamic_stylesheet
                     ),
                     # Second pane: your right panel
-                    html.Div(
-                        "Panel Content",
-                        id='right-panel',
-                        style={'padding': '10px', 'height': '100%', 'overflow': 'auto', "background-color": "#202020"}
-                    )
+                    html.Div([
+                        html.H3(id="layer-name", children=["Layer Name"]),
+                        html.Div(
+                            "Panel Content",
+                            id='right-panel',
+                            style={'padding': '10px', 'height': '100%', 'overflow': 'auto', 'color': 'secondary'},
+                        )
+                    ])
+
                 ]
             ),
             # Other components (if needed) can be positioned as desired.
@@ -255,13 +258,13 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             plugin_store,
             config_store,
             dcc.Interval(id='update-interval', interval=500, n_intervals=0),
-            dcc.Store(id='last-clicked-node', data=None),
         ],
         className="main-container",
-        style={
-            "position": "relative",
-            "width": "100vw",
-            "height": "100vh",
-            "background-color": "#404040"
-        }
+        # style={
+        #     "position": "relative",
+        #     "width": "100vw",
+        #     "height": "100vh",
+        #     "background-color": "#404040"
+        # }
     )
+

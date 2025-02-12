@@ -48,7 +48,7 @@ METRIC_INFO = {
         "RMSE is recommended when you need a direct, interpretable measure of error magnitude – for instance, in image-processing layers "
         "(e.g., AdaptiveAvgPool, AdaptiveMaxPool, Convolution, ROIAlign) or any layer where the physical units of the output matter."
     ),
-    "Med": (
+    "Median": (
         "Median",
         "Median error. Provides the middle value of the error distribution, offering robustness against outliers. "
         "This metric is particularly helpful for layers where sporadic extreme values can occur – for example, in activation functions like ReLU "
