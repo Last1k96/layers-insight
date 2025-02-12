@@ -224,7 +224,7 @@ def register_callbacks(app):
             fig_3d = plot_volume_tensor(diff)
             print(f"fig_3d time: {time.perf_counter() - start_time:.6f} seconds")
             start_time = time.perf_counter()
-            diag_fig = plot_diagnostics(ref, main)
+            diag_fig = plot_diagnostics(ref, main, n_blocks_per_row=8)
             print(f"plot_diagnostics time: {time.perf_counter() - start_time:.6f} seconds")
             start_time = time.perf_counter()
 
@@ -235,7 +235,7 @@ def register_callbacks(app):
             encoded_diag = base64.b64encode(buf.getvalue()).decode("utf-8")
             diag_img = html.Img(
                 src=f"data:image/png;base64,{encoded_diag}",
-                style={"width": "70%", "display": "block", "margin": "0 auto"}
+                style={"width": "100%", "display": "block", "margin": "0 auto"}
             )
             print(f"b64encode time: {time.perf_counter() - start_time:.6f} seconds")
             return True, fig_3d, diag_img
