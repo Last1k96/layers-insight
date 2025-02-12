@@ -7,6 +7,7 @@ from known_ops import OPENVINO_OP_COLORS_DARK
 import dash_bootstrap_components as dbc
 
 from run_inference import get_available_plugins
+from callbacks import update_config
 
 
 def build_dynamic_stylesheet(elements):
@@ -95,7 +96,7 @@ def read_openvino_ir(model_xml_path):
     inputs_info = []
     for input_node in model.inputs:
         input_name = input_node.get_any_name()  # Get the input tensor name
-        input_shape = list(input_node.shape)    # Convert shape to a Python list
+        input_shape = list(input_node.shape)  # Convert shape to a Python list
         inputs_info.append({"name": input_name, "shape": input_shape})
 
     return inputs_info
@@ -128,6 +129,7 @@ def build_model_input_fields(model_path, inputs_path):
 
     return html.Div(components)
 
+
 def create_layout(openvino_path, ir_xml_path, inputs_path):
     elements = parse_openvino_ir(ir_xml_path)
     dynamic_stylesheet = build_dynamic_stylesheet(elements)
@@ -145,10 +147,16 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
     non_cpu_plugins = [p for p in discovered_plugins if p != "CPU"]
     plugin2_value = non_cpu_plugins[0] if non_cpu_plugins else None
 
-    table_data = [
-        {"id": "model-xml-path", "label": "Model XML Path", "value": ir_xml_path},
-        {"id": "input-file-input", "label": "Input file", "value": inputs_path[0]},
-    ]
+    initial_config = {}
+    update_config(
+        initial_config,
+        ir_xml_path,
+        openvino_path,
+        plugin1_value,
+        plugin2_value,
+        inputs_path
+    )
+    print(f"{initial_config=}")
 
     config_modal = dbc.Modal(
         [
@@ -207,10 +215,8 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         style={"position": "absolute", "top": "20px", "left": "1000px"}
     )
 
-    plugin_store = dcc.Store(id="plugin-store", data=[])
-    config_store = dcc.Store(id="config-store", data={})
-
-    max_label_width = max(len(row["label"]) for row in table_data) * 10  # Approx. pixel estimation
+    plugin_store = dcc.Store(id="plugin-store", data=discovered_plugins)
+    config_store = dcc.Store(id="config-store", data=initial_config)
 
     return html.Div([
         # Cytoscape Graph (Left Side)
@@ -240,7 +246,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             className="panel-right"),
 
         dcc.Interval(id='update-interval', interval=500, n_intervals=0),
-        dcc.Store(id='last-clicked-node', data=None), # TODO use cyto selectedNodeData instead
+        dcc.Store(id='last-clicked-node', data=None),  # TODO use cyto selectedNodeData instead
 
     ], className="main-container",
         style={"position": "relative", "width": "100vw", "height": "100vh", "background-color": "#404040"})

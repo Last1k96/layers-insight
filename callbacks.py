@@ -4,11 +4,12 @@ import os
 from dash import no_update, callback_context, exceptions
 from dash.dependencies import Input, Output, State, ALL
 
-from layout import build_model_input_fields
 from run_inference import get_available_plugins
 
 from cache import result_cache, task_queue, lock, processing_nodes
 
+def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
+    config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
 
 def register_callbacks(app):
     @app.callback(
@@ -67,9 +68,6 @@ def register_callbacks(app):
             task_queue.put((layer_name, config_data))
 
             return "Processing...", updated_elements, layer_name
-
-
-
         elif triggered_id == 'update-interval':
             # Periodic check to see if any nodes are done
             with lock:
@@ -170,6 +168,7 @@ def register_callbacks(app):
             other_value  # main-plugin-dropdown value
         )
 
+
     @app.callback(
         Output("config-store", "data"),
         Input("close-modal", "n_clicks"),  # or "save-button", whichever you prefer
@@ -197,7 +196,9 @@ def register_callbacks(app):
             raise exceptions.PreventUpdate
 
         updated_data = current_data.copy() if current_data else {}
+        #update_config(updated_data, model_xml, bin_path, ref_plugin, other_plugin, all_input_values)
 
+        #print(f"{updated_data=}")
         # Store "static" fields
         updated_data["model_xml"] = model_xml
         updated_data["ov_bin_path"] = bin_path
@@ -207,5 +208,4 @@ def register_callbacks(app):
         # Store the dynamic input paths as a simple list
         # (Optionally, you can also store them with their names; see below)
         updated_data["model_inputs"] = all_input_values
-
         return updated_data

@@ -1,7 +1,6 @@
 import socket
 from app import create_app
 
-
 def get_local_ip():
     """ Helper to get local IP if you want to open from Windows side. """
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
