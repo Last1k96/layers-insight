@@ -171,8 +171,6 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
         inference_results = compiled_model(inputs)
         results.append(inference_results)
 
-    print(results)
-
     # TODO multiple outputs
     for main_key, ref_key in zip(results[0].keys(), results[1].keys()):
         main = results[0][main_key]

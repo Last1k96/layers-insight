@@ -62,7 +62,6 @@ def register_callbacks(app):
                     result = result_cache[processed_layer_name]
                     color = 'green'
 
-                    print(result)
                     is_error = isinstance(result, str) and result.startswith('Error:')
                     if is_error:
                         result_cache.pop(processed_layer_name)
