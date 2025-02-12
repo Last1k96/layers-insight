@@ -17,10 +17,11 @@ def register_callbacks(app):
     @app.callback(
         Output('right-panel', 'children'),
         Output('ir-graph', 'elements'),
+        Output('layer-name', 'children'),
         Input('ir-graph', 'tapNode'),
         Input('update-interval', 'n_intervals'),
         State('ir-graph', 'elements'),
-        State('config-store', 'data'),  # <--- now read from config-store
+        State('config-store', 'data'),
         State('ir-graph', 'selectedNodeData'),
         prevent_initial_call=True
     )
@@ -34,11 +35,12 @@ def register_callbacks(app):
 
             with lock:
                 cached_result = result_cache.get(layer_name)
+
             if cached_result:
-                return cached_result["right-panel"], elements
+                return cached_result["right-panel"], elements, layer_name
 
             if not config_data:
-                return "Config not set; please configure the model first.", no_update
+                return "Error: Config not set; please configure the model first.", no_update, no_update
 
             updated_elements = update_node_style(elements, layer_name, 'orange')
             with lock:
@@ -46,16 +48,13 @@ def register_callbacks(app):
 
             task_queue.put((layer_name, config_data))
 
-            return "Processing...", updated_elements
+            return "Processing...", updated_elements, no_update
         elif triggered_id == 'update-interval':
             with lock:
-                if not processing_nodes:
-                    return no_update, no_update
-
                 finished = [node for node in processing_nodes if node in result_cache]
 
                 if not finished:
-                    return no_update, no_update
+                    return no_update, no_update, no_update
 
                 last_node_result = None
 
@@ -82,13 +81,13 @@ def register_callbacks(app):
 
             # If the last-clicked node just finished, display its result text
             if last_node_result is not None:
-                return last_node_result, elements
+                return last_node_result, elements, selected_layer_name
             else:
                 # We have updated some nodes, but not the last-clicked one
-                return no_update, elements
+                return no_update, elements, no_update
 
         # Fallback
-        return no_update, no_update
+        return no_update, no_update, no_update
 
     @app.callback(
         Output("config-modal", "is_open"),
