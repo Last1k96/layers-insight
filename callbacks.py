@@ -41,7 +41,7 @@ def register_callbacks(app):
             with lock:
                 cached_result = result_cache.get(layer_name)
             if cached_result:
-                return f"Partial Inference result: {cached_result}", elements, layer_name
+                return cached_result, elements, layer_name
 
             # Basic validation
             if not config_data:
@@ -99,7 +99,7 @@ def register_callbacks(app):
 
             # If the last-clicked node just finished, display its result text
             if last_node_result is not None:
-                return f"Partial Inference result: {last_node_result}", elements, last_clicked_node
+                return last_node_result, elements, last_clicked_node
             else:
                 # We have updated some nodes, but not the last-clicked one
                 return no_update, elements, last_clicked_node

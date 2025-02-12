@@ -6,6 +6,11 @@ import sys
 
 import cv2
 import numpy as np
+import dash_bootstrap_components as dbc
+from dash import html
+
+from metrics import comparison_card
+
 
 # TODO extract to some kind of callback to run when openvino path is provided
 def import_local_openvino(openvino_bin):
@@ -15,6 +20,7 @@ def import_local_openvino(openvino_bin):
             sys.path.insert(0, python_dir)
     else:
         print(f"Warning: Python directory '{python_dir}' not found in the OpenVINO bin folder.")
+
 
 def get_ov_core(openvino_bin):
     import_local_openvino(openvino_bin)
@@ -101,7 +107,7 @@ def configure_preprocessor(model, model_rt, img):
     inp.tensor().set_element_type(Type.u8)
     inp.tensor().set_shape(img.shape)
 
-    inp.preprocess().convert_element_type(Type.f16) # Should there be fp16? should it be configurable?
+    inp.preprocess().convert_element_type(Type.f16)  # Should there be fp16? should it be configurable?
 
     input_shape = parse_shape(conv_params.get("input_shape", ""))
     height, width = (input_shape[1], input_shape[2]) if layout == "nhwc" else (input_shape[2], input_shape[3])
@@ -166,26 +172,13 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
         inference_results = compiled_model(inputs)
         results.append(inference_results)
 
-    def get_stats(data):
-        res = str()
-        res += "Min: " + str(np.min(data)) + "\r\n"
-        res += "Max: " + str(np.max(data)) + "\r\n"
-        res += "Mean: " + str(np.mean(data)) + "\r\n"
-        res += "Std: " + str(np.std(data)) + "\r\n"
-        return res
-
-    stats = str()
+    # TODO multiple outputs
     for main_key, ref_key in zip(results[0].keys(), results[1].keys()):
         main = results[0][main_key]
         ref = results[1][ref_key]
 
-        stats += "Main plugin\r\n"
-        stats += get_stats(main)
-        stats += "Ref plugin\r\n"
-        stats += get_stats(ref)
-
-        diff = main - ref
-        stats += "Difference\r\n"
-        stats += get_stats(diff)
-
-    return stats
+        return html.Div([
+            dbc.CardGroup([
+                comparison_card(ref, main)
+            ])
+        ])

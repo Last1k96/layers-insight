@@ -5,6 +5,7 @@ import dash_cytoscape as cyto
 from openvino_graph import parse_openvino_ir
 from known_ops import OPENVINO_OP_COLORS_DARK
 import dash_bootstrap_components as dbc
+from dash_split_pane import DashSplitPane
 
 from run_inference import get_available_plugins
 from callbacks import update_config
@@ -156,7 +157,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         plugin2_value,
         inputs_path
     )
-    print(f"{initial_config=}")
 
     config_modal = dbc.Modal(
         [
@@ -212,41 +212,56 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         id="open-modal",
         color="primary",
         n_clicks=0,
-        style={"position": "absolute", "top": "20px", "left": "1000px"}
+        style={"position": "absolute", "top": "20px", "left": "20px"}
     )
 
     plugin_store = dcc.Store(id="plugin-store", data=discovered_plugins)
     config_store = dcc.Store(id="config-store", data=initial_config)
 
-    return html.Div([
-        # Cytoscape Graph (Left Side)
-        cyto.Cytoscape(
-            id='ir-graph',
-            elements=elements,
-            style={"position": "absolute", "top": 0, "left": 0, "width": "100%", "height": "100%"},
-            layout={
-                'name': 'dagre',
-                'directed': True,
-                'rankDir': 'TB',
-                'nodeSep': 25,
-                'rankSep': 50,
-            },
-            autoungrabify=True,
-            wheelSensitivity=0.2,  # Adjusts the zoom speed when scrolling
-            stylesheet=dynamic_stylesheet
-        ),
-        open_button,
-        config_modal,
-        plugin_store,
-        config_store,
-        html.Div([
-            html.H3("Partial Inference Output"),
-            html.Div(id="right-drag-handle", className="drag-handle-right")
-        ], id="right-panel",
-            className="panel-right"),
-
-        dcc.Interval(id='update-interval', interval=500, n_intervals=0),
-        dcc.Store(id='last-clicked-node', data=None),  # TODO use cyto selectedNodeData instead
-
-    ], className="main-container",
-        style={"position": "relative", "width": "100vw", "height": "100vh", "background-color": "#404040"})
+    return html.Div(
+        [
+            # Resizable panel, positioned on top of the graph.
+            DashSplitPane(
+                split="vertical",
+                size="80%",  # use 'size' instead of 'defaultSize'
+                children=[
+                    # First pane: e.g. your Cytoscape component
+                    cyto.Cytoscape(
+                        id='ir-graph',
+                        elements=elements,
+                        style={"width": "100%", "height": "100%"},
+                        layout={
+                            'name': 'dagre',
+                            'directed': True,
+                            'rankDir': 'TB',
+                            'nodeSep': 25,
+                            'rankSep': 50,
+                        },
+                        autoungrabify=True,
+                        wheelSensitivity=0.2,
+                        stylesheet=dynamic_stylesheet
+                    ),
+                    # Second pane: your right panel
+                    html.Div(
+                        "Panel Content",
+                        id='right-panel',
+                        style={'padding': '10px', 'height': '100%', 'overflow': 'auto', "background-color": "#202020"}
+                    )
+                ]
+            ),
+            # Other components (if needed) can be positioned as desired.
+            open_button,
+            config_modal,
+            plugin_store,
+            config_store,
+            dcc.Interval(id='update-interval', interval=500, n_intervals=0),
+            dcc.Store(id='last-clicked-node', data=None),
+        ],
+        className="main-container",
+        style={
+            "position": "relative",
+            "width": "100vw",
+            "height": "100vh",
+            "background-color": "#404040"
+        }
+    )
