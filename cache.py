@@ -44,6 +44,6 @@ def process_tasks():
 
         except Exception as e:
             with lock:
-                result_cache[layer_name] = f"Error: {str(e)}"
+                result_cache[layer_name] = f"Error: {str(e)}" # TODO better errors, replace the cache on re-run
         finally:
             task_queue.task_done()

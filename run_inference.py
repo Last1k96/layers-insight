@@ -177,8 +177,12 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
         main = results[0][main_key]
         ref = results[1][ref_key]
 
-        return html.Div([
+        right_panel_div = html.Div([
             dbc.CardGroup([
                 comparison_card(ref, main)
             ])
         ])
+
+        return {"right-panel": right_panel_div,
+                "main": main,
+                "ref": ref}
