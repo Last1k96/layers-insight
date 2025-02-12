@@ -7,3 +7,5 @@ openvino
 numpy~=2.2.2
 opencv-python-headless
 scikit-image
+plotly
+kaleido
