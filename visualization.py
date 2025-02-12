@@ -56,7 +56,7 @@ def plot_volume_tensor(tensor):
         isomin=data_min,
         isomax=data_max,
         opacity=0.1,          # Adjust opacity as needed
-        surface_count=25,     # Increase for smoother surfaces
+        surface_count=20,     # Increase for smoother surfaces
         colorscale='Viridis'  # Change to any desired Plotly colorscale
     ))
 
