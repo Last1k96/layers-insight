@@ -147,8 +147,7 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
     # TODO figure out a way of differentiating between an image and a binary input to consider preprocessing
     img = cv2.imread(input_path, cv2.IMREAD_COLOR_RGB)
     if img is None:
-        print("Failed to load image.")
-        return
+        return "Error: Failed to load image"
 
     img = np.expand_dims(img, axis=0)
 
@@ -171,6 +170,8 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
         compiled_model = core.compile_model(sub_model, plugin)
         inference_results = compiled_model(inputs)
         results.append(inference_results)
+
+    print(results)
 
     # TODO multiple outputs
     for main_key, ref_key in zip(results[0].keys(), results[1].keys()):
