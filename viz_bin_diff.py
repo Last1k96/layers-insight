@@ -109,7 +109,7 @@ def plot_diagnostics(cpu, xpu, n_blocks_per_row=4):
         # Bottom Right: Density Map
         ch_cpu = cpu[i]
         ch_diff = diff[i]
-        bins = 128
+        bins = 64
         density, _, _ = np.histogram2d(ch_diff.flatten(), ch_cpu.flatten(), bins=bins)
         density = np.power(density, 0.25).T  # Apply power transform and transpose for better display.
         ax = axs[r_top + 1, c_left + 1]
@@ -130,7 +130,6 @@ def plot_diagnostics(cpu, xpu, n_blocks_per_row=4):
         axs[r_top + 1, c_left].axis('off')
         axs[r_top + 1, c_left + 1].axis('off')
 
-    plt.tight_layout()
     return fig
 
 

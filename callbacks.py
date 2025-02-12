@@ -2,6 +2,7 @@ import base64
 import copy
 import io
 import os
+import time
 
 from dash import no_update, callback_context, exceptions, html
 from dash.dependencies import Input, Output, State, ALL
@@ -219,8 +220,13 @@ def register_callbacks(app):
 
             # Generate the visualizations.
             diff = ref - main
+            start_time = time.perf_counter()
             fig_3d = plot_volume_tensor(diff)
+            print(f"fig_3d time: {time.perf_counter() - start_time:.6f} seconds")
+            start_time = time.perf_counter()
             diag_fig = plot_diagnostics(ref, main)
+            print(f"plot_diagnostics time: {time.perf_counter() - start_time:.6f} seconds")
+            start_time = time.perf_counter()
 
             # Convert the matplotlib diagnostics figure to a PNG image.
             buf = io.BytesIO()
@@ -231,6 +237,7 @@ def register_callbacks(app):
                 src=f"data:image/png;base64,{encoded_diag}",
                 style={"width": "70%", "display": "block", "margin": "0 auto"}
             )
+            print(f"b64encode time: {time.perf_counter() - start_time:.6f} seconds")
             return True, fig_3d, diag_img
 
         elif triggered_id == "close-vis-modal":
