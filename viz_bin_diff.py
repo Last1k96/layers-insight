@@ -67,14 +67,18 @@ def plot_diagnostics(cpu, xpu, n_blocks_per_row=4):
     diff = cpu - xpu
     C, H, W = cpu.shape
 
+    # Compute a global scale for the difference images.
+    # Using a symmetric range so that 0 is centered in the 'bwr' colormap.
+    max_abs_diff = np.abs(diff).max()
+    global_vmin = -max_abs_diff
+    global_vmax = max_abs_diff
+
     # Determine grid size.
     n_block_rows = math.ceil(C / n_blocks_per_row)
     total_rows = n_block_rows * 2  # each block is 2 rows tall
     total_cols = n_blocks_per_row * 2  # each block is 2 columns wide
 
     fig, axs = plt.subplots(nrows=total_rows, ncols=total_cols, figsize=(4 * total_cols, 4 * total_rows))
-
-    # Ensure axs is a 2D array.
     axs = np.atleast_2d(axs)
 
     for i in range(C):
@@ -101,7 +105,7 @@ def plot_diagnostics(cpu, xpu, n_blocks_per_row=4):
 
         # Bottom Left: Difference image (CPU - XPU)
         ax = axs[r_top + 1, c_left]
-        im = ax.imshow(diff[i], cmap='bwr')
+        im = ax.imshow(diff[i], cmap='bwr', vmin=global_vmin, vmax=global_vmax)
         ax.set_title(f"Channel {i}: Diff (CPU - XPU)")
         plt.colorbar(im, ax=ax)
         ax.axis('off')
