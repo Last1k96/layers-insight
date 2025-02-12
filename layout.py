@@ -215,6 +215,36 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         style={"position": "absolute", "top": "20px", "left": "20px"}
     )
 
+    visualization_modal = dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle("Visualizations")),
+            dbc.ModalBody(
+                dcc.Tabs(id="vis-tabs", children=[
+                    dcc.Tab(label="3D Volume", children=[
+                        dcc.Graph(id="vis-3d",
+                                  style={'width': '100vw', 'height': 'calc(100vh - 150px)'})
+                    ]),
+                    dcc.Tab(label="Diagnostics", children=[
+                        html.Div(
+                            id="vis-diagnostics",
+                            style={
+                                "textAlign": "center",
+                                "overflowY": "auto",
+                                "maxHeight": "80vh"
+                            }
+                        )
+                    ])
+                ])
+            ),
+            dbc.ModalFooter(
+                dbc.Button("Close", id="close-vis-modal", className="ml-auto")
+            )
+        ],
+        id="visualization-modal",
+        fullscreen=True,
+        is_open=False
+    )
+
     plugin_store = dcc.Store(id="plugin-store", data=discovered_plugins)
     config_store = dcc.Store(id="config-store", data=initial_config)
     return html.Div(
@@ -247,6 +277,12 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                             "Panel Content",
                             id='right-panel',
                             style={'padding': '10px', 'height': '100%', 'overflow': 'auto', 'color': 'secondary'},
+                        ),
+                        dbc.Button(
+                            "Visualization",
+                            id="visualization-button",
+                            color="secondary",
+                            className="w-100", # TODO make it invisible when there is no inference data
                         )
                     ])
 
@@ -257,6 +293,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             config_modal,
             plugin_store,
             config_store,
+            visualization_modal,
             dcc.Interval(id='update-interval', interval=500, n_intervals=0),
         ],
         className="main-container",
@@ -267,4 +304,3 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         #     "background-color": "#404040"
         # }
     )
-

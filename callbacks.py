@@ -1,12 +1,16 @@
+import base64
 import copy
+import io
 import os
 
-from dash import no_update, callback_context, exceptions
+from dash import no_update, callback_context, exceptions, html
 from dash.dependencies import Input, Output, State, ALL
 
 from run_inference import get_available_plugins
 
 from cache import result_cache, task_queue, lock, processing_nodes
+from visualization import plot_volume_tensor
+from viz_bin_diff import plot_diagnostics
 
 
 def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
@@ -189,3 +193,47 @@ def register_callbacks(app):
         # (Optionally, you can also store them with their names; see below)
         updated_data["model_inputs"] = all_input_values
         return updated_data
+
+
+    @app.callback(
+        [Output("visualization-modal", "is_open"),
+         Output("vis-3d", "figure"),
+         Output("vis-diagnostics", "children")],
+        [Input("visualization-button", "n_clicks"),
+         Input("close-vis-modal", "n_clicks")],
+        [State("visualization-modal", "is_open"),
+         State("layer-name", "children")]
+    )
+    def toggle_visualization_modal(n_open, n_close, is_open, layer_name):
+        ctx = callback_context
+        if not ctx.triggered:
+            return is_open, no_update, no_update
+        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+
+        if triggered_id == "visualization-button" and layer_name in result_cache:
+            data = result_cache.get(layer_name, {})
+            ref = data.get("ref")
+            main = data.get("main")
+            if ref is None or main is None:
+                return is_open, no_update, no_update
+
+            # Generate the visualizations.
+            diff = ref - main
+            fig_3d = plot_volume_tensor(diff)
+            diag_fig = plot_diagnostics(ref, main)
+
+            # Convert the matplotlib diagnostics figure to a PNG image.
+            buf = io.BytesIO()
+            diag_fig.savefig(buf, format="png", bbox_inches="tight")
+            buf.seek(0)
+            encoded_diag = base64.b64encode(buf.getvalue()).decode("utf-8")
+            diag_img = html.Img(
+                src=f"data:image/png;base64,{encoded_diag}",
+                style={"width": "70%", "display": "block", "margin": "0 auto"}
+            )
+            return True, fig_3d, diag_img
+
+        elif triggered_id == "close-vis-modal":
+            return False, no_update, no_update
+
+        return is_open, no_update, no_update

@@ -19,6 +19,7 @@ For each channel (or batch–channel combination), a 2×2 grid is displayed:
 
 import numpy as np
 import matplotlib.pyplot as plt
+import math
 
 
 def convert_to_CHW(arr):
@@ -41,70 +42,102 @@ def convert_to_CHW(arr):
         if N == 1:
             return arr[0]  # (C, H, W)
         else:
-            return arr.reshape(N * C, H, W)  # unroll batches: (N * C, H, W)
+            return arr.reshape(N * C, H, W)  # Unroll batches: (N * C, H, W)
     else:
         raise ValueError("Unsupported tensor dimensions. Expected HW, CHW, or NCHW.")
 
 
-def plot_diagnostics(cpu, xpu):
+def plot_diagnostics(cpu, xpu, n_blocks_per_row=4):
     """
-    Given two arrays in CHW format (shape (C, H, W)), display a diagnostic plot
-    for each channel. For each channel, a 2×2 grid is shown:
+    Given two arrays in CHW format (shape (C, H, W)), display a diagnostic
+    plot for each channel. For each channel, a 2×2 diagnostic block is shown:
       - Top Left: CPU image (reference)
       - Top Right: XPU image (perturbed)
-      - Bottom Left: Difference image (CPU − XPU) using a 'bwr' colormap
+      - Bottom Left: Difference image (CPU - XPU) using a 'bwr' colormap
       - Bottom Right: Density map (2D histogram of (difference, CPU activation) pairs)
+
+    Parameters:
+        cpu, xpu: Input arrays (in any of HW, CHW, or NCHW formats; they will be converted to CHW).
+        n_blocks_per_row: Number of diagnostic blocks (channels) per row.
     """
+    # Convert inputs to CHW format.
     cpu = convert_to_CHW(cpu)
     xpu = convert_to_CHW(xpu)
 
     diff = cpu - xpu
     C, H, W = cpu.shape
 
-    fig, axs = plt.subplots(nrows=2 * C, ncols=2, figsize=(8, 4 * C))
+    # Determine grid size.
+    n_block_rows = math.ceil(C / n_blocks_per_row)
+    total_rows = n_block_rows * 2  # each block is 2 rows tall
+    total_cols = n_blocks_per_row * 2  # each block is 2 columns wide
 
-    for c in range(C):
+    fig, axs = plt.subplots(nrows=total_rows, ncols=total_cols, figsize=(4 * total_cols, 4 * total_rows))
+
+    # Ensure axs is a 2D array.
+    axs = np.atleast_2d(axs)
+
+    for i in range(C):
+        block_row = i // n_blocks_per_row
+        block_col = i % n_blocks_per_row
+
+        # Compute starting row and column indices for this block.
+        r_top = block_row * 2
+        c_left = block_col * 2
+
         # Top Left: CPU image
-        ax = axs[2 * c, 0]
-        im = ax.imshow(cpu[c], cmap='gray')
-        ax.set_title(f"Channel {c}: CPU")
+        ax = axs[r_top, c_left]
+        im = ax.imshow(cpu[i], cmap='gray')
+        ax.set_title(f"Channel {i}: CPU")
         plt.colorbar(im, ax=ax)
         ax.axis('off')
 
         # Top Right: XPU image
-        ax = axs[2 * c, 1]
-        im = ax.imshow(xpu[c], cmap='gray')
-        ax.set_title(f"Channel {c}: XPU")
+        ax = axs[r_top, c_left + 1]
+        im = ax.imshow(xpu[i], cmap='gray')
+        ax.set_title(f"Channel {i}: XPU")
         plt.colorbar(im, ax=ax)
         ax.axis('off')
 
         # Bottom Left: Difference image (CPU - XPU)
-        ax = axs[2 * c + 1, 0]
-        im = ax.imshow(diff[c], cmap='bwr')
-        ax.set_title(f"Channel {c}: Diff (CPU - XPU)")
+        ax = axs[r_top + 1, c_left]
+        im = ax.imshow(diff[i], cmap='bwr')
+        ax.set_title(f"Channel {i}: Diff (CPU - XPU)")
         plt.colorbar(im, ax=ax)
         ax.axis('off')
 
         # Bottom Right: Density Map
-        ch_cpu = cpu[c]
-        ch_diff = diff[c]
+        ch_cpu = cpu[i]
+        ch_diff = diff[i]
         bins = 128
         density, _, _ = np.histogram2d(ch_diff.flatten(), ch_cpu.flatten(), bins=bins)
-        density = np.power(density, 0.25).T  # apply power transform and transpose
-        ax = axs[2 * c + 1, 1]
+        density = np.power(density, 0.25).T  # Apply power transform and transpose for better display.
+        ax = axs[r_top + 1, c_left + 1]
         im = ax.imshow(density, cmap='gray', aspect='auto', origin='lower')
-        ax.set_title(f"Channel {c}: Density Map")
+        ax.set_title(f"Channel {i}: Density Map")
         plt.colorbar(im, ax=ax)
         ax.axis('off')
 
+    # Hide any extra subplot axes if total number of blocks is not a perfect multiple.
+    total_blocks = n_block_rows * n_blocks_per_row
+    for j in range(C, total_blocks):
+        block_row = j // n_blocks_per_row
+        block_col = j % n_blocks_per_row
+        r_top = block_row * 2
+        c_left = block_col * 2
+        axs[r_top, c_left].axis('off')
+        axs[r_top, c_left + 1].axis('off')
+        axs[r_top + 1, c_left].axis('off')
+        axs[r_top + 1, c_left + 1].axis('off')
+
     plt.tight_layout()
-    plt.show()
+    return fig
 
 
 def main():
     """
     For demonstration, generate two random arrays representing CPU and XPU outputs.
-    The arrays can be in any of these layouts: HW, CHW, or NCHW.
+    The arrays can be in HW, CHW, or NCHW layout.
 
     Uncomment one of the demo blocks below to test a particular layout.
     """
@@ -114,21 +147,18 @@ def main():
     # xpu_input = cpu_input + np.random.normal(scale=5, size=(H, W)).astype(np.float32)
 
     # --- Demo 2: CHW layout (3D) ---
-    # C, H, W = 3, 64, 64
+    # C, H, W = 20, 64, 64  # e.g., 20 channels
     # cpu_input = np.random.rand(C, H, W).astype(np.float32) * 255
     # xpu_input = cpu_input + np.random.normal(scale=5, size=(C, H, W)).astype(np.float32)
 
     # --- Demo 3: NCHW layout (4D) ---
-    N, C, H, W = 2, 3, 64, 64  # e.g. 2 batches, 3 channels, 64x64 images
+    N, C, H, W = 2, 20, 64, 64  # e.g., 2 batches, 20 channels each → 40 channels after unrolling
     cpu_input = np.random.rand(N, C, H, W).astype(np.float32) * 255
     xpu_input = cpu_input + np.random.normal(scale=5, size=(N, C, H, W)).astype(np.float32)
 
-    # Convert the inputs (HW, CHW, or NCHW) to canonical CHW format.
-    cpu_CHW = convert_to_CHW(cpu_input)
-    xpu_CHW = convert_to_CHW(xpu_input)
-
-    # Display the diagnostic plots.
-    plot_diagnostics(cpu_CHW, xpu_CHW)
+    # Set the number of blocks (diagnostic 2x2 blocks) per row. For example, 4.
+    fig = plot_diagnostics(cpu_input, xpu_input, n_blocks_per_row=4)
+    plt.show()
 
 
 if __name__ == '__main__':

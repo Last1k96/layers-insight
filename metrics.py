@@ -216,22 +216,11 @@ def comparison_card(ref_data, main_data):
     # Get the advanced metrics card.
     additional_card = advanced_diff_metrics_card(diff, ref_data, main_data)
 
-    # Create a button to be displayed at the bottom.
-    bottom_button = dbc.Button(
-        "Visualization",   # Change label as needed
-        id="visualization-button",
-        color="secondary",
-        className="w-100"  # Full-width button
-    )
-
     # Arrange cards and the button in a responsive layout.
     layout = dbc.Col(
         [
             dbc.Row(main_card),
-            dbc.Row(additional_card),
-            dbc.Row(
-                dbc.Col(bottom_button, xs=12)  # Button occupies full width on all screen sizes.
-            )
+            dbc.Row(additional_card)
         ],
         className="w-100"
     )
