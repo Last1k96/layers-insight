@@ -28,9 +28,9 @@ def build_dynamic_stylesheet(elements):
                 'font-family': 'sans-serif',
                 'text-valign': 'center',
                 'text-halign': 'center',
-                'background-color': 'primary',
+                'background-color': '#444',
                 'background-width': '2',
-                'color': '#fff',
+                'color': '#fff'
             }
         },
         {
@@ -53,7 +53,7 @@ def build_dynamic_stylesheet(elements):
                 'text-background-shape': 'round-rectangle',
                 'text-background-padding': '2px',
                 'font-family': 'sans-serif',
-                'font-size': '8',
+                'font-size': '8'
             }
         }
     ]
@@ -218,13 +218,32 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
     visualization_modal = dbc.Modal(
         [
             dbc.ModalHeader(dbc.ModalTitle("Visualizations")),
-            dbc.ModalBody(
-                dcc.Tabs(id="vis-tabs", children=[
-                    dcc.Tab(label="3D Volume", children=[
-                        dcc.Graph(id="vis-3d",
-                                  style={'width': '100vw', 'height': 'calc(100vh - 150px)'})
-                    ]),
-                    dcc.Tab(label="Diagnostics", children=[
+            dbc.ModalBody([
+                # 1) The Tabs component has two Tab labels (but no children in each Tab):
+                dcc.Tabs(
+                    id="vis-tabs",
+                    value="tab-3d",  # which tab is active by default
+                    children=[
+                        dcc.Tab(label="3D Volume", value="tab-3d"),
+                        dcc.Tab(label="Diagnostics", value="tab-diag")
+                    ]
+                ),
+
+                # 2) Define a separate Div for each tab's content, placed outside the dcc.Tab
+                html.Div(
+                    id="tab-3d-content",
+                    style={"display": "block"},  # 3D tab is shown by default
+                    children=[
+                        dcc.Graph(
+                            id="vis-3d",
+                            style={'width': '100vw', 'height': 'calc(100vh - 150px)'}
+                        )
+                    ]
+                ),
+                html.Div(
+                    id="tab-diag-content",
+                    style={"display": "none"},  # hidden until user selects "Diagnostics" tab
+                    children=[
                         html.Div(
                             id="vis-diagnostics",
                             style={
@@ -233,9 +252,9 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                                 "maxHeight": "80vh"
                             }
                         )
-                    ])
-                ])
-            ),
+                    ]
+                ),
+            ]),
             dbc.ModalFooter(
                 dbc.Button("Close", id="close-vis-modal", className="ml-auto")
             )
@@ -282,7 +301,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                             "Visualization",
                             id="visualization-button",
                             color="secondary",
-                            className="w-100", # TODO make it invisible when there is no inference data
+                            className="w-100",  # TODO make it invisible when there is no inference data
                         )
                     ])
 
@@ -294,6 +313,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             plugin_store,
             config_store,
             visualization_modal,
+            html.Div(id="dummy-output", style={"display": "none"}),
             dcc.Interval(id='update-interval', interval=500, n_intervals=0),
         ],
         className="main-container",

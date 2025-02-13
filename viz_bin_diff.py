@@ -47,7 +47,7 @@ def convert_to_CHW(arr):
         raise ValueError("Unsupported tensor dimensions. Expected HW, CHW, or NCHW.")
 
 
-def plot_diagnostics(cpu, xpu, n_blocks_per_row=4):
+def plot_diagnostics(cpu, xpu):
     """
     Given two arrays in CHW format (shape (C, H, W)), display a diagnostic
     plot for each channel. For each channel, a 2×2 diagnostic block is shown:
@@ -66,6 +66,8 @@ def plot_diagnostics(cpu, xpu, n_blocks_per_row=4):
 
     diff = cpu - xpu
     C, H, W = cpu.shape
+
+    n_blocks_per_row = max(2, min(math.ceil(math.sqrt(C)) // 2 * 2, 8))
 
     # Compute a global scale for the difference images.
     # Using a symmetric range so that 0 is centered in the 'bwr' colormap.
@@ -134,6 +136,7 @@ def plot_diagnostics(cpu, xpu, n_blocks_per_row=4):
         axs[r_top + 1, c_left].axis('off')
         axs[r_top + 1, c_left + 1].axis('off')
 
+    plt.close(fig) # TODO Is it useful at all?
     return fig
 
 
@@ -154,7 +157,7 @@ def main():
     xpu_input = cpu_input + np.random.normal(scale=5, size=(N, C, H, W)).astype(np.float32)
 
     # Set the number of blocks (diagnostic 2x2 blocks) per row. For example, 4.
-    fig = plot_diagnostics(cpu_input, xpu_input, n_blocks_per_row=4)
+    fig = plot_diagnostics(cpu_input, xpu_input)
     plt.show()
 
 

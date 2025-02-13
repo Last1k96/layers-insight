@@ -224,7 +224,7 @@ def register_callbacks(app):
             fig_3d = plot_volume_tensor(diff)
             print(f"fig_3d time: {time.perf_counter() - start_time:.6f} seconds")
             start_time = time.perf_counter()
-            diag_fig = plot_diagnostics(ref, main, n_blocks_per_row=8)
+            diag_fig = plot_diagnostics(ref, main)
             print(f"plot_diagnostics time: {time.perf_counter() - start_time:.6f} seconds")
             start_time = time.perf_counter()
 
@@ -244,3 +244,20 @@ def register_callbacks(app):
             return False, no_update, no_update
 
         return is_open, no_update, no_update
+
+    @app.callback(
+        Output("tab-3d-content", "style"),
+        Output("tab-diag-content", "style"),
+        Input("vis-tabs", "value")
+    )
+    def toggle_tab_contents(active_tab):
+        """
+        Show the chosen tab, hide the other one
+        dcc.Tabs unloads tabs from the DOM on changing tabs
+        Rebuilding 3D graph is slow and doing it every time is unacceptable
+        """
+        if active_tab == "tab-3d":
+            return {"display": "block"}, {"display": "none"}
+        else:
+            return {"display": "none"}, {"display": "block"}
+

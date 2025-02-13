@@ -26,7 +26,8 @@ def convert_to_volume(tensor):
             raise ValueError("Only NCHW tensors with N==1 are supported for volumetric visualization.")
         return tensor[0]  # Remove the batch dimension.
     else:
-        raise ValueError("Unsupported tensor dimensions. Expected HW, CHW, or NCHW with N==1.")
+        raise ValueError(f"Unsupported tensor dimensions = {tensor.ndim}. Expected HW, CHW, or NCHW with N==1.")
+    # TODO disable visualization for 1D tensors
 
 def plot_volume_tensor(tensor):
     # Convert the input tensor to a volume with shape (C, H, W)
