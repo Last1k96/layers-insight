@@ -29,9 +29,62 @@ def convert_to_volume(tensor):
         raise ValueError(f"Unsupported tensor dimensions = {tensor.ndim}. Expected HW, CHW, or NCHW with N==1.")
     # TODO disable visualization for 1D tensors
 
+
+def pool_dimension(volume: np.ndarray, axis: int, max_size: int) -> np.ndarray:
+    """
+    Performs an adaptive max-pool along a single axis of 'volume',
+    clamping that axis's size to 'max_size' if it's larger.
+    If the size along 'axis' <= max_size, no pooling is performed.
+
+    volume: 3D array (C, H, W) or potentially ND
+    axis: which dimension to pool
+    max_size: maximum allowed size along that axis
+
+    Returns a new volume (possibly the same if no pooling was needed).
+    """
+    current_size = volume.shape[axis]
+    if current_size <= max_size:
+        # No pooling needed, dimension is already small
+        return volume
+
+    # Build cut points: e.g., if current_size=1000, max_size=50,
+    # then cut points ~ [0, 20, 40, ..., 980, 1000] (51 points).
+    cut_points = np.linspace(0, current_size, max_size + 1, dtype=int)
+
+    # Use np.maximum.reduceat to apply chunk-wise max along the given axis
+    pooled = np.maximum.reduceat(volume, cut_points[:-1], axis=axis)
+
+    return pooled
+
+
+def pool_each_dim_individually(volume: np.ndarray, max_size: int) -> np.ndarray:
+    """
+    Pools each dimension of a 3D volume (C,H,W) individually so that
+    each dimension is at most 'max_size'. That is:
+       new_shape[i] = min(old_shape[i], max_size)
+    and we do an adaptive max over each axis that gets reduced.
+
+    volume: np.ndarray of shape (C, H, W)
+    max_size: int
+
+    Returns: pooled_volume, shape = (C_out, H_out, W_out),
+             where C_out <= max_size, H_out <= max_size, W_out <= max_size.
+    """
+    assert volume.ndim == 3, "Expected a 3D tensor (C, H, W)."
+
+    # Pool dimension 0 (channel) if needed
+    out = pool_dimension(volume, axis=0, max_size=max_size)
+    # Pool dimension 1 (height) if needed
+    out = pool_dimension(out, axis=1, max_size=max_size)
+    # Pool dimension 2 (width) if needed
+    out = pool_dimension(out, axis=2, max_size=max_size)
+
+    return out
+
 def plot_volume_tensor(tensor):
     # Convert the input tensor to a volume with shape (C, H, W)
     volume = convert_to_volume(tensor)
+    volume = pool_each_dim_individually(volume, 40)
 
     # Rearrange dimensions from (C, H, W) to (C, W, H)
     volume_swapped = volume.transpose(0, 2, 1)  # Now shape is (C, W, H)
@@ -49,17 +102,32 @@ def plot_volume_tensor(tensor):
     data_max = np.max(volume_swapped)
 
     # Create the Plotly volume figure.
-    fig = go.Figure(data=go.Volume(
-        x=X.flatten(),
-        y=Y.flatten(),
-        z=Z.flatten(),
-        value=volume_swapped.flatten(),
-        isomin=data_min,
-        isomax=data_max,
-        opacity=0.1,          # Adjust opacity as needed
-        surface_count=20,     # Increase for smoother surfaces
-        colorscale='Viridis'  # Change to any desired Plotly colorscale
-    ))
+    x_coords = X.flatten()
+    y_coords = Y.flatten()
+    z_coords = Z.flatten()
+    vals = volume_swapped.flatten()
+
+    vals_abs = np.abs(vals)
+
+    # Map vals to point sizes (e.g., from 2 to 12)
+    val_min, val_max = vals_abs.min(), vals_abs.max()
+    point_sizes = 30 * (vals_abs - val_min) / (val_max - val_min)
+
+    fig = go.Figure(
+        data=go.Scatter3d(
+            x=x_coords,
+            y=y_coords,
+            z=z_coords,
+            mode='markers',
+            marker=dict(
+                size=point_sizes,  # <-- array for per-point sizes
+                color=vals,  # color by vals
+                colorscale='Viridis',
+                opacity=0.3,
+                showscale=True
+            )
+        )
+    )
 
     # Update the layout with the new axis titles.
     fig.update_layout(

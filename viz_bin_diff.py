@@ -117,7 +117,7 @@ def plot_diagnostics(cpu, xpu):
         ch_diff = diff[i]
         bins = 64
         density, _, _ = np.histogram2d(ch_diff.flatten(), ch_cpu.flatten(), bins=bins)
-        density = np.power(density, 0.25).T  # Apply power transform and transpose for better display.
+        density = np.power(density, 0.25) #.T  # Apply power transform and transpose for better display.
         ax = axs[r_top + 1, c_left + 1]
         im = ax.imshow(density, cmap='gray', aspect='auto', origin='lower')
         ax.set_title(f"Channel {i}: Density Map")
@@ -152,6 +152,7 @@ def main():
     # xpu_input = cpu_input + np.random.normal(scale=5, size=(C, H, W)).astype(np.float32)
 
     # --- Demo 3: NCHW layout (4D) ---
+    # TODO test if the graph should be mirrored or flipped 180 degree
     N, C, H, W = 2, 20, 64, 64  # e.g., 2 batches, 20 channels each → 40 channels after unrolling
     cpu_input = np.random.rand(N, C, H, W).astype(np.float32) * 255
     xpu_input = cpu_input + np.random.normal(scale=5, size=(N, C, H, W)).astype(np.float32)
