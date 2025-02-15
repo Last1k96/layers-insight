@@ -1,3 +1,5 @@
+import json
+
 import dash
 import dash_bootstrap_components as dbc
 from dash import dcc, html, Input, Output, State, MATCH, ALL
@@ -20,6 +22,9 @@ operators = [
     "==",
     "!=",
 ]
+
+height = 25
+element_height = 40
 
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
@@ -57,12 +62,13 @@ app.layout = html.Div([
 
 @app.callback(
     [
-        Output("conditions-container", "children"),
-        Output("toggle-container", "children")
+        Output("conditions-container", "children", allow_duplicate=True),
+        Output("toggle-container", "children", allow_duplicate=True)
     ],
     Input("add-condition-btn", "n_clicks"),
     State("conditions-container", "children"),
-    State("toggle-container", "children")
+    State("toggle-container", "children"),
+    prevent_initial_call = True
 )
 def add_condition(n_clicks, current_children, toggles):
     if current_children is None:
@@ -70,12 +76,10 @@ def add_condition(n_clicks, current_children, toggles):
 
     row_id = f"condition-row-{len(current_children)}"
 
-    height = 25
-    element_height = 40
     row_layout = html.Div(
         className="condition-row-container",
-        id=row_id,
-        style={"height": element_height},
+        id=row_id,  # e.g., "condition-row-3"
+        style={"height": element_height, "position": "relative"},
         children=[
             html.Div(
                 style={"display": "flex", "alignItems": "center"},
@@ -96,7 +100,15 @@ def add_condition(n_clicks, current_children, toggles):
                         id={"type": "value-input", "index": row_id},
                         type="text",
                         placeholder="Value",
-                        style={"width": "100px", "height": height + 10, "marginTop": "10px"}
+                        style={"width": "100px", "height": height + 10, "marginRight": "10px", "marginTop": "10px"}
+                    ),
+                    dbc.Button(
+                        "𐌗",
+                        id={"type": "remove-condition", "index": row_id},
+                        n_clicks=0,
+                        color="danger",
+                        size="sm",
+                        style={"width": "30px", "height": height + 5, "marginTop": "10px"}
                     )
                 ]
             )
@@ -167,6 +179,55 @@ def show_condition_data(logic_ops, variable_values, operator_values, input_value
     expr_evaluated = expr(options)
     return str(options), str(tokens), str(expr_evaluated)
 
+@app.callback(
+    [
+        Output("conditions-container", "children", allow_duplicate=True),
+        Output("toggle-container", "children", allow_duplicate=True)
+    ],
+    Input({"type": "remove-condition", "index": ALL}, "n_clicks"),
+    State("conditions-container", "children"),
+    prevent_initial_call = True
+)
+def remove_condition(n_clicks_list, rows):
+    ctx = dash.callback_context
+    if not ctx.triggered:
+        raise dash.exceptions.PreventUpdate
+
+    if all(nc == 0 for nc in n_clicks_list):
+        raise dash.exceptions.PreventUpdate
+
+    trigger = ctx.triggered[0]
+    prop_id = trigger['prop_id']
+    print(prop_id)
+
+    # Find which remove button was clicked
+    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    triggered_id = json.loads(triggered_id)  # Convert string back to dict
+    remove_id = triggered_id["index"]
+
+    # Filter out the row with the matching id
+    new_rows = [row for row in rows if row["props"]["id"] != remove_id]
+
+    # Rebuild the toggle buttons: typically you want a toggle between every pair.
+    # For example, if you have more than one condition row, create toggles for each one except the first.
+    new_toggles = []
+    if len(new_rows) > 1:
+        for i in range(1, len(new_rows)):
+            toggle = dbc.Button(
+                "AND",
+                id={"type": "logic-operator", "index": new_rows[i]["props"]["id"]},
+                n_clicks=0,
+                style={
+                    "position": "absolute",
+                    "top": f"{(i - 1) * element_height + element_height // 2 + 5}px",
+                    "height": f"{element_height - 5}px",
+                    "left": "5px",
+                    "width": "60px"
+                }
+            )
+            new_toggles.append(toggle)
+
+    return new_rows, new_toggles
 
 if __name__ == "__main__":
     app.run_server(debug=True)
