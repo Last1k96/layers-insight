@@ -61,9 +61,10 @@ app.layout = html.Div([
         Output("toggle-container", "children")
     ],
     Input("add-condition-btn", "n_clicks"),
-    State("conditions-container", "children")
+    State("conditions-container", "children"),
+    State("toggle-container", "children")
 )
-def add_condition(n_clicks, current_children):
+def add_condition(n_clicks, current_children, toggles):
     if current_children is None:
         current_children = []
 
@@ -104,22 +105,24 @@ def add_condition(n_clicks, current_children):
 
     current_children.append(row_layout)
 
-    toggles = []
-    for i in range(0, len(current_children) - 1):
-        toggles.append(
-            dbc.Button(
-                "AND",
-                id={"type": "logic-operator", "index": i},
-                n_clicks=0,
-                style={
-                    "position": "absolute",
-                    "top": f"{i * element_height + element_height // 2 + 5}px",
-                    "height": f"{element_height - 5}px",
-                    "left": "5px",
-                    "width": "60px"
-                }
-            )
+    if not toggles:
+        toggles = []
+
+    if len(current_children) > 1:
+        and_or_button = dbc.Button(
+            "AND",
+            id={"type": "logic-operator", "index": len(current_children)},
+            n_clicks=0,
+            style={
+                "position": "absolute",
+                "top": f"{len(toggles) * element_height + element_height // 2 + 5}px",
+                "height": f"{element_height - 5}px",
+                "left": "5px",
+                "width": "60px"
+            }
         )
+
+        toggles.append(and_or_button)
 
     return current_children, toggles
 
@@ -139,7 +142,8 @@ def toggle_logic_operator(n_clicks, current_label):
     Input({"type": "logic-operator", "index": ALL}, "children"),
     Input({"type": "variable-dropdown", "index": ALL}, "value"),
     Input({"type": "operator-dropdown", "index": ALL}, "value"),
-    Input({"type": "value-input", "index": ALL}, "value")
+    Input({"type": "value-input", "index": ALL}, "value"),
+    prevent_initial_call=True
 )
 def show_condition_data(logic_ops, variable_values, operator_values, input_values):
     tokens = [{
@@ -162,7 +166,6 @@ def show_condition_data(logic_ops, variable_values, operator_values, input_value
     expr = build_expression_function(tokens)
     expr_evaluated = expr(options)
     return str(options), str(tokens), str(expr_evaluated)
-
 
 
 if __name__ == "__main__":

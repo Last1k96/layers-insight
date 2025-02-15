@@ -23,6 +23,14 @@ def evaluate_condition(condition, values):
 
 
 def build_expression_function(tokens):
+    empty_func = lambda value: str()
+    if not tokens:
+        return empty_func
+
+    for token in tokens:
+        if any(v is None for k, v in token.items()):
+            return empty_func
+
     def expression_function(values):
         groups = []
         current_group = [evaluate_condition(tokens[0], values)]
