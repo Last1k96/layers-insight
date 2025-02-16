@@ -30,6 +30,7 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 app.layout = html.Div([
     dcc.Store(id='global-element-index', data=0),
+    dcc.Store(id='global-toggle-index', data=0),
     dbc.Button("Add Condition",
                id="add-condition-btn",
                style={"marginLeft": "70px"},
@@ -54,15 +55,17 @@ app.layout = html.Div([
     [
         Output("conditions-container", "children", allow_duplicate=True),
         Output("toggle-container", "children", allow_duplicate=True),
-        Output("global-element-index", "data")
+        Output("global-element-index", "data"),
+        Output("global-toggle-index", "data")
     ],
     Input("add-condition-btn", "n_clicks"),
     Input("global-element-index", "data"),
+    Input("global-toggle-index", "data"),
     State("conditions-container", "children"),
     State("toggle-container", "children"),
     prevent_initial_call=True
 )
-def add_condition(n_clicks, global_element_index, current_children, toggles):
+def add_condition(n_clicks, global_element_index, global_toggle_index, current_children, toggles):
     if current_children is None:
         current_children = []
 
@@ -116,7 +119,7 @@ def add_condition(n_clicks, global_element_index, current_children, toggles):
     if len(current_children) > 1:
         and_or_button = dbc.Button(
             "AND",
-            id={"type": "logic-operator", "index": len(current_children)},
+            id={"type": "logic-operator", "index": global_toggle_index},
             n_clicks=0,
             style={
                 "height": f"{element_height - 5}px",
@@ -126,10 +129,11 @@ def add_condition(n_clicks, global_element_index, current_children, toggles):
                 "marginLeft": "5px",
             }
         )
+        global_toggle_index += 1
 
         toggles.append(and_or_button)
 
-    return current_children, toggles, global_element_index
+    return current_children, toggles, global_element_index, global_toggle_index
 
 
 @app.callback(
