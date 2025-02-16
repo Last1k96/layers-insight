@@ -84,18 +84,23 @@ def add_condition(n_clicks, global_element_index, global_toggle_index, current_c
                         id={"type": "variable-dropdown", "index": row_id},
                         options=[{"label": k, "value": k} for k in options.keys()],
                         placeholder="Select variable",
-                        style={"width": "100%", "height": height, "marginRight": "4px"}
+                        value=next(iter(options)),
+                        style={"width": "100%", "height": height, "marginRight": "4px"},
+                        clearable=False,
                     ),
                     dcc.Dropdown(
                         id={"type": "operator-dropdown", "index": row_id},
                         options=[{"label": op, "value": op} for op in operators],
                         placeholder="",
-                        style={"width": "60px", "height": height, "marginRight": "4px"}
+                        value=">",
+                        style={"width": "60px", "height": height, "marginRight": "4px"},
+                        clearable = False,
                     ),
                     dcc.Input(
                         id={"type": "value-input", "index": row_id},
                         type="text",
                         placeholder="Value",
+                        value=0.01,
                         style={"width": "100px", "height": height + 10, "marginRight": "4px", "marginTop": "10px"}
                     ),
                     dbc.Button(
