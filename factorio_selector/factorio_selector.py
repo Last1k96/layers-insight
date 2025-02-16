@@ -30,7 +30,10 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 app.layout = html.Div([
     dcc.Store(id='global-element-index', data=0),
-
+    dbc.Button("Add Condition",
+               id="add-condition-btn",
+               style={"marginLeft": "70px"},
+               n_clicks=0),
     html.Div(
         style={"display": "flex", "marginBottom": "10px"},
         children=[
@@ -40,11 +43,6 @@ app.layout = html.Div([
             html.Div(id="conditions-container", style={"flex": "1", "paddingLeft": "10px"})
         ]
     ),
-
-    dbc.Button("Add Condition",
-               id="add-condition-btn",
-               style={"marginLeft": "70px"},
-               n_clicks=0),
 
     html.Hr(),
     html.Div("Resulting condition data:"),
