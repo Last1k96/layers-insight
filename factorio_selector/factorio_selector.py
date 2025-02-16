@@ -36,7 +36,7 @@ app.layout = html.Div([
                style={"marginLeft": "70px"},
                n_clicks=0),
     html.Div(
-        style={"display": "flex", "marginBottom": "10px"},
+        style={"display": "flex", "marginBottom": "10px", "width": "100px"},
         children=[
             # Left column: for AND/OR toggle buttons.
             html.Div(id="toggle-container", style={"position": "relative", "width": "60px", "marginTop": "26px"}),
@@ -47,7 +47,7 @@ app.layout = html.Div([
 
     html.Hr(),
     html.Div("Resulting condition data:"),
-    html.Pre(id="debug-output", style={"whiteSpace": "pre-wrap"})
+    html.Pre(id="debug-output", style={"whiteSpace": "pre-wrap"}),
 ])
 
 
@@ -75,7 +75,7 @@ def add_condition(n_clicks, global_element_index, global_toggle_index, current_c
     row_layout = html.Div(
         className="condition-row-container",
         id=row_id,
-        style={"height": element_height, "position": "relative"},
+        style={"width": "600px", "height": element_height, "position": "relative"},
         children=[
             html.Div(
                 style={"display": "flex", "alignItems": "center"},
@@ -84,7 +84,7 @@ def add_condition(n_clicks, global_element_index, global_toggle_index, current_c
                         id={"type": "variable-dropdown", "index": row_id},
                         options=[{"label": k, "value": k} for k in options.keys()],
                         placeholder="Select variable",
-                        style={"width": "150px", "height": height, "marginRight": "4px"}
+                        style={"width": "100%", "height": height, "marginRight": "4px"}
                     ),
                     dcc.Dropdown(
                         id={"type": "operator-dropdown", "index": row_id},
@@ -155,6 +155,9 @@ def toggle_logic_operator(n_clicks, current_label):
     prevent_initial_call=True
 )
 def show_condition_data(logic_ops, variable_values, operator_values, input_values):
+    if not variable_values:
+        return str(), str(), str()
+
     tokens = [{
         "variable": variable_values[0],
         "operator": operator_values[0],
