@@ -15,10 +15,10 @@ options = {
 
 # List of operators:
 operators = [
-    "<",
     ">",
-    "<=",
+    "<",
     ">=",
+    "<=",
     "==",
     "!=",
 ]
@@ -29,30 +29,22 @@ element_height = 40
 app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 app.layout = html.Div([
-    # Some embedded CSS for the fixed row height and basic styling.
-    dcc.Markdown('''
-    <style>
-      .condition-row {
-          height: 50px;
-          display: flex;
-          align-items: center;
-          border-bottom: 1px solid #ccc;
-          padding-left: 5px;
-      }
-    </style>
-    ''', dangerously_allow_html=True),
-
-    dbc.Button("Add Condition", id="add-condition-btn", n_clicks=0),
+    dcc.Store(id='global-element-index', data=0),
 
     html.Div(
-        style={"display": "flex"},
+        style={"display": "flex", "marginBottom": "10px"},
         children=[
             # Left column: for AND/OR toggle buttons.
-            html.Div(id="toggle-container", style={"position": "relative", "width": "60px"}),
+            html.Div(id="toggle-container", style={"position": "relative", "width": "60px", "marginTop": "26px"}),
             # Right column: main condition rows.
             html.Div(id="conditions-container", style={"flex": "1", "paddingLeft": "10px"})
         ]
     ),
+
+    dbc.Button("Add Condition",
+               id="add-condition-btn",
+               style={"marginLeft": "70px"},
+               n_clicks=0),
 
     html.Hr(),
     html.Div("Resulting condition data:"),
@@ -63,22 +55,25 @@ app.layout = html.Div([
 @app.callback(
     [
         Output("conditions-container", "children", allow_duplicate=True),
-        Output("toggle-container", "children", allow_duplicate=True)
+        Output("toggle-container", "children", allow_duplicate=True),
+        Output("global-element-index", "data")
     ],
     Input("add-condition-btn", "n_clicks"),
+    Input("global-element-index", "data"),
     State("conditions-container", "children"),
     State("toggle-container", "children"),
-    prevent_initial_call = True
+    prevent_initial_call=True
 )
-def add_condition(n_clicks, current_children, toggles):
+def add_condition(n_clicks, global_element_index, current_children, toggles):
     if current_children is None:
         current_children = []
 
-    row_id = f"condition-row-{len(current_children)}"
+    row_id = f"condition-row-{global_element_index}"
+    global_element_index += 1
 
     row_layout = html.Div(
         className="condition-row-container",
-        id=row_id,  # e.g., "condition-row-3"
+        id=row_id,
         style={"height": element_height, "position": "relative"},
         children=[
             html.Div(
@@ -88,19 +83,19 @@ def add_condition(n_clicks, current_children, toggles):
                         id={"type": "variable-dropdown", "index": row_id},
                         options=[{"label": k, "value": k} for k in options.keys()],
                         placeholder="Select variable",
-                        style={"width": "150px", "height": height, "marginRight": "10px"}
+                        style={"width": "150px", "height": height, "marginRight": "4px"}
                     ),
                     dcc.Dropdown(
                         id={"type": "operator-dropdown", "index": row_id},
                         options=[{"label": op, "value": op} for op in operators],
                         placeholder="",
-                        style={"width": "60px", "height": height, "marginRight": "10px"}
+                        style={"width": "60px", "height": height, "marginRight": "4px"}
                     ),
                     dcc.Input(
                         id={"type": "value-input", "index": row_id},
                         type="text",
                         placeholder="Value",
-                        style={"width": "100px", "height": height + 10, "marginRight": "10px", "marginTop": "10px"}
+                        style={"width": "100px", "height": height + 10, "marginRight": "4px", "marginTop": "10px"}
                     ),
                     dbc.Button(
                         "𐌗",
@@ -108,7 +103,7 @@ def add_condition(n_clicks, current_children, toggles):
                         n_clicks=0,
                         color="danger",
                         size="sm",
-                        style={"width": "30px", "height": height + 5, "marginTop": "10px"}
+                        style={"width": "30px", "height": height + 4, "marginTop": "10px"}
                     )
                 ]
             )
@@ -126,17 +121,17 @@ def add_condition(n_clicks, current_children, toggles):
             id={"type": "logic-operator", "index": len(current_children)},
             n_clicks=0,
             style={
-                "position": "absolute",
-                "top": f"{len(toggles) * element_height + element_height // 2 + 5}px",
                 "height": f"{element_height - 5}px",
                 "left": "5px",
-                "width": "60px"
+                "width": "60px",
+                "marginTop": "5px",
+                "marginLeft": "5px",
             }
         )
 
         toggles.append(and_or_button)
 
-    return current_children, toggles
+    return current_children, toggles, global_element_index
 
 
 @app.callback(
@@ -179,6 +174,7 @@ def show_condition_data(logic_ops, variable_values, operator_values, input_value
     expr_evaluated = expr(options)
     return str(options), str(tokens), str(expr_evaluated)
 
+
 @app.callback(
     [
         Output("conditions-container", "children", allow_duplicate=True),
@@ -186,9 +182,10 @@ def show_condition_data(logic_ops, variable_values, operator_values, input_value
     ],
     Input({"type": "remove-condition", "index": ALL}, "n_clicks"),
     State("conditions-container", "children"),
-    prevent_initial_call = True
+    State("toggle-container", "children"),
+    prevent_initial_call=True
 )
-def remove_condition(n_clicks_list, rows):
+def remove_condition(n_clicks_list, rows, toggles):
     ctx = dash.callback_context
     if not ctx.triggered:
         raise dash.exceptions.PreventUpdate
@@ -196,38 +193,20 @@ def remove_condition(n_clicks_list, rows):
     if all(nc == 0 for nc in n_clicks_list):
         raise dash.exceptions.PreventUpdate
 
-    trigger = ctx.triggered[0]
-    prop_id = trigger['prop_id']
-    print(prop_id)
-
     # Find which remove button was clicked
     triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
     triggered_id = json.loads(triggered_id)  # Convert string back to dict
-    remove_id = triggered_id["index"]
+    remove_index = triggered_id["index"]
 
-    # Filter out the row with the matching id
-    new_rows = [row for row in rows if row["props"]["id"] != remove_id]
+    remove_id = [i for i, row in enumerate(rows) if row["props"]["id"] == remove_index][0]
+    rows.pop(remove_id)
 
-    # Rebuild the toggle buttons: typically you want a toggle between every pair.
-    # For example, if you have more than one condition row, create toggles for each one except the first.
-    new_toggles = []
-    if len(new_rows) > 1:
-        for i in range(1, len(new_rows)):
-            toggle = dbc.Button(
-                "AND",
-                id={"type": "logic-operator", "index": new_rows[i]["props"]["id"]},
-                n_clicks=0,
-                style={
-                    "position": "absolute",
-                    "top": f"{(i - 1) * element_height + element_height // 2 + 5}px",
-                    "height": f"{element_height - 5}px",
-                    "left": "5px",
-                    "width": "60px"
-                }
-            )
-            new_toggles.append(toggle)
+    if toggles:
+        remove_toggle_id = max(0, remove_id - 1)
+        toggles.pop(remove_toggle_id)
 
-    return new_rows, new_toggles
+    return rows, toggles
+
 
 if __name__ == "__main__":
     app.run_server(debug=True)
