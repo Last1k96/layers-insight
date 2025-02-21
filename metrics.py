@@ -146,7 +146,7 @@ def comparison_card(ref_data, main_data):
         [
             html.Thead(
                 html.Tr([
-                    html.Th("Dataset"),
+                    html.Th("Metrics"),
                     html.Th("min"),
                     html.Th("mean"),
                     html.Th("max"),

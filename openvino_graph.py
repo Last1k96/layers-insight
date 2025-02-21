@@ -40,7 +40,7 @@ def parse_openvino_ir(xml_file_path):
                 'type': layer_type,
                 'display_label': layer_type,
                 'layer_name': layer_name,
-                'border_color': "#000"
+                'border_color': "#242424"
             }
         })
 

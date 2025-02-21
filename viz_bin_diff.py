@@ -48,18 +48,6 @@ def convert_to_CHW(arr):
 
 
 def plot_diagnostics(cpu, xpu):
-    """
-    Given two arrays in CHW format (shape (C, H, W)), display a diagnostic
-    plot for each channel. For each channel, a 2×2 diagnostic block is shown:
-      - Top Left: CPU image (reference)
-      - Top Right: XPU image (perturbed)
-      - Bottom Left: Difference image (CPU - XPU) using a 'bwr' colormap
-      - Bottom Right: Density map (2D histogram of (difference, CPU activation) pairs)
-
-    Parameters:
-        cpu, xpu: Input arrays (in any of HW, CHW, or NCHW formats; they will be converted to CHW).
-        n_blocks_per_row: Number of diagnostic blocks (channels) per row.
-    """
     # Convert inputs to CHW format.
     cpu = convert_to_CHW(cpu)
     xpu = convert_to_CHW(xpu)

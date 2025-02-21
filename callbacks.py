@@ -229,6 +229,7 @@ def register_callbacks(app):
             start_time = time.perf_counter()
 
             # Convert the matplotlib diagnostics figure to a PNG image.
+
             buf = io.BytesIO()
             diag_fig.savefig(buf, format="png", bbox_inches="tight")
             buf.seek(0)

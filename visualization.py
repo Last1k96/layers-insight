@@ -131,7 +131,6 @@ def plot_volume_tensor(tensor):
 
     # Update the layout with the new axis titles.
     fig.update_layout(
-        title="3D Volumetric Visualization (C W H Layout)",
         scene=dict(
             dragmode='turntable',
             xaxis=dict(title="x (Channel)", autorange='reversed'),

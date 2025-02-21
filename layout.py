@@ -28,7 +28,6 @@ def build_dynamic_stylesheet(elements):
                 'font-family': 'sans-serif',
                 'text-valign': 'center',
                 'text-halign': 'center',
-                'background-color': '#444',
                 'background-width': '2',
                 'color': '#fff'
             }
@@ -36,7 +35,7 @@ def build_dynamic_stylesheet(elements):
         {
             'selector': 'edge',
             'style': {
-                'width': 2,
+                'width': '1',
                 'line-color': '#888',
                 'target-arrow-color': '#888',
                 'target-arrow-shape': 'triangle',
@@ -44,8 +43,8 @@ def build_dynamic_stylesheet(elements):
                 'label': 'data(display_label)',
                 'color': '#DCDCDC',
 
-                'text-outline-opacity': '0.8',
-                'text-outline-width': '2',
+                'text-outline-opacity': '1',
+                'text-outline-width': '1',
                 'text-outline-color': '#222',
 
                 'text-background-color': '#888',
@@ -158,30 +157,32 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         inputs_path
     )
 
+    # Configuration modal with inline styles for a light background.
     config_modal = dbc.Modal(
         [
-            dbc.ModalHeader(dbc.ModalTitle("Inference Configuration")),
+            dbc.ModalHeader(
+                dbc.ModalTitle("Inference Configuration"),
+                style={'backgroundColor': '#f0f0f0'}
+            ),
             dbc.ModalBody(
                 [
-                    # Model XML Path
                     dbc.Label("Path to model.xml"),
-                    dbc.Input(id="model-xml-path", value=ir_xml_path, placeholder="Enter path to model.xml"),
+                    dbc.Input(
+                        id="model-xml-path",
+                        value=ir_xml_path,
+                        placeholder="Enter path to model.xml"
+                    ),
                     html.Br(),
-
-                    # Input files (example: two separate fields)
                     build_model_input_fields(ir_xml_path, inputs_path),
-
-                    # OpenVINO bin folder
                     dbc.Label("Path to OpenVINO bin folder"),
-                    dbc.Input(id="ov-bin-path", value=openvino_path, placeholder="Path to OpenVINO bin/ folder"),
+                    dbc.Input(
+                        id="ov-bin-path",
+                        value=openvino_path,
+                        placeholder="Path to OpenVINO bin/ folder"
+                    ),
                     html.Br(),
-
-                    # Find Plugins Button
-                    dbc.Button("Find Plugins", id="find-plugins-button", color="primary", n_clicks=0),
-                    html.Br(),
-                    html.Br(),
-
-                    # Two Dropdowns for plugin selection
+                    dbc.Button("Find Plugins", id="find-plugins-button", color="dark", n_clicks=0),
+                    html.Br(), html.Br(),
                     dbc.Label("Reference Plugin"),
                     dcc.Dropdown(
                         id="reference-plugin-dropdown",
@@ -197,87 +198,98 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                         value=plugin2_value,
                         clearable=False,
                     ),
-                ]
+                ],
+                style={'backgroundColor': '#f0f0f0'}
             ),
             dbc.ModalFooter(
-                dbc.Button("Close", id="close-modal", className="ms-auto", n_clicks=0)
+                dbc.Button("Close", id="close-modal", className="ms-auto", n_clicks=0, color="dark"),
             ),
         ],
         id="config-modal",
-        is_open=False,  # Modal starts closed
+        is_open=False,
     )
 
     open_button = dbc.Button(
         "⚙",
         id="open-modal",
-        color="primary",
+        color="dark",
         n_clicks=0,
-        style={"position": "absolute", "top": "20px", "left": "20px"}
+        style={"position": "absolute", "top": "20px", "left": "20px"},
     )
 
+    # Visualization modal with inline light background styles.
     visualization_modal = dbc.Modal(
         [
-            dbc.ModalHeader(dbc.ModalTitle("Visualizations")),
-            dbc.ModalBody([
-                # 1) The Tabs component has two Tab labels (but no children in each Tab):
-                dcc.Tabs(
-                    id="vis-tabs",
-                    value="tab-3d",  # which tab is active by default
-                    children=[
-                        dcc.Tab(label="3D Volume", value="tab-3d"),
-                        dcc.Tab(label="Diagnostics", value="tab-diag")
-                    ]
-                ),
-
-                # 2) Define a separate Div for each tab's content, placed outside the dcc.Tab
-                html.Div(
-                    id="tab-3d-content",
-                    style={"display": "block"},  # 3D tab is shown by default
-                    children=[
-                        dcc.Graph(
-                            id="vis-3d",
-                            style={'width': '100vw', 'height': 'calc(100vh - 150px)'}
-                        )
-                    ]
-                ),
-                html.Div(
-                    id="tab-diag-content",
-                    style={"display": "none"},  # hidden until user selects "Diagnostics" tab
-                    children=[
-                        html.Div(
-                            id="vis-diagnostics",
-                            style={
-                                "textAlign": "center",
-                                "overflowY": "auto",
-                                "maxHeight": "80vh"
-                            }
-                        )
-                    ]
-                ),
-            ]),
+            dbc.ModalHeader(
+                dbc.ModalTitle("Visualizations"),
+                style={'backgroundColor': '#f0f0f0'}
+            ),
+            dbc.ModalBody(
+                [
+                    dcc.Tabs(
+                        id="vis-tabs",
+                        value="tab-3d",
+                        children=[
+                            dcc.Tab(label="3D Volume", value="tab-3d"),
+                            dcc.Tab(label="Diagnostics", value="tab-diag")
+                        ]
+                    ),
+                    html.Div(
+                        id="tab-3d-content",
+                        style={"display": "block"},
+                        children=[
+                            dcc.Graph(
+                                id="vis-3d",
+                                style={'width': 'calc(100vw - 50px)', 'height': 'calc(100vh - 150px)'}
+                            )
+                        ]
+                    ),
+                    html.Div(
+                        id="tab-diag-content",
+                        style={"display": "none"},
+                        children=[
+                            html.Div(
+                                id="vis-diagnostics",
+                                style={
+                                    "textAlign": "center",
+                                    "overflowY": "auto",
+                                    "maxHeight": "80vh"
+                                }
+                            )
+                        ]
+                    ),
+                ],
+                style={'backgroundColor': '#f0f0f0'}
+            ),
             dbc.ModalFooter(
-                dbc.Button("Close", id="close-vis-modal", className="ml-auto")
+                dbc.Button("Close", id="close-vis-modal", className="ml-auto"),
+                style={'backgroundColor': '#f0f0f0'}
             )
         ],
         id="visualization-modal",
         fullscreen=True,
-        is_open=False
+        is_open=False,
     )
 
     plugin_store = dcc.Store(id="plugin-store", data=discovered_plugins)
     config_store = dcc.Store(id="config-store", data=initial_config)
+
     return html.Div(
         [
-            # Resizable panel, positioned on top of the graph.
             DashSplitPane(
                 split="vertical",
-                size="80%",  # use 'size' instead of 'defaultSize'
+                size="80%",
                 children=[
-                    # First pane: e.g. your Cytoscape component
+                    # Cytoscape graph with a lighter background.
                     cyto.Cytoscape(
                         id='ir-graph',
                         elements=elements,
-                        style={"width": "100%", "height": "100%", 'color': 'primary'},
+                        style={
+                            "width": "100%",
+                            "height": "100%",
+                            "backgroundColor": "#404040",
+                            "cursor": "default",
+                        },
                         layout={
                             'name': 'dagre',
                             'directed': True,
@@ -289,25 +301,23 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                         wheelSensitivity=0.2,
                         stylesheet=dynamic_stylesheet
                     ),
-                    # Second pane: your right panel
+                    # Right panel remains unchanged.
                     html.Div([
                         html.H3(id="layer-name", children=["Layer Name"]),
                         html.Div(
                             "Panel Content",
                             id='right-panel',
-                            style={'padding': '10px', 'height': '100%', 'overflow': 'auto', 'color': 'secondary'},
+                            style={'padding': '10px', 'height': '100%', 'overflow': 'auto'},
                         ),
                         dbc.Button(
                             "Visualization",
                             id="visualization-button",
                             color="secondary",
-                            className="w-100",  # TODO make it invisible when there is no inference data
+                            className="w-100",
                         )
                     ])
-
                 ]
             ),
-            # Other components (if needed) can be positioned as desired.
             open_button,
             config_modal,
             plugin_store,
@@ -317,10 +327,5 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             dcc.Interval(id='update-interval', interval=500, n_intervals=0),
         ],
         className="main-container",
-        # style={
-        #     "position": "relative",
-        #     "width": "100vw",
-        #     "height": "100vh",
-        #     "background-color": "#404040"
-        # }
     )
+
