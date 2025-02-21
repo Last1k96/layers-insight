@@ -7,16 +7,11 @@ import dash_bootstrap_components as dbc
 # Helper Functions & Data
 # -----------------------
 
-def format_value(val, precision=4):
-    """Format a floating‐point value using general format."""
-    try:
-        return f"{val:.{precision}g}"
-    except Exception:
-        return str(val)
+def format_value(val, precision=3): # 3 digits after the dot should be enough for fp16 tensors
+    return f"{val:.{precision}f}"
 
 
 def compute_metrics(data):
-    """Compute basic metrics (min, mean, max, std) for an array."""
     return {
         "min": format_value(np.min(data)),
         "mean": format_value(np.mean(data)),
@@ -25,55 +20,43 @@ def compute_metrics(data):
     }
 
 
-# Dictionary of metric info for tooltips: key -> (Full Name, Description)
 METRIC_INFO = {
     "MAE": (
         "MAE",
-        "Mean Absolute Error. Computes the average absolute difference between the reference and main outputs. "
-        "This metric is especially useful for layers that perform element‐wise operations (e.g., Abs, Acos, Asin, Atan) "
-        "or simple arithmetic (Add, Subtract, Multiply, Divide) where the magnitude of per-element differences is important. "
-        "It works well when outliers are not expected to dominate the error signal – for example, in many activation functions (ReLU, Sigmoid) "
-        "or element‐wise transforms."
+        "Mean Absolute Error (MAE) calculates the average of the absolute differences between the reference and main outputs. "
+        "It is ideal for element-wise operations and simple arithmetic (e.g., Abs, Add, Subtract, Multiply, Divide) and works well with activation functions like ReLU or Sigmoid, "
+        "where every error contributes equally."
     ),
     "MSE": (
         "MSE",
-        "Mean Squared Error. Averages the squared differences between outputs, making it more sensitive to large errors. "
-        "This sensitivity makes MSE suitable for layers where occasional large deviations are critical – such as Convolution, "
-        "Pooling (AvgPool, MaxPool), or layers that may suffer from numerical instabilities. "
-        "It can be useful when assessing the overall energy of the error, particularly in layers that output values with a wide dynamic range."
+        "Mean Squared Error (MSE) computes the average of the squared differences between outputs, emphasizing larger errors. "
+        "This makes it suitable for layers where occasional large deviations are critical, such as Convolution and Pooling (AvgPool, MaxPool), "
+        "or in scenarios where numerical instabilities need to be detected."
     ),
     "RMSE": (
         "RMSE",
-        "Root Mean Squared Error. The square root of MSE expresses error in the same units as the output. "
-        "RMSE is recommended when you need a direct, interpretable measure of error magnitude – for instance, in image-processing layers "
-        "(e.g., AdaptiveAvgPool, AdaptiveMaxPool, Convolution, ROIAlign) or any layer where the physical units of the output matter."
+        "Root Mean Squared Error (RMSE) is the square root of MSE, expressing the error in the same units as the output. "
+        "This direct measure of error magnitude is particularly useful in image-processing layers like AdaptiveAvgPool, AdaptiveMaxPool, Convolution, or ROIAlign."
     ),
     "Median": (
         "Median",
-        "Median error. Provides the middle value of the error distribution, offering robustness against outliers. "
-        "This metric is particularly helpful for layers where sporadic extreme values can occur – for example, in activation functions like ReLU "
-        "or in pooling operations where a few high or low values might not reflect the typical behavior."
+        "Median Error identifies the middle value in the error distribution, providing robustness against outliers. "
+        "This metric is beneficial for layers (e.g., ReLU or pooling operations) where sporadic extreme values should not skew the overall error assessment."
     ),
     "IQR": (
         "IQR",
-        "Interquartile Range. Measures the spread of the middle 50% of differences (75th percentile minus 25th percentile). "
-        "IQR is valuable for layers that yield non-Gaussian or skewed error distributions. It helps assess consistency in layers such as "
-        "normalization (BatchNormInference, GroupNormalization) or element-wise nonlinear operations (Sin, Cos, etc.) where central tendency matters more than extremes."
+        "Interquartile Range (IQR) measures the spread of the middle 50% of errors (75th percentile minus 25th percentile). "
+        "It is useful for assessing consistency in layers with skewed or non-Gaussian error distributions, such as BatchNormInference, GroupNormalization, or element-wise nonlinear operations (e.g., Sin, Cos)."
     ),
     "PSNR": (
         "PSNR",
-        "Peak Signal-to-Noise Ratio. Evaluates the ratio between the maximum possible signal power and the power of corrupting noise. "
-        "PSNR is particularly relevant for layers producing image-like outputs or high dynamic range data. "
-        "It is commonly used in evaluating outputs from Convolution, Deconvolution, ROI-based operations (ROIAlign, ROIPooling), "
-        "and any transformation where visual fidelity or signal quality is critical (e.g., layers converting between color spaces or scaling images)."
+        "Peak Signal-to-Noise Ratio (PSNR) evaluates the ratio between the maximum possible signal power and the power of the noise. "
+        "It is especially relevant for image-like outputs, making it a common choice for Convolution, Deconvolution, and ROI-based layers (e.g., ROIAlign, ROIPooling) where visual fidelity is key."
     ),
     "Pearson": (
         "Pearson",
-        "Pearson Correlation. Measures the linear correlation between the reference and main outputs, focusing on the shape or pattern similarity "
-        "rather than absolute error magnitude. This metric is ideal for layers where preserving the relative ordering or pattern of activations is key, "
-        "such as in activation functions (Sigmoid, Tanh, Swish), normalization layers (BatchNormInference, GroupNormalization), "
-        "or any operation where the trend of values (even if offset) is more important than their exact numeric differences. "
-        "It works well for many element‐wise operations (e.g., Abs, Acos, etc.) as well."
+        "Pearson Correlation measures the linear correlation between the reference and main outputs, focusing on pattern or shape similarity rather than absolute differences. "
+        "This metric is ideal for layers where maintaining activation trends is crucial, such as in Sigmoid, Tanh, Swish, or normalization layers like BatchNormInference and GroupNormalization."
     )
 }
 
@@ -115,13 +98,13 @@ def advanced_diff_metrics_card(diff, ref_data, main_data):
 
     # Build rows for Error Metrics.
     error_metrics_rows = [
-        metric_table_row("MAE", mae),
-        metric_table_row("MSE", mse_value),
-        metric_table_row("RMSE", rmse_value),
-        metric_table_row("Median", median_value),
-        metric_table_row("IQR", iqr_value),
-        metric_table_row("PSNR", psnr_value),
-        metric_table_row("Pearson", pearson_value)
+        metric_table_row("MAE", format_value(mae)),
+        metric_table_row("MSE", format_value(mse_value)),
+        metric_table_row("RMSE", format_value(rmse_value)),
+        metric_table_row("Median", format_value(median_value)),
+        metric_table_row("IQR", format_value(iqr_value)),
+        metric_table_row("PSNR", format_value(psnr_value)),
+        metric_table_row("Pearson", format_value(pearson_value))
     ]
 
     # Assemble the table with a grouping header for quality metrics.
@@ -134,16 +117,11 @@ def advanced_diff_metrics_card(diff, ref_data, main_data):
         bordered=True,
         striped=True,
         hover=True,
-        size="sm"
+        size="sm",
+        style={"margin": "8px"}
     )
 
-    return dbc.Card(
-        [
-            dbc.CardHeader(html.H5("Additional Difference Metrics")),
-            dbc.CardBody(table)
-        ],
-        className="mb-3"
-    )
+    return table
 
 
 # -----------------------
@@ -202,15 +180,8 @@ def comparison_card(ref_data, main_data):
         bordered=True,
         striped=True,
         hover=True,
-        size="sm"
-    )
-
-    main_card = dbc.Card(
-        [
-            dbc.CardHeader(html.H5("Comparison Metrics")),
-            dbc.CardBody(table)
-        ],
-        className="mb-3"
+        size="sm",
+        style={"margin" : "8px"}
     )
 
     # Get the advanced metrics card.
@@ -219,7 +190,7 @@ def comparison_card(ref_data, main_data):
     # Arrange cards and the button in a responsive layout.
     layout = dbc.Col(
         [
-            dbc.Row(main_card),
+            dbc.Row(table),
             dbc.Row(additional_card)
         ],
         className="w-100"

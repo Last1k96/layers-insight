@@ -10,7 +10,7 @@ import threading
 
 def create_app(openvino_path, ir_xml_path, inputs_path):
     cyto.load_extra_layouts()
-    app = dash.Dash(__name__, title="Layers Insight", external_stylesheets=[dbc.themes.SLATE])
+    app = dash.Dash(__name__, title="Layers Insight", external_stylesheets=[dbc.themes.CYBORG])
 
     threading.Thread(target=process_tasks, daemon=True).start()
 
