@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
 """
-A diagnostic script that compares two NumPy arrays (CPU and XPU outputs)
-and visualizes their differences. The inputs are assumed to be in one of the following formats:
-  - HW   (2D image)
-  - CHW  (3D image with channels first)
-  - NCHW (4D batch of images with channels first)
+Visualizes differences between two NumPy arrays (CPU and XPU outputs)
 
-For visualization, the inputs are converted to HWC format (or unrolled to HWC if there are multiple batches).
-For each channel (or batch–channel combination), a 2×2 grid is displayed:
+For each channel a 2×2 grid is displayed:
   ┌─────────────┬─────────────┐
   │   CPU       │   XPU       │
   │ (reference) │ (perturbed) │
@@ -25,16 +20,21 @@ import matplotlib.patches as patches
 
 
 def reshape_to_3d(arr):
-    if arr.ndim == 2:
+    if arr.ndim == 1:
+        return arr.reshape(1, 1, 1)
+    elif arr.ndim == 2:
         H, W = arr.shape
         return arr.reshape(1, H, W)
     elif arr.ndim == 3:
         return arr
     elif arr.ndim == 4:
         N, C, H, W = arr.shape
-        return arr.reshape(N * C, H, W)  # Unroll batches: (N * C, H, W)
+        return arr.reshape(N * C, H, W)
+    elif arr.ndim == 5:
+        N, D, C, H, W = arr.shape
+        return arr.reshape(N * D * C, H, W)
     else:
-        raise ValueError("Unsupported tensor dimensions. Expected HW, CHW, or NCHW.")
+        raise ValueError("Unsupported tensor dimensions. Supported up to 5D tensors.")
 
 
 def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
@@ -140,11 +140,11 @@ def main():
         cpu_input = np.random.rand(H, W).astype(np.float32) * 255
         xpu_input = cpu_input + np.random.normal(scale=5, size=(H, W)).astype(np.float32)
     elif nd == 3:
-        C, H, W = 20, 64, 64  # e.g., 20 channels
+        C, H, W = 20, 64, 64
         cpu_input = np.random.rand(C, H, W).astype(np.float32) * 255
         xpu_input = cpu_input + np.random.normal(scale=5, size=(C, H, W)).astype(np.float32)
     elif nd == 4:
-        N, C, H, W = 2, 4, 64, 64  # e.g., 2 batches, 20 channels each → 40 channels after unrolling
+        N, C, H, W = 2, 4, 64, 64
         cpu_input = np.random.rand(N, C, H, W).astype(np.float32) * 255
         xpu_input = cpu_input + np.random.normal(scale=5, size=(N, C, H, W)).astype(np.float32)
 
