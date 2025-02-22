@@ -1,11 +1,13 @@
 import base64
 import copy
 import io
+import json
 import os
 import time
 
 from dash import no_update, callback_context, exceptions, html
 from dash.dependencies import Input, Output, State, ALL
+from dash.exceptions import PreventUpdate
 
 from run_inference import get_available_plugins
 
@@ -23,14 +25,16 @@ def register_callbacks(app):
         Output('right-panel', 'children'),
         Output('ir-graph', 'elements'),
         Output('layer-name', 'children'),
+        Output('left-panel', 'children'),
         Input('ir-graph', 'tapNode'),
         Input('update-interval', 'n_intervals'),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
         State('ir-graph', 'selectedNodeData'),
+        State('left-panel', 'children'),
         prevent_initial_call=True
     )
-    def handle_node_click_and_interval(tap_node, n_intervals, elements, config_data, selected_node_data):
+    def handle_node_click_and_interval(tap_node, n_intervals, elements, config_data, selected_node_data, left_panel):
         ctx = callback_context
 
         triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
@@ -42,10 +46,7 @@ def register_callbacks(app):
                 cached_result = result_cache.get(layer_name)
 
             if cached_result:
-                return cached_result["right-panel"], elements, layer_name
-
-            if not config_data:
-                return "Error: Config not set; please configure the model first.", no_update, no_update
+                return cached_result["right-panel"], elements, layer_name, no_update
 
             updated_elements = update_node_style(elements, layer_name, 'orange')
             with lock:
@@ -53,13 +54,13 @@ def register_callbacks(app):
 
             task_queue.put((layer_name, config_data))
 
-            return "Processing...", updated_elements, no_update
+            return "Processing...", updated_elements, no_update, no_update
         elif triggered_id == 'update-interval':
             with lock:
                 finished = [node for node in processing_nodes if node in result_cache]
 
                 if not finished:
-                    return no_update, no_update, no_update
+                    return no_update, no_update, no_update, no_update
 
                 last_node_result = None
 
@@ -75,6 +76,15 @@ def register_callbacks(app):
                     elements = update_node_style(elements, processed_layer_name, color)
                     processing_nodes.remove(processed_layer_name)
 
+                    new_element = html.Button(
+                        f"{processed_layer_name}",
+                        id={'type': 'layer-button', 'index': processed_layer_name},
+                        n_clicks=0,
+                        style={'display': 'block', 'width': "100%", "textAlign": "left"},
+                    )
+                    left_panel = left_panel or []
+                    left_panel.append(new_element)
+
                     # If this finished node is the "last clicked" node, keep track of its
                     selected_layer_name = selected_node_data[0]["layer_name"] if len(selected_node_data) else None
                     if processed_layer_name == selected_layer_name:
@@ -85,13 +95,13 @@ def register_callbacks(app):
 
             # If the last-clicked node just finished, display its result text
             if last_node_result is not None:
-                return last_node_result, elements, selected_layer_name
+                return last_node_result, elements, selected_layer_name, left_panel
             else:
                 # We have updated some nodes, but not the last-clicked one
-                return no_update, elements, no_update
+                return no_update, elements, no_update, no_update
 
         # Fallback
-        return no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update
 
     @app.callback(
         Output("config-modal", "is_open"),
@@ -110,16 +120,38 @@ def register_callbacks(app):
 
         return elements
 
+    # TODO node selection by button click (maybe should also change the style of selected node)
     # @app.callback(
-    #     Output("dynamic-input-fields", "children"),
-    #     Input("model-xml-path", "value"),
-    #     prevent_initial_call=True
+    #     Output('ir-graph', 'elements'),
+    #     Input({'type': 'layer-button', 'index': ALL}, 'n_clicks'),
+    #     State({'type': 'layer-button', 'index': ALL}, 'id'),
+    #     State('ir-graph', 'elements')
     # )
-    # def update_model_inputs(model_path):
-    #     """Whenever the model-path input changes, rebuild the model input fields."""
-    #     if not model_path:
-    #         return []
-    #     return build_model_input_fields(model_path)
+    # def select_node(n_clicks_list, ids, elements):
+    #     ctx = callback_context
+    #     if not ctx.triggered:
+    #         raise PreventUpdate
+    #
+    #     # Identify which button was clicked.
+    #     triggered_id = json.loads(ctx.triggered[0]['prop_id'].split('.')[0])
+    #     target_layer = triggered_id['index']
+    #
+    #     updated_elements = []
+    #     for ele in elements:
+    #         # Check if the element corresponds to the target node.
+    #         if 'data' in ele and ele['data'].get('layer_name') == target_layer:
+    #             # Add "selected" class to highlight this node.
+    #             classes = ele.get('classes', '')
+    #             if 'selected' not in classes:
+    #                 classes = (classes + ' selected').strip()
+    #             ele['classes'] = classes
+    #         else:
+    #             # Remove the "selected" class from non-target nodes.
+    #             classes = ele.get('classes', '')
+    #             classes = ' '.join([c for c in classes.split() if c != 'selected'])
+    #             ele['classes'] = classes
+    #         updated_elements.append(ele)
+    #     return updated_elements
 
     @app.callback(
         Output("plugin-store", "data"),

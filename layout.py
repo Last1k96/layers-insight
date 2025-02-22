@@ -6,6 +6,7 @@ from openvino_graph import parse_openvino_ir
 from known_ops import OPENVINO_OP_COLORS_DARK
 import dash_bootstrap_components as dbc
 from dash_split_pane import DashSplitPane
+import cache
 
 from run_inference import get_available_plugins
 from callbacks import update_config
@@ -84,6 +85,15 @@ def build_dynamic_stylesheet(elements):
                 'background-color': color
             }
         })
+
+    stylesheet.append({
+        'selector': 'node:selected',
+        'style': {
+            # 'border-width': '4px',
+            # 'border-color': 'red',
+            'background-color': 'red',
+        }
+    })
 
     return stylesheet
 
@@ -285,7 +295,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         stylesheet=dynamic_stylesheet
     )
 
-
     open_button = dbc.Button(
         "Inference settings",
         id="open-modal",
@@ -300,13 +309,13 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         html.Div(
             id='left-panel',
             style={'padding': '10px', 'height': '100%', 'overflow': 'auto'},
+            children=[]
         ),
     ])
 
     right_pane = html.Div([
         html.H3(id="layer-name", children=["Layer Name"]),
         html.Div(
-            "Panel Content",
             id='right-panel',
             style={'padding': '10px', 'height': '100%', 'overflow': 'auto'},
         ),
