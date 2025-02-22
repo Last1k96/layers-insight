@@ -28,54 +28,50 @@ def register_callbacks(app):
         Output('left-panel', 'children'),
         Input('ir-graph', 'tapNode'),
         Input('update-interval', 'n_intervals'),
+        Input({'type': 'layer-button', 'index': ALL}, 'n_clicks'),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
         State('ir-graph', 'selectedNodeData'),
         State('left-panel', 'children'),
         prevent_initial_call=True
     )
-    def handle_node_click_and_interval(tap_node, n_intervals, elements, config_data, selected_node_data, left_panel):
+    def handle_node_click_and_interval(tap_node, n_intervals, button_clicks, elements, config_data, selected_node_data,
+                                       left_panel):
         ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update
 
-        triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
+        triggered_prop = ctx.triggered[0]['prop_id']
 
-        if triggered_id == 'ir-graph':
+        # Case 1: Clicking a node in the cytoscape graph.
+        if triggered_prop.startswith('ir-graph'):
             layer_name = tap_node['data']['layer_name']
-
             with lock:
                 cached_result = result_cache.get(layer_name)
-
             if cached_result:
                 return cached_result["right-panel"], elements, layer_name, no_update
-
             updated_elements = update_node_style(elements, layer_name, 'orange')
             with lock:
                 processing_nodes.add(layer_name)
-
             task_queue.put((layer_name, config_data))
-
             return "Processing...", updated_elements, no_update, no_update
-        elif triggered_id == 'update-interval':
+
+        # Case 2: Update interval triggered
+        elif triggered_prop.startswith('update-interval'):
             with lock:
                 finished = [node for node in processing_nodes if node in result_cache]
-
                 if not finished:
                     return no_update, no_update, no_update, no_update
-
                 last_node_result = None
-
                 for processed_layer_name in finished:
                     result = result_cache[processed_layer_name]
                     color = 'green'
-
                     is_error = isinstance(result, str) and result.startswith('Error:')
                     if is_error:
                         result_cache.pop(processed_layer_name)
                         color = 'red'
-
                     elements = update_node_style(elements, processed_layer_name, color)
                     processing_nodes.remove(processed_layer_name)
-
                     new_element = html.Button(
                         f"{processed_layer_name}",
                         id={'type': 'layer-button', 'index': processed_layer_name},
@@ -84,21 +80,35 @@ def register_callbacks(app):
                     )
                     left_panel = left_panel or []
                     left_panel.append(new_element)
-
-                    # If this finished node is the "last clicked" node, keep track of its
-                    selected_layer_name = selected_node_data[0]["layer_name"] if len(selected_node_data) else None
+                    selected_layer_name = selected_node_data[0]["layer_name"] if selected_node_data else None
                     if processed_layer_name == selected_layer_name:
-                        if is_error:
-                            last_node_result = result
-                        else:
-                            last_node_result = result["right-panel"]
-
-            # If the last-clicked node just finished, display its result text
+                        last_node_result = result["right-panel"] if not is_error else result
             if last_node_result is not None:
                 return last_node_result, elements, selected_layer_name, left_panel
             else:
-                # We have updated some nodes, but not the last-clicked one
                 return no_update, elements, no_update, no_update
+
+        # Case 3: Button click from the left panel.
+        elif 'layer-button' in triggered_prop:
+            # Extract the layer name from the button id.
+            button_id_str = triggered_prop.split('.')[0]
+            button_id = json.loads(button_id_str)
+            button_layer_name = button_id['index']
+
+            updated_elements = []
+            for element in elements:
+                if 'data' in element and element['data'].get('layer_name') == button_layer_name:
+                    element['selected'] = True
+                    # Remove any inline style that might conflict with the selected style.
+                    if 'style' in element:
+                        element['style'].pop('background-color', None)
+                else:
+                    element['selected'] = False
+                    # Reset the inline style so the node can revert to its default color.
+                    if 'style' in element:
+                        element['style'].pop('background-color', None)
+                updated_elements.append(element)
+            return no_update, updated_elements, button_layer_name, no_update
 
         # Fallback
         return no_update, no_update, no_update, no_update
