@@ -246,7 +246,7 @@ def register_callbacks(app):
             return True, fig_3d, diag_img
 
         elif triggered_id == "close-vis-modal":
-            return False, [], []
+            return False, None, None
 
         return is_open, no_update, no_update
 

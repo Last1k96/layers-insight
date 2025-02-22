@@ -274,50 +274,74 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
     plugin_store = dcc.Store(id="plugin-store", data=discovered_plugins)
     config_store = dcc.Store(id="config-store", data=initial_config)
 
+    graph_container = cyto.Cytoscape(
+        id='ir-graph',
+        elements=elements,
+        style={
+            "width": "100%",
+            "height": "100%",
+            "backgroundColor": "#404040",
+            "cursor": "default",
+        },
+        layout={
+            'name': 'dagre',
+            'directed': True,
+            'rankDir': 'TB',
+            'nodeSep': 25,
+            'rankSep': 50,
+        },
+        autoungrabify=True,
+        wheelSensitivity=0.2,
+        stylesheet=dynamic_stylesheet
+    )
+
+    left_pane = html.Div([
+        html.H3(children=["Inferred layers"]),
+        html.Div(
+            id='left-panel',
+            style={'padding': '10px', 'height': '100%', 'overflow': 'auto'},
+        ),
+    ])
+
+    right_pane = html.Div([
+        html.H3(id="layer-name", children=["Layer Name"]),
+        html.Div(
+            "Panel Content",
+            id='right-panel',
+            style={'padding': '10px', 'height': '100%', 'overflow': 'auto'},
+        ),
+        dbc.Button(
+            "Visualization",
+            id="visualization-button",
+            color="secondary",
+            className="w-100",
+        )
+    ])
+
+    graph_and_right = DashSplitPane(
+        split="vertical",
+        size="20%",
+        primary="first",
+        children=[
+            left_pane,
+            graph_container,
+        ]
+    )
+
+    dash_pane = DashSplitPane(
+        split="vertical",
+        size="20%",
+        primary="second",
+        children=[
+            graph_and_right,
+            right_pane,
+        ]
+    )
+
     return html.Div(
         [
-            DashSplitPane(
-                split="vertical",
-                size="80%",
-                children=[
-                    # Cytoscape graph with a lighter background.
-                    cyto.Cytoscape(
-                        id='ir-graph',
-                        elements=elements,
-                        style={
-                            "width": "100%",
-                            "height": "100%",
-                            "backgroundColor": "#404040",
-                            "cursor": "default",
-                        },
-                        layout={
-                            'name': 'dagre',
-                            'directed': True,
-                            'rankDir': 'TB',
-                            'nodeSep': 25,
-                            'rankSep': 50,
-                        },
-                        autoungrabify=True,
-                        wheelSensitivity=0.2,
-                        stylesheet=dynamic_stylesheet
-                    ),
-                    # Right panel remains unchanged.
-                    html.Div([
-                        html.H3(id="layer-name", children=["Layer Name"]),
-                        html.Div(
-                            "Panel Content",
-                            id='right-panel',
-                            style={'padding': '10px', 'height': '100%', 'overflow': 'auto'},
-                        ),
-                        dbc.Button(
-                            "Visualization",
-                            id="visualization-button",
-                            color="secondary",
-                            className="w-100",
-                        )
-                    ])
-                ]
-            ),
+            dash_pane,
+
             open_button,
             config_modal,
             plugin_store,
@@ -328,4 +352,3 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         ],
         className="main-container",
     )
-
