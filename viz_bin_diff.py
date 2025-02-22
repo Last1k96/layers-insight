@@ -48,6 +48,12 @@ def convert_to_CHW(arr):
 
 
 def plot_diagnostics(cpu, xpu):
+    import matplotlib.pyplot as plt
+    import matplotlib.gridspec as gridspec
+    import matplotlib.patches as patches
+    import math
+    import numpy as np
+
     # Convert inputs to CHW format.
     cpu = convert_to_CHW(cpu)
     xpu = convert_to_CHW(xpu)
@@ -55,76 +61,94 @@ def plot_diagnostics(cpu, xpu):
     diff = cpu - xpu
     C, H, W = cpu.shape
 
+    # Determine the layout of channel blocks.
     n_blocks_per_row = max(2, min(math.ceil(math.sqrt(C)) // 2 * 2, 8))
+    n_block_rows = math.ceil(C / n_blocks_per_row)
 
-    # Compute a global scale for the difference images.
-    # Using a symmetric range so that 0 is centered in the 'bwr' colormap.
+    # Create an overall figure.
+    fig = plt.figure(figsize=(8 * n_blocks_per_row, 8 * n_block_rows), facecolor='white')
+
+    # Outer GridSpec for the channel blocks.
+    outer = gridspec.GridSpec(n_block_rows, n_blocks_per_row, wspace=0.08, hspace=0.08)
+
+    # Compute a global symmetric scale for the difference images.
     max_abs_diff = np.abs(diff).max()
     global_vmin = -max_abs_diff
     global_vmax = max_abs_diff
-
-    # Determine grid size.
-    n_block_rows = math.ceil(C / n_blocks_per_row)
-    total_rows = n_block_rows * 2  # each block is 2 rows tall
-    total_cols = n_blocks_per_row * 2  # each block is 2 columns wide
-
-    fig, axs = plt.subplots(nrows=total_rows, ncols=total_cols, figsize=(4 * total_cols, 4 * total_rows))
-    axs = np.atleast_2d(axs)
 
     for i in range(C):
         block_row = i // n_blocks_per_row
         block_col = i % n_blocks_per_row
 
-        # Compute starting row and column indices for this block.
-        r_top = block_row * 2
-        c_left = block_col * 2
+        # Create an inner GridSpec for the 2x2 layout within each outer block.
+        inner = gridspec.GridSpecFromSubplotSpec(
+            2, 2, subplot_spec=outer[block_row, block_col], wspace=0.08, hspace=0.08
+        )
 
-        # Top Left: CPU image
-        ax = axs[r_top, c_left]
-        im = ax.imshow(cpu[i], cmap='gray')
-        ax.set_title(f"Channel {i}: CPU")
-        plt.colorbar(im, ax=ax)
-        ax.axis('off')
+        inner_axes = []
 
-        # Top Right: XPU image
-        ax = axs[r_top, c_left + 1]
-        im = ax.imshow(xpu[i], cmap='gray')
-        ax.set_title(f"Channel {i}: XPU")
-        plt.colorbar(im, ax=ax)
-        ax.axis('off')
+        # Top Left: CPU image with individual title.
+        ax_cpu = fig.add_subplot(inner[0, 0])
+        ax_cpu.imshow(cpu[i], cmap='gray')
+        ax_cpu.set_title("CPU", fontsize=10)
+        ax_cpu.axis('off')
+        inner_axes.append(ax_cpu)
 
-        # Bottom Left: Difference image (CPU - XPU)
-        ax = axs[r_top + 1, c_left]
-        im = ax.imshow(diff[i], cmap='bwr', vmin=global_vmin, vmax=global_vmax)
-        ax.set_title(f"Channel {i}: Diff (CPU - XPU)")
-        plt.colorbar(im, ax=ax)
-        ax.axis('off')
+        # Top Right: XPU image with individual title.
+        ax_xpu = fig.add_subplot(inner[0, 1])
+        ax_xpu.imshow(xpu[i], cmap='gray')
+        ax_xpu.set_title("XPU", fontsize=10)
+        ax_xpu.axis('off')
+        inner_axes.append(ax_xpu)
 
-        # Bottom Right: Density Map
+        # Bottom Left: Difference image with individual title.
+        ax_diff = fig.add_subplot(inner[1, 0])
+        ax_diff.imshow(diff[i], cmap='bwr', vmin=global_vmin, vmax=global_vmax)
+        ax_diff.set_title("Diff (CPU - XPU)", fontsize=10)
+        ax_diff.axis('off')
+        inner_axes.append(ax_diff)
+
+        # Bottom Right: Density Map with individual title.
         ch_cpu = cpu[i]
         ch_diff = diff[i]
         bins = 64
         density, _, _ = np.histogram2d(ch_diff.flatten(), ch_cpu.flatten(), bins=bins)
-        density = np.power(density, 0.25) #.T  # Apply power transform and transpose for better display.
-        ax = axs[r_top + 1, c_left + 1]
-        im = ax.imshow(density, cmap='gray', aspect='auto', origin='lower')
-        ax.set_title(f"Channel {i}: Density Map")
-        plt.colorbar(im, ax=ax)
-        ax.axis('off')
+        density = np.power(density, 0.25)
+        ax_density = fig.add_subplot(inner[1, 1])
+        ax_density.imshow(density, cmap='gray', aspect='auto', origin='lower')
+        ax_density.set_title("Density Map", fontsize=10)
+        ax_density.axis('off')
+        inner_axes.append(ax_density)
 
-    # Hide any extra subplot axes if total number of blocks is not a perfect multiple.
+        # Compute the union of the inner axes positions in figure coordinates.
+        positions = [ax.get_position() for ax in inner_axes]
+        left = min(pos.x0 for pos in positions)
+        bottom = min(pos.y0 for pos in positions)
+        right = max(pos.x1 for pos in positions)
+        top = max(pos.y1 for pos in positions)
+        width = right - left
+        height = top - bottom
+
+        # Draw a tight 1px border around the union.
+        rect = patches.Rectangle(
+            (left, bottom), width, height,
+            linewidth=2, edgecolor='black', facecolor='none',
+            transform=fig.transFigure, zorder=10
+        )
+        fig.add_artist(rect)
+
+        # Add a single overall label above the top-left corner of the border.
+        # Here we place it a bit lower (offset=0.001) and with a larger font size.
+        overall_label_offset = 0.001  # Adjust as needed
+        fig.text(left, top + overall_label_offset, f"Channel {i}", va="bottom", ha="left", fontsize=12, fontweight='bold')
+
+    # Hide any unused outer grid cells if C doesn't fill the entire grid.
     total_blocks = n_block_rows * n_blocks_per_row
     for j in range(C, total_blocks):
-        block_row = j // n_blocks_per_row
-        block_col = j % n_blocks_per_row
-        r_top = block_row * 2
-        c_left = block_col * 2
-        axs[r_top, c_left].axis('off')
-        axs[r_top, c_left + 1].axis('off')
-        axs[r_top + 1, c_left].axis('off')
-        axs[r_top + 1, c_left + 1].axis('off')
+        ax_dummy = fig.add_subplot(outer[j // n_blocks_per_row, j % n_blocks_per_row])
+        ax_dummy.axis('off')
 
-    plt.close(fig) # TODO Is it useful at all?
+    fig.patch.set_facecolor('lightgray')
     return fig
 
 
