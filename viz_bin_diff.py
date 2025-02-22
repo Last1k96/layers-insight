@@ -47,7 +47,7 @@ def convert_to_CHW(arr):
         raise ValueError("Unsupported tensor dimensions. Expected HW, CHW, or NCHW.")
 
 
-def plot_diagnostics(cpu, xpu):
+def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
     import matplotlib.pyplot as plt
     import matplotlib.gridspec as gridspec
     import matplotlib.patches as patches
@@ -61,12 +61,13 @@ def plot_diagnostics(cpu, xpu):
     diff = cpu - xpu
     C, H, W = cpu.shape
 
-    # Determine the layout of channel blocks.
-    n_blocks_per_row = max(2, min(math.ceil(math.sqrt(C)) // 2 * 2, 8))
+    n_blocks_per_col = math.floor(math.sqrt(C))
+    n_blocks_per_row = min(8, math.ceil(C / n_blocks_per_col) // 2 * 2)
     n_block_rows = math.ceil(C / n_blocks_per_row)
 
-    # Create an overall figure.
-    fig = plt.figure(figsize=(8 * n_blocks_per_row, 8 * n_block_rows), facecolor='white')
+
+    # Create an overall figure with a dark background.
+    fig = plt.figure(figsize=(8 * n_blocks_per_row, 8 * n_block_rows), facecolor='#404345')
 
     # Outer GridSpec for the channel blocks.
     outer = gridspec.GridSpec(n_block_rows, n_blocks_per_row, wspace=0.08, hspace=0.08)
@@ -82,29 +83,32 @@ def plot_diagnostics(cpu, xpu):
 
         # Create an inner GridSpec for the 2x2 layout within each outer block.
         inner = gridspec.GridSpecFromSubplotSpec(
-            2, 2, subplot_spec=outer[block_row, block_col], wspace=0.08, hspace=0.08
+            2, 2, subplot_spec=outer[block_row, block_col], wspace=0.08, hspace=0.1
         )
 
         inner_axes = []
 
         # Top Left: CPU image with individual title.
         ax_cpu = fig.add_subplot(inner[0, 0])
+        ax_cpu.set_facecolor('white')
         ax_cpu.imshow(cpu[i], cmap='gray')
-        ax_cpu.set_title("CPU", fontsize=10)
+        ax_cpu.set_title(f"{ref_plugin_name}", fontsize=12, color='white')
         ax_cpu.axis('off')
         inner_axes.append(ax_cpu)
 
         # Top Right: XPU image with individual title.
         ax_xpu = fig.add_subplot(inner[0, 1])
+        ax_xpu.set_facecolor('white')
         ax_xpu.imshow(xpu[i], cmap='gray')
-        ax_xpu.set_title("XPU", fontsize=10)
+        ax_xpu.set_title(f"{main_plugin_name}", fontsize=12, color='white')
         ax_xpu.axis('off')
         inner_axes.append(ax_xpu)
 
         # Bottom Left: Difference image with individual title.
         ax_diff = fig.add_subplot(inner[1, 0])
+        ax_diff.set_facecolor('white')
         ax_diff.imshow(diff[i], cmap='bwr', vmin=global_vmin, vmax=global_vmax)
-        ax_diff.set_title("Diff (CPU - XPU)", fontsize=10)
+        ax_diff.set_title(f"Diff ({ref_plugin_name} - {main_plugin_name})", fontsize=12, color='black')
         ax_diff.axis('off')
         inner_axes.append(ax_diff)
 
@@ -115,8 +119,9 @@ def plot_diagnostics(cpu, xpu):
         density, _, _ = np.histogram2d(ch_diff.flatten(), ch_cpu.flatten(), bins=bins)
         density = np.power(density, 0.25)
         ax_density = fig.add_subplot(inner[1, 1])
+        ax_density.set_facecolor('white')
         ax_density.imshow(density, cmap='gray', aspect='auto', origin='lower')
-        ax_density.set_title("Density Map", fontsize=10)
+        ax_density.set_title("Density Map", fontsize=12, color='black')
         ax_density.axis('off')
         inner_axes.append(ax_density)
 
@@ -129,6 +134,14 @@ def plot_diagnostics(cpu, xpu):
         width = right - left
         height = top - bottom
 
+        # Draw a white patch covering the union so that the inner 2x2 area is white.
+        white_patch = patches.Rectangle(
+            (left, bottom), width, height,
+            linewidth=0, edgecolor='none', facecolor='#eeffee',
+            transform=fig.transFigure, zorder=0
+        )
+        fig.add_artist(white_patch)
+
         # Draw a tight 1px border around the union.
         rect = patches.Rectangle(
             (left, bottom), width, height,
@@ -138,9 +151,9 @@ def plot_diagnostics(cpu, xpu):
         fig.add_artist(rect)
 
         # Add a single overall label above the top-left corner of the border.
-        # Here we place it a bit lower (offset=0.001) and with a larger font size.
-        overall_label_offset = 0.001  # Adjust as needed
-        fig.text(left, top + overall_label_offset, f"Channel {i}", va="bottom", ha="left", fontsize=12, fontweight='bold')
+        overall_label_offset = 0.001  # Adjust vertical offset as needed.
+        fig.text(left, top + overall_label_offset, f"Channel {i}",
+                 va="bottom", ha="left", fontsize=13, fontweight='bold', color='#66ff66')
 
     # Hide any unused outer grid cells if C doesn't fill the entire grid.
     total_blocks = n_block_rows * n_blocks_per_row
@@ -148,8 +161,10 @@ def plot_diagnostics(cpu, xpu):
         ax_dummy = fig.add_subplot(outer[j // n_blocks_per_row, j % n_blocks_per_row])
         ax_dummy.axis('off')
 
-    fig.patch.set_facecolor('lightgray')
     return fig
+
+
+
 
 
 def main():
@@ -165,7 +180,7 @@ def main():
 
     # --- Demo 3: NCHW layout (4D) ---
     # TODO test if the graph should be mirrored or flipped 180 degree
-    N, C, H, W = 2, 20, 64, 64  # e.g., 2 batches, 20 channels each → 40 channels after unrolling
+    N, C, H, W = 1, 4, 64, 64  # e.g., 2 batches, 20 channels each → 40 channels after unrolling
     cpu_input = np.random.rand(N, C, H, W).astype(np.float32) * 255
     xpu_input = cpu_input + np.random.normal(scale=5, size=(N, C, H, W)).astype(np.float32)
 

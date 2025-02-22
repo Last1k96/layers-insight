@@ -203,9 +203,10 @@ def register_callbacks(app):
         [Input("visualization-button", "n_clicks"),
          Input("close-vis-modal", "n_clicks")],
         [State("visualization-modal", "is_open"),
-         State("layer-name", "children")]
+         State("layer-name", "children"),
+         State('config-store', 'data'),]
     )
-    def toggle_visualization_modal(n_open, n_close, is_open, layer_name):
+    def toggle_visualization_modal(n_open, n_close, is_open, layer_name, config):
         ctx = callback_context
         if not ctx.triggered:
             return is_open, no_update, no_update
@@ -224,7 +225,10 @@ def register_callbacks(app):
             fig_3d = plot_volume_tensor(diff)
             print(f"fig_3d time: {time.perf_counter() - start_time:.6f} seconds")
             start_time = time.perf_counter()
-            diag_fig = plot_diagnostics(ref, main)
+
+            ref_plugin_name = config["plugin1"]
+            main_plugin_name = config["plugin2"]
+            diag_fig = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
             print(f"plot_diagnostics time: {time.perf_counter() - start_time:.6f} seconds")
             start_time = time.perf_counter()
 
@@ -242,7 +246,6 @@ def register_callbacks(app):
             return True, fig_3d, diag_img
 
         elif triggered_id == "close-vis-modal":
-            print("CLOSING MODAL")
             return False, [], []
 
         return is_open, no_update, no_update
