@@ -89,8 +89,6 @@ def build_dynamic_stylesheet(elements):
     stylesheet.append({
         'selector': 'node:selected',
         'style': {
-            # 'border-width': '4px',
-            # 'border-color': 'red',
             'background-color': 'red',
         }
     })
@@ -356,6 +354,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             config_store,
             visualization_modal,
             html.Div(id="dummy-output", style={"display": "none"}),
+            dcc.Store(id="selected-node-store"),
             dcc.Interval(id='update-interval', interval=500, n_intervals=0),
         ],
     )

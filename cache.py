@@ -19,7 +19,7 @@ def process_tasks():
             break
         try:
             # task is now (layer_name, config_data)
-            layer_name, config_data = task
+            node_id, layer_name, config_data = task
 
             openvino_bin = config_data.get("ov_bin_path")
             model_xml = config_data.get("model_xml")
@@ -38,6 +38,8 @@ def process_tasks():
                 main_plugin=main_plugin,
                 model_inputs=model_inputs
             )
+
+            result["node_id"] = node_id
 
             with lock:
                 result_cache[layer_name] = result

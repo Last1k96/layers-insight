@@ -22,96 +22,168 @@ def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, 
 
 def register_callbacks(app):
     @app.callback(
+        Output("selected-node-store", "data"),
+        [
+            Input("ir-graph", "tapNode"),
+            Input({'type': 'layer-button', 'node_id': ALL, 'layer_name': ALL}, "n_clicks")
+        ],
+        State("ir-graph", "selectedNodeData"),
+        prevent_initial_call=True
+    )
+    def update_selected_node(tap_node, button_clicks, selected_node_data):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update
+
+        triggered_prop = ctx.triggered[0]["prop_id"]
+
+        # If a node on the graph is clicked:
+        if triggered_prop.startswith("ir-graph") and tap_node:
+            return tap_node["data"].get("id")
+
+        # If a button in the left panel is clicked:
+        elif "layer-button" in triggered_prop:
+            try:
+                button_id_str = triggered_prop.split(".")[0]
+                button_id = json.loads(button_id_str)
+                return button_id.get("node_id")
+            except Exception:
+                return no_update
+
+        return no_update
+
+    @app.callback(
         Output('right-panel', 'children'),
         Output('ir-graph', 'elements'),
         Output('layer-name', 'children'),
         Output('left-panel', 'children'),
-        Input('ir-graph', 'tapNode'),
-        Input('update-interval', 'n_intervals'),
-        Input({'type': 'layer-button', 'index': ALL}, 'n_clicks'),
+        [
+            Input('ir-graph', 'tapNode'),
+            Input('update-interval', 'n_intervals'),
+            Input({'type': 'layer-button', 'node_id': ALL, 'layer_name': ALL}, 'n_clicks'),
+            Input("selected-node-store", "data")
+        ],
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
         State('ir-graph', 'selectedNodeData'),
         State('left-panel', 'children'),
         prevent_initial_call=True
     )
-    def handle_node_click_and_interval(tap_node, n_intervals, button_clicks, elements, config_data, selected_node_data,
-                                       left_panel):
+    def handle_updates(tap_node, n_intervals, button_clicks, selected_node_store,
+                       elements, config_data, selected_node_data, left_panel):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update, no_update, no_update, no_update
+            return no_update, elements, no_update, left_panel
+
+        # Always work with a fresh deep copy of elements.
+        new_elements = copy.deepcopy(elements)
+        right_panel_out = no_update
+        layer_name_out = no_update
+        left_panel_out = left_panel
+        selected_id = None
 
         triggered_prop = ctx.triggered[0]['prop_id']
 
-        # Case 1: Clicking a node in the cytoscape graph.
+        # Case 1: User clicked a node in the graph.
         if triggered_prop.startswith('ir-graph'):
-            layer_name = tap_node['data']['layer_name']
-            with lock:
-                cached_result = result_cache.get(layer_name)
-            if cached_result:
-                return cached_result["right-panel"], elements, layer_name, no_update
-            updated_elements = update_node_style(elements, layer_name, 'orange')
-            with lock:
-                processing_nodes.add(layer_name)
-            task_queue.put((layer_name, config_data))
-            return "Processing...", updated_elements, no_update, no_update
+            if tap_node and 'data' in tap_node:
+                layer_name = tap_node['data'].get('layer_name')
+                node_id = tap_node['data'].get('id')
+                with lock:
+                    cached_result = result_cache.get(layer_name)
+                if cached_result:
+                    right_panel_out = cached_result["right-panel"]
+                    layer_name_out = layer_name
+                else:
+                    new_elements = update_node_style(new_elements, layer_name, 'orange')
+                    right_panel_out = "Processing..."
+                    layer_name_out = layer_name
+                    with lock:
+                        processing_nodes.add(layer_name)
+                    task_queue.put((node_id, layer_name, config_data))
+                # Set the new selection based on the tapped node.
+                selected_id = node_id
 
-        # Case 2: Update interval triggered
+        # Case 2: Update interval triggered.
         elif triggered_prop.startswith('update-interval'):
             with lock:
                 finished = [node for node in processing_nodes if node in result_cache]
-                if not finished:
-                    return no_update, no_update, no_update, no_update
-                last_node_result = None
-                for processed_layer_name in finished:
-                    result = result_cache[processed_layer_name]
-                    color = 'green'
-                    is_error = isinstance(result, str) and result.startswith('Error:')
-                    if is_error:
-                        result_cache.pop(processed_layer_name)
-                        color = 'red'
-                    elements = update_node_style(elements, processed_layer_name, color)
-                    processing_nodes.remove(processed_layer_name)
-                    new_element = html.Button(
-                        f"{processed_layer_name}",
-                        id={'type': 'layer-button', 'index': processed_layer_name},
-                        n_clicks=0,
-                        style={'display': 'block', 'width': "100%", "textAlign": "left"},
-                    )
-                    left_panel = left_panel or []
-                    left_panel.append(new_element)
-                    selected_layer_name = selected_node_data[0]["layer_name"] if selected_node_data else None
-                    if processed_layer_name == selected_layer_name:
-                        last_node_result = result["right-panel"] if not is_error else result
-            if last_node_result is not None:
-                return last_node_result, elements, selected_layer_name, left_panel
-            else:
-                return no_update, elements, no_update, no_update
+                if finished:
+                    for processed_layer_name in finished:
+                        result = result_cache[processed_layer_name]
+                        color = 'green'
+                        is_error = isinstance(result, str) and result.startswith('Error:')
+                        if is_error:
+                            result_cache.pop(processed_layer_name)
+                            color = 'red'
+                        new_elements = update_node_style(new_elements, processed_layer_name, color)
+                        processing_nodes.remove(processed_layer_name)
+                        new_button = html.Button(
+                            f"{processed_layer_name}",
+                            id={'type': 'layer-button', 'layer_name': processed_layer_name,
+                                'node_id': result["node_id"]},
+                            n_clicks=0,
+                            style={'display': 'block', 'width': "100%", "textAlign": "left"},
+                        )
+                        left_panel_out = left_panel_out or []
+                        left_panel_out.append(new_button)
+                        if (selected_node_data and isinstance(selected_node_data, list) and
+                            selected_node_data):
+                            selected_layer_name = selected_node_data[0].get("layer_name")
+                            if processed_layer_name == selected_layer_name:
+                                right_panel_out = result["right-panel"] if not is_error else result
+                                layer_name_out = processed_layer_name
+            # Instead of defaulting to the stored value (which might be stale), preserve the current selection
+            # by checking which node is marked as selected in our new elements.
+            current_sel = None
+            for el in new_elements:
+                if "selected" in el and el["selected"]:
+                    current_sel = el["data"].get("id")
+                    break
+            selected_id = current_sel if current_sel is not None else selected_node_store
 
-        # Case 3: Button click from the left panel.
+        # Case 3: User clicked a left-panel button.
         elif 'layer-button' in triggered_prop:
-            # Extract the layer name from the button id.
-            button_id_str = triggered_prop.split('.')[0]
-            button_id = json.loads(button_id_str)
-            button_layer_name = button_id['index']
+            try:
+                button_id_str = triggered_prop.split('.')[0]
+                button_id = json.loads(button_id_str)
+                node_id = button_id.get('node_id')
+                layer_name = button_id.get('layer_name')
+                right_panel_out = no_update
+                layer_name_out = layer_name
+                selected_id = node_id
+            except Exception:
+                selected_id = selected_node_store
+        else:
+            selected_id = selected_node_store
 
-            updated_elements = []
-            for element in elements:
-                if 'data' in element and element['data'].get('layer_name') == button_layer_name:
-                    element['selected'] = True
-                    # Remove any inline style that might conflict with the selected style.
-                    if 'style' in element:
-                        element['style'].pop('background-color', None)
-                else:
-                    element['selected'] = False
-                    # Reset the inline style so the node can revert to its default color.
-                    if 'style' in element:
-                        element['style'].pop('background-color', None)
-                updated_elements.append(element)
-            return no_update, updated_elements, button_layer_name, no_update
+        # Update selection so that only the node with id == selected_id is marked as selected.
+        if selected_id is not None:
+            new_elements = update_selection(new_elements, selected_id)
+        else:
+            new_elements = update_selection(new_elements, None)
 
-        # Fallback
-        return no_update, no_update, no_update, no_update
+        return right_panel_out, new_elements, layer_name_out, left_panel_out
+
+    # Helper functions.
+    def update_node_style(elements, layer_name, color):
+        for element in elements:
+            if 'data' in element and element['data'].get('layer_name') == layer_name:
+                element['data']['border_color'] = color
+        return elements
+
+    def update_selection(elements, selected_id):
+        """
+        Return a new list of elements where only the element whose data.id equals
+        selected_id is marked as selected. All others are explicitly unselected.
+        """
+        updated = []
+        for element in elements:
+            new_elem = copy.deepcopy(element)
+            if "data" in new_elem:
+                new_elem["selected"] = (new_elem["data"].get("id") == selected_id)
+            updated.append(new_elem)
+        return updated
 
     @app.callback(
         Output("config-modal", "is_open"),
@@ -122,46 +194,6 @@ def register_callbacks(app):
         if open_clicks or close_clicks:
             return not is_open
         return is_open
-
-    def update_node_style(elements, layer_name, color):
-        for element in elements:
-            if 'layer_name' in element['data'] and element['data']['layer_name'] == layer_name:
-                element['data']['border_color'] = color
-
-        return elements
-
-    # TODO node selection by button click (maybe should also change the style of selected node)
-    # @app.callback(
-    #     Output('ir-graph', 'elements'),
-    #     Input({'type': 'layer-button', 'index': ALL}, 'n_clicks'),
-    #     State({'type': 'layer-button', 'index': ALL}, 'id'),
-    #     State('ir-graph', 'elements')
-    # )
-    # def select_node(n_clicks_list, ids, elements):
-    #     ctx = callback_context
-    #     if not ctx.triggered:
-    #         raise PreventUpdate
-    #
-    #     # Identify which button was clicked.
-    #     triggered_id = json.loads(ctx.triggered[0]['prop_id'].split('.')[0])
-    #     target_layer = triggered_id['index']
-    #
-    #     updated_elements = []
-    #     for ele in elements:
-    #         # Check if the element corresponds to the target node.
-    #         if 'data' in ele and ele['data'].get('layer_name') == target_layer:
-    #             # Add "selected" class to highlight this node.
-    #             classes = ele.get('classes', '')
-    #             if 'selected' not in classes:
-    #                 classes = (classes + ' selected').strip()
-    #             ele['classes'] = classes
-    #         else:
-    #             # Remove the "selected" class from non-target nodes.
-    #             classes = ele.get('classes', '')
-    #             classes = ' '.join([c for c in classes.split() if c != 'selected'])
-    #             ele['classes'] = classes
-    #         updated_elements.append(ele)
-    #     return updated_elements
 
     @app.callback(
         Output("plugin-store", "data"),
@@ -182,61 +214,43 @@ def register_callbacks(app):
             return "No plugins found.", [], [], None, None
 
         device_options = [{'label': d, 'value': d} for d in devices]
-
         ref_value = 'CPU' if 'CPU' in devices else devices[0]
-
         non_cpu_devices = [d for d in devices if d != 'CPU']
         other_value = non_cpu_devices[0] if len(non_cpu_devices) > 0 else ref_value
 
         return (
-            "",  # Text listing of plugins
-            device_options,  # reference-plugin-dropdown options
-            device_options,  # main-plugin-dropdown options
-            ref_value,  # reference-plugin-dropdown value
-            other_value  # main-plugin-dropdown value
+            "",
+            device_options,
+            device_options,
+            ref_value,
+            other_value
         )
 
     @app.callback(
         Output("config-store", "data"),
-        Input("close-modal", "n_clicks"),  # or "save-button", whichever you prefer
+        Input("close-modal", "n_clicks"),
         [
             State("model-xml-path", "value"),
             State("ov-bin-path", "value"),
             State("reference-plugin-dropdown", "value"),
             State("main-plugin-dropdown", "value"),
-            State({"type": "model-input", "name": ALL}, "value"),  # Grab ALL dynamic inputs
+            State({"type": "model-input", "name": ALL}, "value"),
             State("config-store", "data"),
         ],
         prevent_initial_call=True
     )
-    def save_config(
-            n_clicks_close,
-            model_xml,
-            bin_path,
-            ref_plugin,
-            other_plugin,
-            all_input_values,  # A list of strings
-            current_data
-    ):
-        # If the close button wasn't clicked, don't update anything
+    def save_config(n_clicks_close, model_xml, bin_path, ref_plugin,
+                    other_plugin, all_input_values, current_data):
         if not n_clicks_close:
             raise exceptions.PreventUpdate
 
         updated_data = current_data.copy() if current_data else {}
-        # update_config(updated_data, model_xml, bin_path, ref_plugin, other_plugin, all_input_values)
-
-        # print(f"{updated_data=}")
-        # Store "static" fields
         updated_data["model_xml"] = model_xml
         updated_data["ov_bin_path"] = bin_path
         updated_data["plugin1"] = ref_plugin
         updated_data["plugin2"] = other_plugin
-
-        # Store the dynamic input paths as a simple list
-        # (Optionally, you can also store them with their names; see below)
         updated_data["model_inputs"] = all_input_values
         return updated_data
-
 
     @app.callback(
         [Output("visualization-modal", "is_open"),
@@ -246,7 +260,7 @@ def register_callbacks(app):
          Input("close-vis-modal", "n_clicks")],
         [State("visualization-modal", "is_open"),
          State("layer-name", "children"),
-         State('config-store', 'data'),]
+         State('config-store', 'data')]
     )
     def toggle_visualization_modal(n_open, n_close, is_open, layer_name, config):
         ctx = callback_context
@@ -261,7 +275,6 @@ def register_callbacks(app):
             if ref is None or main is None:
                 return is_open, no_update, no_update
 
-            # Generate the visualizations.
             diff = ref - main
             start_time = time.perf_counter()
             fig_3d = plot_volume_tensor(diff)
@@ -273,8 +286,6 @@ def register_callbacks(app):
             diag_fig = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
             print(f"plot_diagnostics time: {time.perf_counter() - start_time:.6f} seconds")
             start_time = time.perf_counter()
-
-            # Convert the matplotlib diagnostics figure to a PNG image.
 
             buf = io.BytesIO()
             diag_fig.savefig(buf, format="png", bbox_inches="tight")
@@ -298,13 +309,7 @@ def register_callbacks(app):
         Input("vis-tabs", "value")
     )
     def toggle_tab_contents(active_tab):
-        """
-        Show the chosen tab, hide the other one
-        dcc.Tabs unloads tabs from the DOM on changing tabs
-        Rebuilding 3D graph is slow and doing it every time is unacceptable
-        """
         if active_tab == "tab-3d":
             return {"display": "block"}, {"display": "none"}
         else:
             return {"display": "none"}, {"display": "block"}
-
