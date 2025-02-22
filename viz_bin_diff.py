@@ -18,61 +18,39 @@ For each channel (or batch–channel combination), a 2×2 grid is displayed:
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
 import math
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import matplotlib.patches as patches
 
 
-def convert_to_CHW(arr):
-    """
-    Convert an input tensor to CHW format.
-
-    - If the input is HW (2D, shape (H, W)), add a channel dimension → (1, H, W).
-    - If the input is CHW (3D, shape (C, H, W)), return it as is.
-    - If the input is NCHW (4D, shape (N, C, H, W)):
-         • If N == 1, squeeze the batch dimension → (C, H, W).
-         • If N > 1, unroll the batch and channel dimensions → (N * C, H, W).
-    """
+def reshape_to_3d(arr):
     if arr.ndim == 2:
-        return arr[np.newaxis, ...]  # (1, H, W)
+        H, W = arr.shape
+        return arr.reshape(1, H, W)
     elif arr.ndim == 3:
-        # Assume already in CHW.
         return arr
     elif arr.ndim == 4:
         N, C, H, W = arr.shape
-        if N == 1:
-            return arr[0]  # (C, H, W)
-        else:
-            return arr.reshape(N * C, H, W)  # Unroll batches: (N * C, H, W)
+        return arr.reshape(N * C, H, W)  # Unroll batches: (N * C, H, W)
     else:
         raise ValueError("Unsupported tensor dimensions. Expected HW, CHW, or NCHW.")
 
 
 def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
-    import matplotlib.pyplot as plt
-    import matplotlib.gridspec as gridspec
-    import matplotlib.patches as patches
-    import math
-    import numpy as np
-
-    # Convert inputs to CHW format.
-    cpu = convert_to_CHW(cpu)
-    xpu = convert_to_CHW(xpu)
+    cpu = reshape_to_3d(cpu)
+    xpu = reshape_to_3d(xpu)
 
     diff = cpu - xpu
     C, H, W = cpu.shape
 
-    n_blocks_per_col = math.floor(math.sqrt(C))
-    n_blocks_per_row = min(8, math.ceil(C / n_blocks_per_col) // 2 * 2)
+    n_blocks_per_row = max(1, min(8, math.ceil(C / int(math.sqrt(C))) // 2 * 2))
     n_block_rows = math.ceil(C / n_blocks_per_row)
 
-
-    # Create an overall figure with a dark background.
     fig = plt.figure(figsize=(8 * n_blocks_per_row, 8 * n_block_rows), facecolor='#404345')
 
-    # Outer GridSpec for the channel blocks.
     outer = gridspec.GridSpec(n_block_rows, n_blocks_per_row, wspace=0.08, hspace=0.08)
 
-    # Compute a global symmetric scale for the difference images.
     max_abs_diff = np.abs(diff).max()
     global_vmin = -max_abs_diff
     global_vmax = max_abs_diff
@@ -81,7 +59,6 @@ def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
         block_row = i // n_blocks_per_row
         block_col = i % n_blocks_per_row
 
-        # Create an inner GridSpec for the 2x2 layout within each outer block.
         inner = gridspec.GridSpecFromSubplotSpec(
             2, 2, subplot_spec=outer[block_row, block_col], wspace=0.08, hspace=0.1
         )
@@ -90,7 +67,6 @@ def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
 
         # Top Left: CPU image with individual title.
         ax_cpu = fig.add_subplot(inner[0, 0])
-        ax_cpu.set_facecolor('white')
         ax_cpu.imshow(cpu[i], cmap='gray')
         ax_cpu.set_title(f"{ref_plugin_name}", fontsize=12, color='white')
         ax_cpu.axis('off')
@@ -98,7 +74,6 @@ def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
 
         # Top Right: XPU image with individual title.
         ax_xpu = fig.add_subplot(inner[0, 1])
-        ax_xpu.set_facecolor('white')
         ax_xpu.imshow(xpu[i], cmap='gray')
         ax_xpu.set_title(f"{main_plugin_name}", fontsize=12, color='white')
         ax_xpu.axis('off')
@@ -106,7 +81,6 @@ def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
 
         # Bottom Left: Difference image with individual title.
         ax_diff = fig.add_subplot(inner[1, 0])
-        ax_diff.set_facecolor('white')
         ax_diff.imshow(diff[i], cmap='bwr', vmin=global_vmin, vmax=global_vmax)
         ax_diff.set_title(f"Diff ({ref_plugin_name} - {main_plugin_name})", fontsize=12, color='black')
         ax_diff.axis('off')
@@ -119,7 +93,6 @@ def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
         density, _, _ = np.histogram2d(ch_diff.flatten(), ch_cpu.flatten(), bins=bins)
         density = np.power(density, 0.25)
         ax_density = fig.add_subplot(inner[1, 1])
-        ax_density.set_facecolor('white')
         ax_density.imshow(density, cmap='gray', aspect='auto', origin='lower')
         ax_density.set_title("Density Map", fontsize=12, color='black')
         ax_density.axis('off')
@@ -134,15 +107,15 @@ def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
         width = right - left
         height = top - bottom
 
-        # Draw a white patch covering the union so that the inner 2x2 area is white.
-        white_patch = patches.Rectangle(
+        # Draw a patch covering the union so that the inner 2x2 area is white.
+        inner_patch = patches.Rectangle(
             (left, bottom), width, height,
             linewidth=0, edgecolor='none', facecolor='#eeffee',
             transform=fig.transFigure, zorder=0
         )
-        fig.add_artist(white_patch)
+        fig.add_artist(inner_patch)
 
-        # Draw a tight 1px border around the union.
+        # Draw a border around the union.
         rect = patches.Rectangle(
             (left, bottom), width, height,
             linewidth=2, edgecolor='black', facecolor='none',
@@ -150,43 +123,33 @@ def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
         )
         fig.add_artist(rect)
 
-        # Add a single overall label above the top-left corner of the border.
+        # Add a single channel label above the top-left corner of the border.
         overall_label_offset = 0.001  # Adjust vertical offset as needed.
         fig.text(left, top + overall_label_offset, f"Channel {i}",
                  va="bottom", ha="left", fontsize=13, fontweight='bold', color='#66ff66')
 
-    # Hide any unused outer grid cells if C doesn't fill the entire grid.
-    total_blocks = n_block_rows * n_blocks_per_row
-    for j in range(C, total_blocks):
-        ax_dummy = fig.add_subplot(outer[j // n_blocks_per_row, j % n_blocks_per_row])
-        ax_dummy.axis('off')
-
     return fig
 
 
-
-
-
 def main():
-    # --- Demo 1: HW layout (2D) ---
-    # H, W = 64, 64
-    # cpu_input = np.random.rand(H, W).astype(np.float32) * 255
-    # xpu_input = cpu_input + np.random.normal(scale=5, size=(H, W)).astype(np.float32)
+    nd = 4
+    cpu_input, xpu_input = [], []
 
-    # --- Demo 2: CHW layout (3D) ---
-    # C, H, W = 20, 64, 64  # e.g., 20 channels
-    # cpu_input = np.random.rand(C, H, W).astype(np.float32) * 255
-    # xpu_input = cpu_input + np.random.normal(scale=5, size=(C, H, W)).astype(np.float32)
+    if nd == 2:
+        H, W = 64, 64
+        cpu_input = np.random.rand(H, W).astype(np.float32) * 255
+        xpu_input = cpu_input + np.random.normal(scale=5, size=(H, W)).astype(np.float32)
+    elif nd == 3:
+        C, H, W = 20, 64, 64  # e.g., 20 channels
+        cpu_input = np.random.rand(C, H, W).astype(np.float32) * 255
+        xpu_input = cpu_input + np.random.normal(scale=5, size=(C, H, W)).astype(np.float32)
+    elif nd == 4:
+        N, C, H, W = 2, 4, 64, 64  # e.g., 2 batches, 20 channels each → 40 channels after unrolling
+        cpu_input = np.random.rand(N, C, H, W).astype(np.float32) * 255
+        xpu_input = cpu_input + np.random.normal(scale=5, size=(N, C, H, W)).astype(np.float32)
 
-    # --- Demo 3: NCHW layout (4D) ---
-    # TODO test if the graph should be mirrored or flipped 180 degree
-    N, C, H, W = 1, 4, 64, 64  # e.g., 2 batches, 20 channels each → 40 channels after unrolling
-    cpu_input = np.random.rand(N, C, H, W).astype(np.float32) * 255
-    xpu_input = cpu_input + np.random.normal(scale=5, size=(N, C, H, W)).astype(np.float32)
-
-    # Set the number of blocks (diagnostic 2x2 blocks) per row. For example, 4.
     fig = plot_diagnostics(cpu_input, xpu_input)
-    plt.show()
+    fig.show()
 
 
 if __name__ == '__main__':
