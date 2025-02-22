@@ -162,7 +162,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         [
             dbc.ModalHeader(
                 dbc.ModalTitle("Inference Configuration"),
-                style={'backgroundColor': '#f0f0f0'}
             ),
             dbc.ModalBody(
                 [
@@ -199,7 +198,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                         clearable=False,
                     ),
                 ],
-                style={'backgroundColor': '#f0f0f0'}
             ),
             dbc.ModalFooter(
                 dbc.Button("Close", id="close-modal", className="ms-auto", n_clicks=0, color="dark"),
@@ -207,14 +205,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         ],
         id="config-modal",
         is_open=False,
-    )
-
-    open_button = dbc.Button(
-        "⚙",
-        id="open-modal",
-        color="dark",
-        n_clicks=0,
-        style={"position": "absolute", "top": "20px", "left": "20px"},
     )
 
     # Visualization modal with inline light background styles.
@@ -295,7 +285,17 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         stylesheet=dynamic_stylesheet
     )
 
+
+    open_button = dbc.Button(
+        "Inference settings",
+        id="open-modal",
+        color="dark",
+        n_clicks=0,
+        className="w-100",
+    )
+
     left_pane = html.Div([
+        open_button,
         html.H3(children=["Inferred layers"]),
         html.Div(
             id='left-panel',
@@ -342,7 +342,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         [
             dash_pane,
 
-            open_button,
             config_modal,
             plugin_store,
             config_store,
@@ -350,5 +349,4 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             html.Div(id="dummy-output", style={"display": "none"}),
             dcc.Interval(id='update-interval', interval=500, n_intervals=0),
         ],
-        className="main-container",
     )
