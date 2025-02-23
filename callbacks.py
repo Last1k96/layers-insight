@@ -235,16 +235,24 @@ def register_callbacks(app):
     )
     def handle_arrow_keys(n_events, latest_event, current_index, layers):
         pressed_key = latest_event.get('key')
-        if pressed_key not in ("ArrowUp", "ArrowDown"):
-            return no_update
 
-        # Update the index while staying within bounds.
+        PAGE_STEP = 5
+
         if pressed_key == "ArrowUp":
-            new_index = max(0, current_index - 1)
-        else:
-            new_index = min(len(layers) - 1, current_index + 1)
+            return max(0, current_index - 1)
+        elif pressed_key == "ArrowDown":
+            return min(len(layers) - 1, current_index + 1)
+        elif pressed_key == "Home":
+            return 0
+        elif pressed_key == "End":
+            return len(layers) - 1
+        elif pressed_key == "PageUp":
+            return max(0, current_index - PAGE_STEP)
+        elif pressed_key == "PageDown":
+            return min(len(layers) - 1, current_index + PAGE_STEP)
 
-        return new_index
+        return no_update
+
 
 
     @app.callback(

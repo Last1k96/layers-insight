@@ -310,7 +310,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         html.H3(children=["Inferred layers"]),
         Keyboard(
             id="keyboard",
-            captureKeys=["ArrowUp", "ArrowDown"]
+            captureKeys=["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]
         ),
         html.Ul(
             id='layer-list',
