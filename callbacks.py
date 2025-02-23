@@ -78,12 +78,11 @@ def register_callbacks(app):
         Input('selected-layer-index-store', 'data'),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
-        State('ir-graph', 'selectedNodeData'),
         State('layer-store', 'data'),
         prevent_initial_call=True
     )
     def handle_updates(tap_node, n_intervals, selected_node_store,
-                       selected_layer_index, elements, config_data, selected_node_data, current_layer_list):
+                       selected_layer_index, elements, config_data, current_layer_list):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, elements, no_update, no_update
@@ -118,6 +117,7 @@ def register_callbacks(app):
         elif triggered_prop.startswith('update-interval'):
             finished = [node for node in processing_nodes if node in result_cache]
             if finished:
+                # Update one finished node per interval update
                 node_id = finished[0]
                 result = result_cache[node_id]
                 layer_name = result['layer_name']
