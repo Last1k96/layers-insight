@@ -40,7 +40,6 @@ def update_node_style(elements, node_id, color):
 
 
 def update_selection(elements, selected_id):
-    print(f"update_selection")
     updated = []
     for element in elements:
         new_elem = copy.deepcopy(element)
@@ -66,10 +65,8 @@ def register_callbacks(app):
         triggered_prop = ctx.triggered[0]["prop_id"]
 
         if triggered_prop.startswith("ir-graph") and tap_node:
-            print("ir-graph")
             return tap_node["data"].get("id")
         elif "layer-button" in triggered_prop:
-            print("layer-button")
             button_id_str = triggered_prop.split(".")[0]
             button_id = json.loads(button_id_str)
             return button_id.get("node_id")
@@ -213,11 +210,20 @@ def register_callbacks(app):
                     'border': '1px solid black'
                 })
 
-            text = f"{layer['layer_type']} - {layer['layer_name']} (id={layer['node_id']})"
-            li_elements.append(html.Li(text, style=style))
+            li_elements.append(
+                html.Li(
+                    html.Div(
+                        [
+                            html.Span(layer['layer_type']),
+                            html.Span(layer['layer_name'])
+                        ],
+                        style={'display': 'flex', 'justify-content': 'space-between'}
+                    ),
+                    style=style
+                )
+            )
 
         return li_elements
-
 
     @app.callback(
         Output('selected-layer-index-store', 'data'),
