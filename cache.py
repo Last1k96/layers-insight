@@ -8,7 +8,6 @@ from run_inference import run_partial_inference
 result_cache = {}
 processing_nodes = set()
 task_queue = Queue()
-lock = threading.Lock()
 
 
 # Start background processing thread
@@ -40,12 +39,9 @@ def process_tasks():
             )
 
             result["node_id"] = node_id
-
-            with lock:
-                result_cache[layer_name] = result
+            result_cache[layer_name] = result
 
         except Exception as e:
-            with lock:
-                result_cache[layer_name] = f"Error: {str(e)}" # TODO better errors, replace the cache on re-run
+            result_cache[layer_name] = f"Error: {str(e)}" # TODO better errors, replace the cache on re-run
         finally:
             task_queue.task_done()

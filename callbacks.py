@@ -11,13 +11,29 @@ from dash.exceptions import PreventUpdate
 
 from run_inference import get_available_plugins
 
-from cache import result_cache, task_queue, lock, processing_nodes
+from cache import result_cache, task_queue, processing_nodes
 from visualization import plot_volume_tensor
 from viz_bin_diff import plot_diagnostics
 
 
 def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
     config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
+
+def update_node_style(elements, layer_name, color):
+    for element in elements:
+        if 'data' in element and element['data'].get('layer_name') == layer_name:
+            element['data']['border_color'] = color
+    return elements
+
+
+def update_selection(elements, selected_id):
+    updated = []
+    for element in elements:
+        new_elem = copy.deepcopy(element)
+        if "data" in new_elem:
+            new_elem["selected"] = (new_elem["data"].get("id") == selected_id)
+        updated.append(new_elem)
+    return updated
 
 
 def register_callbacks(app):
@@ -37,18 +53,12 @@ def register_callbacks(app):
 
         triggered_prop = ctx.triggered[0]["prop_id"]
 
-        # If a node on the graph is clicked:
         if triggered_prop.startswith("ir-graph") and tap_node:
             return tap_node["data"].get("id")
-
-        # If a button in the left panel is clicked:
         elif "layer-button" in triggered_prop:
-            try:
-                button_id_str = triggered_prop.split(".")[0]
-                button_id = json.loads(button_id_str)
-                return button_id.get("node_id")
-            except Exception:
-                return no_update
+            button_id_str = triggered_prop.split(".")[0]
+            button_id = json.loads(button_id_str)
+            return button_id.get("node_id")
 
         return no_update
 
@@ -89,8 +99,7 @@ def register_callbacks(app):
             if tap_node and 'data' in tap_node:
                 layer_name = tap_node['data'].get('layer_name')
                 node_id = tap_node['data'].get('id')
-                with lock:
-                    cached_result = result_cache.get(layer_name)
+                cached_result = result_cache.get(layer_name)
                 if cached_result:
                     right_panel_out = cached_result["right-panel"]
                     layer_name_out = layer_name
@@ -98,41 +107,39 @@ def register_callbacks(app):
                     new_elements = update_node_style(new_elements, layer_name, 'orange')
                     right_panel_out = "Processing..."
                     layer_name_out = layer_name
-                    with lock:
-                        processing_nodes.add(layer_name)
+                    processing_nodes.add(layer_name)
                     task_queue.put((node_id, layer_name, config_data))
                 # Set the new selection based on the tapped node.
                 selected_id = node_id
 
         # Case 2: Update interval triggered.
         elif triggered_prop.startswith('update-interval'):
-            with lock:
-                finished = [node for node in processing_nodes if node in result_cache]
-                if finished:
-                    for processed_layer_name in finished:
-                        result = result_cache[processed_layer_name]
-                        color = 'green'
-                        is_error = isinstance(result, str) and result.startswith('Error:')
-                        if is_error:
-                            result_cache.pop(processed_layer_name)
-                            color = 'red'
-                        new_elements = update_node_style(new_elements, processed_layer_name, color)
-                        processing_nodes.remove(processed_layer_name)
-                        new_button = html.Button(
-                            f"{processed_layer_name}",
-                            id={'type': 'layer-button', 'layer_name': processed_layer_name,
-                                'node_id': result["node_id"]},
-                            n_clicks=0,
-                            style={'display': 'block', 'width': "100%", "textAlign": "left"},
-                        )
-                        left_panel_out = left_panel_out or []
-                        left_panel_out.append(new_button)
-                        if (selected_node_data and isinstance(selected_node_data, list) and
-                            selected_node_data):
-                            selected_layer_name = selected_node_data[0].get("layer_name")
-                            if processed_layer_name == selected_layer_name:
-                                right_panel_out = result["right-panel"] if not is_error else result
-                                layer_name_out = processed_layer_name
+            finished = [node for node in processing_nodes if node in result_cache]
+            if finished:
+                for processed_layer_name in finished:
+                    result = result_cache[processed_layer_name]
+                    color = 'green'
+                    is_error = isinstance(result, str) and result.startswith('Error:')
+                    if is_error:
+                        result_cache.pop(processed_layer_name)
+                        color = 'red'
+                    new_elements = update_node_style(new_elements, processed_layer_name, color)
+                    processing_nodes.remove(processed_layer_name)
+                    new_button = html.Button(
+                        f"{processed_layer_name}",
+                        id={'type': 'layer-button', 'layer_name': processed_layer_name,
+                            'node_id': result["node_id"]},
+                        n_clicks=0,
+                        style={'display': 'block', 'width': "100%", "textAlign": "left"},
+                    )
+                    left_panel_out = left_panel_out or []
+                    left_panel_out.append(new_button)
+                    if (selected_node_data and isinstance(selected_node_data, list) and
+                        selected_node_data):
+                        selected_layer_name = selected_node_data[0].get("layer_name")
+                        if processed_layer_name == selected_layer_name:
+                            right_panel_out = result["right-panel"] if not is_error else result
+                            layer_name_out = processed_layer_name
             # Instead of defaulting to the stored value (which might be stale), preserve the current selection
             # by checking which node is marked as selected in our new elements.
             current_sel = None
@@ -149,7 +156,8 @@ def register_callbacks(app):
                 button_id = json.loads(button_id_str)
                 node_id = button_id.get('node_id')
                 layer_name = button_id.get('layer_name')
-                right_panel_out = no_update
+                cached_result = result_cache.get(layer_name)
+                right_panel_out = cached_result["right-panel"]
                 layer_name_out = layer_name
                 selected_id = node_id
             except Exception:
@@ -165,25 +173,7 @@ def register_callbacks(app):
 
         return right_panel_out, new_elements, layer_name_out, left_panel_out
 
-    # Helper functions.
-    def update_node_style(elements, layer_name, color):
-        for element in elements:
-            if 'data' in element and element['data'].get('layer_name') == layer_name:
-                element['data']['border_color'] = color
-        return elements
 
-    def update_selection(elements, selected_id):
-        """
-        Return a new list of elements where only the element whose data.id equals
-        selected_id is marked as selected. All others are explicitly unselected.
-        """
-        updated = []
-        for element in elements:
-            new_elem = copy.deepcopy(element)
-            if "data" in new_elem:
-                new_elem["selected"] = (new_elem["data"].get("id") == selected_id)
-            updated.append(new_elem)
-        return updated
 
     @app.callback(
         Output("config-modal", "is_open"),
