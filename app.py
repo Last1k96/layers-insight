@@ -1,5 +1,6 @@
 import dash
 import dash_cytoscape as cyto
+from dash import Output, Input
 
 from cache import process_tasks
 from layout import create_layout

@@ -80,28 +80,29 @@ def register_callbacks(app):
         Output('right-panel', 'children'),
         Output('ir-graph', 'elements'),
         Output('layer-name', 'children'),
-        Output('left-panel', 'children'),
+        Output('layer-store', 'data'),
         Input('ir-graph', 'tapNode'),
         Input('update-interval', 'n_intervals'),
         Input({'type': 'layer-button', 'node_id': ALL, 'layer_name': ALL}, 'n_clicks'),
         Input("selected-node-store", "data"),
+        Input('selected-layer-index-store', 'data'),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
         State('ir-graph', 'selectedNodeData'),
-        State('left-panel', 'children'),
+        State('layer-store', 'data'),
         prevent_initial_call=True
     )
     def handle_updates(tap_node, n_intervals, button_clicks, selected_node_store,
-                       elements, config_data, selected_node_data, left_panel):
+                       selected_layer_index, elements, config_data, selected_node_data, current_layer_list):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update, elements, no_update, left_panel
+            return no_update, elements, no_update, no_update
 
         # Always work with a fresh deep copy of elements.
         new_elements = copy.deepcopy(elements)
         right_panel_out = no_update
         layer_name_out = no_update
-        left_panel_out = no_update
+        layer_list_out = no_update
         selected_id = None
 
         triggered_prop = ctx.triggered[0]['prop_id']
@@ -122,7 +123,6 @@ def register_callbacks(app):
                     layer_name_out = layer_name
                     processing_nodes.add(node_id)
                     task_queue.put((node_id, layer_name, layer_type, config_data))
-                # Set the new selection based on the tapped node.
                 selected_id = node_id
 
         # Case 2: Update interval triggered.
@@ -141,24 +141,19 @@ def register_callbacks(app):
                 new_elements = update_node_style(new_elements, node_id, color)
                 processing_nodes.remove(node_id)
 
-                new_button = html.Button(
-                    id={'type': 'layer-button', 'layer_name': layer_name,
-                        'node_id': node_id},
-                    children=[
-                        html.Span(layer_type, style={"flex": "1", "textAlign": "left"}),
-                        html.Span(layer_name, style={"flex": "1", "textAlign": "right"})
-                    ],
-                    style={'display': 'flex', 'width': "100%", "textAlign": "left"}
+                new_layer_item = {
+                    "node_id": node_id,
+                    "layer_name": layer_name,
+                    "layer_type": layer_type
+                }
+                layer_list_out = copy.deepcopy(current_layer_list)
+                insertion_index = bisect.bisect_left(
+                    [int(item["node_id"]) for item in layer_list_out],
+                    int(node_id)
                 )
+                layer_list_out.insert(insertion_index, new_layer_item)
 
-                left_panel_out = copy.deepcopy(left_panel)
-                new_node_id = int(node_id)
-                keys = [int(btn["props"]["id"]["node_id"]) for btn in left_panel_out]
-                insertion_index = bisect.bisect_left(keys, new_node_id)
-                left_panel_out.insert(insertion_index, new_button)
-
-                if (selected_node_data and isinstance(selected_node_data, list) and
-                        selected_node_data):
+                if (selected_node_data and isinstance(selected_node_data, list) and selected_node_data):
                     selected_layer_name = selected_node_data[0].get("layer_name")
                     if layer_name == selected_layer_name:
                         right_panel_out = result["right-panel"] if not is_error else result
@@ -172,24 +167,95 @@ def register_callbacks(app):
                         break
                 selected_id = current_sel if current_sel is not None else selected_node_store
 
-        # Case 3: User clicked a left-panel button.
-        elif 'layer-button' in triggered_prop:
-            button_id_str = triggered_prop.split('.')[0]
-            button_id = json.loads(button_id_str)
-            node_id = button_id.get('node_id')
-            layer_name = button_id.get('layer_name')
-            cached_result = result_cache.get(node_id)
-            right_panel_out = cached_result["right-panel"]
-            layer_name_out = layer_name
-            selected_id = node_id
+        # Case 3 (new): Selected layer index changed via keyboard arrow keys.
+        elif triggered_prop == 'selected-layer-index-store.data':
+            layer_list_copy = copy.deepcopy(current_layer_list)
+            if layer_list_copy:
+                if 0 <= selected_layer_index < len(layer_list_copy):
+                    selected_layer = layer_list_copy[selected_layer_index]
+                    node_id = selected_layer.get("node_id")
+                    layer_name = selected_layer.get("layer_name")
+                    cached_result = result_cache.get(node_id)
+                    right_panel_out = cached_result["right-panel"] if cached_result else no_update
+                    layer_name_out = layer_name
+                    selected_id = node_id
+
         else:
             return no_update, no_update, no_update, no_update
 
-        # Update selection so that only the node with id == selected_id is marked as selected.
+        # Update selection in the graph elements so that only the selected node is marked.
         if selected_id is not None:
             new_elements = update_selection(new_elements, selected_id)
 
-        return right_panel_out, new_elements, layer_name_out, left_panel_out
+        return right_panel_out, new_elements, layer_name_out, layer_list_out
+
+    @app.callback(
+        Output('layer-list', 'children'),
+        Input('layer-store', 'data'),
+        Input('selected-layer-index-store', 'data')
+    )
+    def render_layers(layers, selected_index):
+        """
+        Build a <ul> with <li> entries, highlighting the one at 'selected_index'.
+        """
+        if not layers:
+            return []
+
+        li_elements = []
+        for i, layer in enumerate(layers):
+            # Decide style if this item is the selected item
+            is_selected = (i == selected_index)
+            style = {'padding': '5px', 'marginBottom': '3px'}
+            if is_selected:
+                style.update({
+                    'fontWeight': 'bold',
+                    'backgroundColor': '#D3D3D3',  # highlight
+                    'border': '1px solid black'
+                })
+
+            text = f"{layer['layer_type']} - {layer['layer_name']} (id={layer['node_id']})"
+            li_elements.append(html.Li(text, style=style))
+
+        return li_elements
+
+
+    @app.callback(
+        Output('selected-layer-index-store', 'data'),
+        Input("keyboard", "n_keydowns"),
+        State("keyboard", "keydown"),
+        State('selected-layer-index-store', 'data'),
+        State('layer-store', 'data'),
+        prevent_initial_call=True
+    )
+    def handle_arrow_keys(n_events, latest_event, current_index, layers):
+        pressed_key = latest_event.get('key')
+        if pressed_key not in ("ArrowUp", "ArrowDown"):
+            return no_update
+
+        # Update the index while staying within bounds.
+        if pressed_key == "ArrowUp":
+            new_index = max(0, current_index - 1)
+        else:
+            new_index = min(len(layers) - 1, current_index + 1)
+
+        return new_index
+
+
+    @app.callback(
+        Output('debug-info', 'children'),
+        Input('selected-layer-index-store', 'data'),
+        State('layer-store', 'data')
+    )
+    def show_debug(selected_index, layers):
+        """
+        Show which layer is currently selected, for demonstration.
+        """
+        if not layers:
+            return "No layers"
+        layer = layers[selected_index]
+        return f"You selected index={selected_index}: {layer['layer_type']} - {layer['layer_name']}"
+
+    #######################################################################################################################
 
     @app.callback(
         Output("config-modal", "is_open"),

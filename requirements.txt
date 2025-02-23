@@ -1,4 +1,4 @@
-dash==2.18.2
+dash==3.0.0rc3
 dash-cytoscape
 dash-bootstrap-components~=1.7.1
 dash-split-pane

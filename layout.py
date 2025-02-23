@@ -1,12 +1,13 @@
 import os
 import random
 from dash import dcc, html, Input, Output, State
+from dash_extensions import Keyboard
 import dash_cytoscape as cyto
+
 from openvino_graph import parse_openvino_ir
 from known_ops import OPENVINO_OP_COLORS_DARK
 import dash_bootstrap_components as dbc
 from dash_split_pane import DashSplitPane
-import cache
 
 from run_inference import get_available_plugins
 from callbacks import update_config
@@ -303,12 +304,19 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
     left_pane = html.Div([
         open_button,
+        dcc.Store(id='layer-store', data=[]),
+        dcc.Store(id='selected-layer-index-store', data=0),
+
         html.H3(children=["Inferred layers"]),
-        html.Div(
-            id='left-panel',
-            style={'padding': '10px', 'height': '100%', 'overflow': 'auto'},
-            children=[]
+        Keyboard(
+            id="keyboard",
+            captureKeys=["ArrowUp", "ArrowDown"]
         ),
+        html.Ul(
+            id='layer-list',
+            style={'padding': '10px', 'height': '100%', 'overflow': 'auto'},
+        ),
+        html.Div(id='debug-info', style={"marginTop": "20px", "color": "blue"}),
     ])
 
     right_pane = html.Div([
