@@ -361,7 +361,14 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             config_store,
             visualization_modal,
             html.Div(id="dummy-output", style={"display": "none"}),
-            dcc.Store(id="selected-node-store"),
+
+            dcc.Store(id='graph-selection-store'),
+            dcc.Store(id='list-selection-store'),
+            dcc.Store(id='selected-node-store'),
+            dcc.Store(id='layer-store'),
+            dcc.Store(id='graph-elements-store', data=[]),
+            dcc.Store(id='right-panel-store'),
+
             dcc.Interval(id='update-interval', interval=500, n_intervals=0),
         ],
     )

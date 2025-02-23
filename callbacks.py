@@ -19,6 +19,7 @@ from viz_bin_diff import plot_diagnostics
 
 lock = threading.Lock()
 
+
 class LockGuard:
     def __init__(self, lock):
         self._lock = lock
@@ -27,6 +28,7 @@ class LockGuard:
     def __del__(self):
         # Called when the object is garbage-collected
         self._lock.release()
+
 
 def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
     config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
@@ -60,12 +62,9 @@ def register_callbacks(app):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
-
         triggered_prop = ctx.triggered[0]["prop_id"]
-
         if triggered_prop.startswith("ir-graph") and tap_node:
             return tap_node["data"].get("id")
-
         return no_update
 
     @app.callback(
@@ -89,7 +88,6 @@ def register_callbacks(app):
         if not ctx.triggered:
             return no_update, elements, no_update, no_update
 
-        # Always work with a fresh deep copy of elements.
         new_elements = copy.deepcopy(elements)
         right_panel_out = no_update
         layer_name_out = no_update
@@ -132,25 +130,22 @@ def register_callbacks(app):
                 new_elements = update_node_style(new_elements, node_id, color)
                 processing_nodes.remove(node_id)
 
-                new_layer_item = {
-                    "node_id": node_id,
-                    "layer_name": layer_name,
-                    "layer_type": layer_type
-                }
-                layer_list_out = copy.deepcopy(current_layer_list)
+                layer_list_out = copy.deepcopy(current_layer_list) if current_layer_list is not None else []
                 insertion_index = bisect.bisect_left(
                     [int(item["node_id"]) for item in layer_list_out],
                     int(node_id)
                 )
-                layer_list_out.insert(insertion_index, new_layer_item)
+                layer_list_out.insert(insertion_index, {
+                    "node_id": node_id,
+                    "layer_name": layer_name,
+                    "layer_type": layer_type
+                })
 
-                if (selected_node_data and isinstance(selected_node_data, list) and selected_node_data):
-                    selected_layer_name = selected_node_data[0].get("layer_name")
-                    if layer_name == selected_layer_name:
-                        right_panel_out = result["right-panel"] if not is_error else result
-                        layer_name_out = layer_name
-                # Instead of defaulting to the stored value (which might be stale), preserve the current selection
-                # by checking which node is marked as selected in our new elements.
+                # Always update the right panel and layer name when processing finishes.
+                right_panel_out = result["right-panel"] if not is_error else result
+                layer_name_out = layer_name
+
+                # Preserve current selection from new_elements.
                 current_sel = None
                 for el in new_elements:
                     if "selected" in el and el["selected"]:
@@ -158,7 +153,7 @@ def register_callbacks(app):
                         break
                 selected_id = current_sel if current_sel is not None else selected_node_store
 
-        # Case 3 (new): Selected layer index changed via keyboard arrow keys.
+        # Case 3: Selected layer index changed via keyboard arrow keys.
         elif triggered_prop == 'selected-layer-index-store.data':
             layer_list_copy = copy.deepcopy(current_layer_list)
             if layer_list_copy:
@@ -179,7 +174,6 @@ def register_callbacks(app):
             new_elements = update_selection(new_elements, selected_id)
 
         return right_panel_out, new_elements, layer_name_out, layer_list_out
-
 
     @app.callback(
         Output('layer-list', 'children'),
@@ -215,7 +209,6 @@ def register_callbacks(app):
                     style=style
                 )
             )
-
         return li_elements
 
     @app.callback(
@@ -233,7 +226,6 @@ def register_callbacks(app):
             return no_update
 
         triggered_prop_id = ctx.triggered[0]['prop_id']
-        # Only try to parse as JSON if the prop id starts with '{'
         if triggered_prop_id.startswith('{'):
             try:
                 id_part = triggered_prop_id.split('.')[0]
@@ -273,7 +265,6 @@ def register_callbacks(app):
             return no_update
 
         return new_index
-
 
     #######################################################################################################################
 
