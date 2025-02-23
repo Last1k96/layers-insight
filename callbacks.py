@@ -20,9 +20,9 @@ def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, 
     config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
 
 
-def update_node_style(elements, layer_name, color):
+def update_node_style(elements, node_id, color):
     for element in elements:
-        if 'data' in element and element['data'].get('layer_name') == layer_name:
+        if 'data' in element and element['data'].get('id') == node_id:
             element['data']['border_color'] = color
     return elements
 
@@ -104,7 +104,7 @@ def register_callbacks(app):
                     right_panel_out = cached_result["right-panel"]
                     layer_name_out = layer_name
                 else:
-                    new_elements = update_node_style(new_elements, layer_name, 'orange')
+                    new_elements = update_node_style(new_elements, node_id, 'orange')
                     right_panel_out = "Processing..."
                     layer_name_out = layer_name
                     processing_nodes.add(layer_name)
@@ -118,17 +118,18 @@ def register_callbacks(app):
             if finished:
                 for processed_layer_name in finished:
                     result = result_cache[processed_layer_name]
+                    node_id = result["node_id"]
                     color = 'green'
                     is_error = isinstance(result, str) and result.startswith('Error:')
                     if is_error:
                         result_cache.pop(processed_layer_name)
                         color = 'red'
-                    new_elements = update_node_style(new_elements, processed_layer_name, color)
+                    new_elements = update_node_style(new_elements, node_id, color)
                     processing_nodes.remove(processed_layer_name)
                     new_button = html.Button(
                         f"{processed_layer_name}",
                         id={'type': 'layer-button', 'layer_name': processed_layer_name,
-                            'node_id': result["node_id"]},
+                            'node_id': node_id},
                         n_clicks=0,
                         style={'display': 'block', 'width': "100%", "textAlign": "left"},
                     )
