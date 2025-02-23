@@ -160,7 +160,7 @@ def register_callbacks(app):
             layer_name_out = layer_name
             selected_id = node_id
         else:
-            selected_id = selected_node_store
+            return no_update, no_update, no_update, no_update
 
         # Update selection so that only the node with id == selected_id is marked as selected.
         if selected_id is not None:
