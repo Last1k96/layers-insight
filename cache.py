@@ -18,7 +18,7 @@ def process_tasks():
             break
         try:
             # task is now (layer_name, config_data)
-            node_id, layer_name, config_data = task
+            node_id, layer_name, layer_type, config_data = task
 
             openvino_bin = config_data.get("ov_bin_path")
             model_xml = config_data.get("model_xml")
@@ -40,6 +40,7 @@ def process_tasks():
 
             result["node_id"] = node_id
             result["layer_name"] = layer_name
+            result["layer_type"] = layer_type
             result_cache[node_id] = result
 
         except Exception as e:

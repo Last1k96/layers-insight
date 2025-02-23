@@ -98,6 +98,7 @@ def register_callbacks(app):
         if triggered_prop.startswith('ir-graph'):
             if tap_node and 'data' in tap_node:
                 layer_name = tap_node['data'].get('layer_name')
+                layer_type = tap_node['data'].get('type')
                 node_id = tap_node['data'].get('id')
                 cached_result = result_cache.get(node_id)
                 if cached_result:
@@ -108,7 +109,7 @@ def register_callbacks(app):
                     right_panel_out = "Processing..."
                     layer_name_out = layer_name
                     processing_nodes.add(node_id)
-                    task_queue.put((node_id, layer_name, config_data))
+                    task_queue.put((node_id, layer_name, layer_type, config_data))
                 # Set the new selection based on the tapped node.
                 selected_id = node_id
 
@@ -119,6 +120,7 @@ def register_callbacks(app):
                 for node_id in finished:
                     result = result_cache[node_id]
                     layer_name = result['layer_name']
+                    layer_type = result['layer_type']
                     color = 'green'
                     is_error = isinstance(result, str) and result.startswith('Error:')
                     if is_error:
@@ -126,12 +128,15 @@ def register_callbacks(app):
                         color = 'red'
                     new_elements = update_node_style(new_elements, node_id, color)
                     processing_nodes.remove(node_id)
+
                     new_button = html.Button(
-                        f"{layer_name}",
                         id={'type': 'layer-button', 'layer_name': layer_name,
                             'node_id': node_id},
-                        n_clicks=0,
-                        style={'display': 'block', 'width': "100%", "textAlign": "left"},
+                        children=[
+                            html.Span(layer_type, style={"flex": "1", "textAlign": "left"}),
+                            html.Span(layer_name, style={"flex": "1", "textAlign": "right"})
+                        ],
+                        style={'display': 'flex', 'width': "100%", "textAlign": "left"}
                     )
                     left_panel_out = left_panel
                     left_panel_out.append(new_button)
