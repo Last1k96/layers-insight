@@ -28,6 +28,7 @@ def update_node_style(elements, layer_name, color):
 
 
 def update_selection(elements, selected_id):
+    print(f"update_selection")
     updated = []
     for element in elements:
         new_elem = copy.deepcopy(element)
@@ -139,14 +140,14 @@ def register_callbacks(app):
                         if processed_layer_name == selected_layer_name:
                             right_panel_out = result["right-panel"] if not is_error else result
                             layer_name_out = processed_layer_name
-            # Instead of defaulting to the stored value (which might be stale), preserve the current selection
-            # by checking which node is marked as selected in our new elements.
-            current_sel = None
-            for el in new_elements:
-                if "selected" in el and el["selected"]:
-                    current_sel = el["data"].get("id")
-                    break
-            selected_id = current_sel if current_sel is not None else selected_node_store
+                # Instead of defaulting to the stored value (which might be stale), preserve the current selection
+                # by checking which node is marked as selected in our new elements.
+                current_sel = None
+                for el in new_elements:
+                    if "selected" in el and el["selected"]:
+                        current_sel = el["data"].get("id")
+                        break
+                selected_id = current_sel if current_sel is not None else selected_node_store
 
         # Case 3: User clicked a left-panel button.
         elif 'layer-button' in triggered_prop:
@@ -164,8 +165,6 @@ def register_callbacks(app):
         # Update selection so that only the node with id == selected_id is marked as selected.
         if selected_id is not None:
             new_elements = update_selection(new_elements, selected_id)
-        else:
-            new_elements = update_selection(new_elements, None)
 
         return right_panel_out, new_elements, layer_name_out, left_panel_out
 
