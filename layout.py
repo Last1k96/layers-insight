@@ -316,7 +316,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             id='layer-list',
             style={'padding': '10px', 'height': '100%', 'overflow': 'auto'},
         ),
-        html.Div(id='debug-info', style={"marginTop": "20px", "color": "blue"}),
     ])
 
     right_pane = html.Div([

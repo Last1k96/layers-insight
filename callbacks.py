@@ -53,11 +53,10 @@ def register_callbacks(app):
     @app.callback(
         Output("selected-node-store", "data"),
         Input("ir-graph", "tapNode"),
-        Input({'type': 'layer-button', 'node_id': ALL, 'layer_name': ALL}, "n_clicks"),
         State("ir-graph", "selectedNodeData"),
         prevent_initial_call=True
     )
-    def update_selected_node(tap_node, button_clicks, selected_node_data):
+    def update_selected_node(tap_node, selected_node_data):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -66,10 +65,6 @@ def register_callbacks(app):
 
         if triggered_prop.startswith("ir-graph") and tap_node:
             return tap_node["data"].get("id")
-        elif "layer-button" in triggered_prop:
-            button_id_str = triggered_prop.split(".")[0]
-            button_id = json.loads(button_id_str)
-            return button_id.get("node_id")
 
         return no_update
 
@@ -80,7 +75,6 @@ def register_callbacks(app):
         Output('layer-store', 'data'),
         Input('ir-graph', 'tapNode'),
         Input('update-interval', 'n_intervals'),
-        Input({'type': 'layer-button', 'node_id': ALL, 'layer_name': ALL}, 'n_clicks'),
         Input("selected-node-store", "data"),
         Input('selected-layer-index-store', 'data'),
         State('ir-graph', 'elements'),
@@ -89,7 +83,7 @@ def register_callbacks(app):
         State('layer-store', 'data'),
         prevent_initial_call=True
     )
-    def handle_updates(tap_node, n_intervals, button_clicks, selected_node_store,
+    def handle_updates(tap_node, n_intervals, selected_node_store,
                        selected_layer_index, elements, config_data, selected_node_data, current_layer_list):
         ctx = callback_context
         if not ctx.triggered:
@@ -280,21 +274,6 @@ def register_callbacks(app):
 
         return new_index
 
-
-
-    @app.callback(
-        Output('debug-info', 'children'),
-        Input('selected-layer-index-store', 'data'),
-        State('layer-store', 'data')
-    )
-    def show_debug(selected_index, layers):
-        """
-        Show which layer is currently selected, for demonstration.
-        """
-        if not layers:
-            return "No layers"
-        layer = layers[selected_index]
-        return f"You selected index={selected_index}: {layer['layer_type']} - {layer['layer_name']}"
 
     #######################################################################################################################
 
