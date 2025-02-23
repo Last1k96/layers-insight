@@ -3,6 +3,7 @@ import copy
 import io
 import json
 import os
+import threading
 import time
 import bisect
 
@@ -16,6 +17,16 @@ from cache import result_cache, task_queue, processing_nodes
 from visualization import plot_volume_tensor
 from viz_bin_diff import plot_diagnostics
 
+lock = threading.Lock()
+
+class LockGuard:
+    def __init__(self, lock):
+        self._lock = lock
+        self._lock.acquire()
+
+    def __del__(self):
+        # Called when the object is garbage-collected
+        self._lock.release()
 
 def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
     config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
@@ -118,40 +129,40 @@ def register_callbacks(app):
         elif triggered_prop.startswith('update-interval'):
             finished = [node for node in processing_nodes if node in result_cache]
             if finished:
-                for node_id in finished:
-                    result = result_cache[node_id]
-                    layer_name = result['layer_name']
-                    layer_type = result['layer_type']
-                    color = 'green'
-                    is_error = isinstance(result, str) and result.startswith('Error:')
-                    if is_error:
-                        result_cache.pop(node_id)
-                        color = 'red'
-                    new_elements = update_node_style(new_elements, node_id, color)
-                    processing_nodes.remove(node_id)
+                node_id = finished[0]
+                result = result_cache[node_id]
+                layer_name = result['layer_name']
+                layer_type = result['layer_type']
+                color = 'green'
+                is_error = isinstance(result, str) and result.startswith('Error:')
+                if is_error:
+                    result_cache.pop(node_id)
+                    color = 'red'
+                new_elements = update_node_style(new_elements, node_id, color)
+                processing_nodes.remove(node_id)
 
-                    new_button = html.Button(
-                        id={'type': 'layer-button', 'layer_name': layer_name,
-                            'node_id': node_id},
-                        children=[
-                            html.Span(layer_type, style={"flex": "1", "textAlign": "left"}),
-                            html.Span(layer_name, style={"flex": "1", "textAlign": "right"})
-                        ],
-                        style={'display': 'flex', 'width': "100%", "textAlign": "left"}
-                    )
+                new_button = html.Button(
+                    id={'type': 'layer-button', 'layer_name': layer_name,
+                        'node_id': node_id},
+                    children=[
+                        html.Span(layer_type, style={"flex": "1", "textAlign": "left"}),
+                        html.Span(layer_name, style={"flex": "1", "textAlign": "right"})
+                    ],
+                    style={'display': 'flex', 'width': "100%", "textAlign": "left"}
+                )
 
-                    left_panel_out = left_panel
-                    new_node_id = int(node_id)
-                    keys = [int(btn["props"]["id"]["node_id"]) for btn in left_panel_out]
-                    insertion_index = bisect.bisect_left(keys, new_node_id)
-                    left_panel_out.insert(insertion_index, new_button)
+                left_panel_out = copy.deepcopy(left_panel)
+                new_node_id = int(node_id)
+                keys = [int(btn["props"]["id"]["node_id"]) for btn in left_panel_out]
+                insertion_index = bisect.bisect_left(keys, new_node_id)
+                left_panel_out.insert(insertion_index, new_button)
 
-                    if (selected_node_data and isinstance(selected_node_data, list) and
-                            selected_node_data):
-                        selected_layer_name = selected_node_data[0].get("layer_name")
-                        if layer_name == selected_layer_name:
-                            right_panel_out = result["right-panel"] if not is_error else result
-                            layer_name_out = layer_name
+                if (selected_node_data and isinstance(selected_node_data, list) and
+                        selected_node_data):
+                    selected_layer_name = selected_node_data[0].get("layer_name")
+                    if layer_name == selected_layer_name:
+                        right_panel_out = result["right-panel"] if not is_error else result
+                        layer_name_out = layer_name
                 # Instead of defaulting to the stored value (which might be stale), preserve the current selection
                 # by checking which node is marked as selected in our new elements.
                 current_sel = None
@@ -245,7 +256,6 @@ def register_callbacks(app):
         updated_data["model_inputs"] = all_input_values
         return updated_data
 
-    # TODO use node_id to toggle visualisation and get the data from the cache
     @app.callback(
         Output("visualization-modal", "is_open"),
         Output("vis-3d", "figure"),
