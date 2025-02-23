@@ -19,6 +19,7 @@ from viz_bin_diff import plot_diagnostics
 def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
     config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
 
+
 def update_node_style(elements, layer_name, color):
     for element in elements:
         if 'data' in element and element['data'].get('layer_name') == layer_name:
@@ -39,10 +40,8 @@ def update_selection(elements, selected_id):
 def register_callbacks(app):
     @app.callback(
         Output("selected-node-store", "data"),
-        [
-            Input("ir-graph", "tapNode"),
-            Input({'type': 'layer-button', 'node_id': ALL, 'layer_name': ALL}, "n_clicks")
-        ],
+        Input("ir-graph", "tapNode"),
+        Input({'type': 'layer-button', 'node_id': ALL, 'layer_name': ALL}, "n_clicks"),
         State("ir-graph", "selectedNodeData"),
         prevent_initial_call=True
     )
@@ -54,8 +53,10 @@ def register_callbacks(app):
         triggered_prop = ctx.triggered[0]["prop_id"]
 
         if triggered_prop.startswith("ir-graph") and tap_node:
+            print("ir-graph")
             return tap_node["data"].get("id")
         elif "layer-button" in triggered_prop:
+            print("layer-button")
             button_id_str = triggered_prop.split(".")[0]
             button_id = json.loads(button_id_str)
             return button_id.get("node_id")
@@ -67,12 +68,10 @@ def register_callbacks(app):
         Output('ir-graph', 'elements'),
         Output('layer-name', 'children'),
         Output('left-panel', 'children'),
-        [
-            Input('ir-graph', 'tapNode'),
-            Input('update-interval', 'n_intervals'),
-            Input({'type': 'layer-button', 'node_id': ALL, 'layer_name': ALL}, 'n_clicks'),
-            Input("selected-node-store", "data")
-        ],
+        Input('ir-graph', 'tapNode'),
+        Input('update-interval', 'n_intervals'),
+        Input({'type': 'layer-button', 'node_id': ALL, 'layer_name': ALL}, 'n_clicks'),
+        Input("selected-node-store", "data"),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
         State('ir-graph', 'selectedNodeData'),
@@ -89,7 +88,7 @@ def register_callbacks(app):
         new_elements = copy.deepcopy(elements)
         right_panel_out = no_update
         layer_name_out = no_update
-        left_panel_out = left_panel
+        left_panel_out = no_update
         selected_id = None
 
         triggered_prop = ctx.triggered[0]['prop_id']
@@ -132,10 +131,10 @@ def register_callbacks(app):
                         n_clicks=0,
                         style={'display': 'block', 'width': "100%", "textAlign": "left"},
                     )
-                    left_panel_out = left_panel_out or []
+                    left_panel_out = left_panel
                     left_panel_out.append(new_button)
                     if (selected_node_data and isinstance(selected_node_data, list) and
-                        selected_node_data):
+                            selected_node_data):
                         selected_layer_name = selected_node_data[0].get("layer_name")
                         if processed_layer_name == selected_layer_name:
                             right_panel_out = result["right-panel"] if not is_error else result
@@ -170,12 +169,10 @@ def register_callbacks(app):
 
         return right_panel_out, new_elements, layer_name_out, left_panel_out
 
-
-
     @app.callback(
         Output("config-modal", "is_open"),
-        [Input("open-modal", "n_clicks"), Input("close-modal", "n_clicks")],
-        [State("config-modal", "is_open")],
+        Input("open-modal", "n_clicks"), Input("close-modal", "n_clicks"),
+        State("config-modal", "is_open"),
     )
     def toggle_modal(open_clicks, close_clicks, is_open):
         if open_clicks or close_clicks:
@@ -216,14 +213,12 @@ def register_callbacks(app):
     @app.callback(
         Output("config-store", "data"),
         Input("close-modal", "n_clicks"),
-        [
-            State("model-xml-path", "value"),
-            State("ov-bin-path", "value"),
-            State("reference-plugin-dropdown", "value"),
-            State("main-plugin-dropdown", "value"),
-            State({"type": "model-input", "name": ALL}, "value"),
-            State("config-store", "data"),
-        ],
+        State("model-xml-path", "value"),
+        State("ov-bin-path", "value"),
+        State("reference-plugin-dropdown", "value"),
+        State("main-plugin-dropdown", "value"),
+        State({"type": "model-input", "name": ALL}, "value"),
+        State("config-store", "data"),
         prevent_initial_call=True
     )
     def save_config(n_clicks_close, model_xml, bin_path, ref_plugin,
@@ -240,14 +235,14 @@ def register_callbacks(app):
         return updated_data
 
     @app.callback(
-        [Output("visualization-modal", "is_open"),
-         Output("vis-3d", "figure"),
-         Output("vis-diagnostics", "children")],
-        [Input("visualization-button", "n_clicks"),
-         Input("close-vis-modal", "n_clicks")],
-        [State("visualization-modal", "is_open"),
-         State("layer-name", "children"),
-         State('config-store', 'data')]
+        Output("visualization-modal", "is_open"),
+        Output("vis-3d", "figure"),
+        Output("vis-diagnostics", "children"),
+        Input("visualization-button", "n_clicks"),
+        Input("close-vis-modal", "n_clicks"),
+        State("visualization-modal", "is_open"),
+        State("layer-name", "children"),
+        State('config-store', 'data')
     )
     def toggle_visualization_modal(n_open, n_close, is_open, layer_name, config):
         ctx = callback_context
