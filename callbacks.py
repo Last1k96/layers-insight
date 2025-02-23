@@ -99,7 +99,7 @@ def register_callbacks(app):
             if tap_node and 'data' in tap_node:
                 layer_name = tap_node['data'].get('layer_name')
                 node_id = tap_node['data'].get('id')
-                cached_result = result_cache.get(layer_name)
+                cached_result = result_cache.get(node_id)
                 if cached_result:
                     right_panel_out = cached_result["right-panel"]
                     layer_name_out = layer_name
@@ -107,7 +107,7 @@ def register_callbacks(app):
                     new_elements = update_node_style(new_elements, node_id, 'orange')
                     right_panel_out = "Processing..."
                     layer_name_out = layer_name
-                    processing_nodes.add(layer_name)
+                    processing_nodes.add(node_id)
                     task_queue.put((node_id, layer_name, config_data))
                 # Set the new selection based on the tapped node.
                 selected_id = node_id
@@ -116,19 +116,19 @@ def register_callbacks(app):
         elif triggered_prop.startswith('update-interval'):
             finished = [node for node in processing_nodes if node in result_cache]
             if finished:
-                for processed_layer_name in finished:
-                    result = result_cache[processed_layer_name]
-                    node_id = result["node_id"]
+                for node_id in finished:
+                    result = result_cache[node_id]
+                    layer_name = result['layer_name']
                     color = 'green'
                     is_error = isinstance(result, str) and result.startswith('Error:')
                     if is_error:
-                        result_cache.pop(processed_layer_name)
+                        result_cache.pop(node_id)
                         color = 'red'
                     new_elements = update_node_style(new_elements, node_id, color)
-                    processing_nodes.remove(processed_layer_name)
+                    processing_nodes.remove(node_id)
                     new_button = html.Button(
-                        f"{processed_layer_name}",
-                        id={'type': 'layer-button', 'layer_name': processed_layer_name,
+                        f"{layer_name}",
+                        id={'type': 'layer-button', 'layer_name': layer_name,
                             'node_id': node_id},
                         n_clicks=0,
                         style={'display': 'block', 'width': "100%", "textAlign": "left"},
@@ -138,9 +138,9 @@ def register_callbacks(app):
                     if (selected_node_data and isinstance(selected_node_data, list) and
                             selected_node_data):
                         selected_layer_name = selected_node_data[0].get("layer_name")
-                        if processed_layer_name == selected_layer_name:
+                        if layer_name == selected_layer_name:
                             right_panel_out = result["right-panel"] if not is_error else result
-                            layer_name_out = processed_layer_name
+                            layer_name_out = layer_name
                 # Instead of defaulting to the stored value (which might be stale), preserve the current selection
                 # by checking which node is marked as selected in our new elements.
                 current_sel = None
@@ -156,7 +156,7 @@ def register_callbacks(app):
             button_id = json.loads(button_id_str)
             node_id = button_id.get('node_id')
             layer_name = button_id.get('layer_name')
-            cached_result = result_cache.get(layer_name)
+            cached_result = result_cache.get(node_id)
             right_panel_out = cached_result["right-panel"]
             layer_name_out = layer_name
             selected_id = node_id
@@ -234,56 +234,57 @@ def register_callbacks(app):
         updated_data["model_inputs"] = all_input_values
         return updated_data
 
-    @app.callback(
-        Output("visualization-modal", "is_open"),
-        Output("vis-3d", "figure"),
-        Output("vis-diagnostics", "children"),
-        Input("visualization-button", "n_clicks"),
-        Input("close-vis-modal", "n_clicks"),
-        State("visualization-modal", "is_open"),
-        State("layer-name", "children"),
-        State('config-store', 'data')
-    )
-    def toggle_visualization_modal(n_open, n_close, is_open, layer_name, config):
-        ctx = callback_context
-        if not ctx.triggered:
-            return is_open, no_update, no_update
-        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
-
-        if triggered_id == "visualization-button" and layer_name in result_cache:
-            data = result_cache.get(layer_name, {})
-            ref = data.get("ref")
-            main = data.get("main")
-            if ref is None or main is None:
-                return is_open, no_update, no_update
-
-            diff = ref - main
-            start_time = time.perf_counter()
-            fig_3d = plot_volume_tensor(diff)
-            print(f"fig_3d time: {time.perf_counter() - start_time:.6f} seconds")
-            start_time = time.perf_counter()
-
-            ref_plugin_name = config["plugin1"]
-            main_plugin_name = config["plugin2"]
-            diag_fig = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
-            print(f"plot_diagnostics time: {time.perf_counter() - start_time:.6f} seconds")
-            start_time = time.perf_counter()
-
-            buf = io.BytesIO()
-            diag_fig.savefig(buf, format="png", bbox_inches="tight")
-            buf.seek(0)
-            encoded_diag = base64.b64encode(buf.getvalue()).decode("utf-8")
-            diag_img = html.Img(
-                src=f"data:image/png;base64,{encoded_diag}",
-                style={"width": "100%", "display": "block", "margin": "0 auto"}
-            )
-            print(f"b64encode time: {time.perf_counter() - start_time:.6f} seconds")
-            return True, fig_3d, diag_img
-
-        elif triggered_id == "close-vis-modal":
-            return False, None, None
-
-        return is_open, no_update, no_update
+    # TODO use node_id to toggle visualisation and get the data from the cache
+    # @app.callback(
+    #     Output("visualization-modal", "is_open"),
+    #     Output("vis-3d", "figure"),
+    #     Output("vis-diagnostics", "children"),
+    #     Input("visualization-button", "n_clicks"),
+    #     Input("close-vis-modal", "n_clicks"),
+    #     State("visualization-modal", "is_open"),
+    #     State("layer-name", "children"),
+    #     State('config-store', 'data')
+    # )
+    # def toggle_visualization_modal(n_open, n_close, is_open, layer_name, config):
+    #     ctx = callback_context
+    #     if not ctx.triggered:
+    #         return is_open, no_update, no_update
+    #     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+    #
+    #     if triggered_id == "visualization-button" and layer_name in result_cache:
+    #         data = result_cache.get(layer_name, {})
+    #         ref = data.get("ref")
+    #         main = data.get("main")
+    #         if ref is None or main is None:
+    #             return is_open, no_update, no_update
+    #
+    #         diff = ref - main
+    #         start_time = time.perf_counter()
+    #         fig_3d = plot_volume_tensor(diff)
+    #         print(f"fig_3d time: {time.perf_counter() - start_time:.6f} seconds")
+    #         start_time = time.perf_counter()
+    #
+    #         ref_plugin_name = config["plugin1"]
+    #         main_plugin_name = config["plugin2"]
+    #         diag_fig = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
+    #         print(f"plot_diagnostics time: {time.perf_counter() - start_time:.6f} seconds")
+    #         start_time = time.perf_counter()
+    #
+    #         buf = io.BytesIO()
+    #         diag_fig.savefig(buf, format="png", bbox_inches="tight")
+    #         buf.seek(0)
+    #         encoded_diag = base64.b64encode(buf.getvalue()).decode("utf-8")
+    #         diag_img = html.Img(
+    #             src=f"data:image/png;base64,{encoded_diag}",
+    #             style={"width": "100%", "display": "block", "margin": "0 auto"}
+    #         )
+    #         print(f"b64encode time: {time.perf_counter() - start_time:.6f} seconds")
+    #         return True, fig_3d, diag_img
+    #
+    #     elif triggered_id == "close-vis-modal":
+    #         return False, None, None
+    #
+    #     return is_open, no_update, no_update
 
     @app.callback(
         Output("tab-3d-content", "style"),

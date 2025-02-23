@@ -39,9 +39,10 @@ def process_tasks():
             )
 
             result["node_id"] = node_id
-            result_cache[layer_name] = result
+            result["layer_name"] = layer_name
+            result_cache[node_id] = result
 
         except Exception as e:
-            result_cache[layer_name] = f"Error: {str(e)}" # TODO better errors, replace the cache on re-run
+            result_cache[node_id] = f"Error: {str(e)}" # TODO better errors, replace the cache on re-run
         finally:
             task_queue.task_done()
