@@ -4,6 +4,7 @@ import io
 import json
 import os
 import time
+import bisect
 
 from dash import no_update, callback_context, exceptions, html
 from dash.dependencies import Input, Output, State, ALL
@@ -138,8 +139,13 @@ def register_callbacks(app):
                         ],
                         style={'display': 'flex', 'width': "100%", "textAlign": "left"}
                     )
+
                     left_panel_out = left_panel
-                    left_panel_out.append(new_button)
+                    new_node_id = int(node_id)
+                    keys = [int(btn["props"]["id"]["node_id"]) for btn in left_panel_out]
+                    insertion_index = bisect.bisect_left(keys, new_node_id)
+                    left_panel_out.insert(insertion_index, new_button)
+
                     if (selected_node_data and isinstance(selected_node_data, list) and
                             selected_node_data):
                         selected_layer_name = selected_node_data[0].get("layer_name")
