@@ -235,56 +235,56 @@ def register_callbacks(app):
         return updated_data
 
     # TODO use node_id to toggle visualisation and get the data from the cache
-    # @app.callback(
-    #     Output("visualization-modal", "is_open"),
-    #     Output("vis-3d", "figure"),
-    #     Output("vis-diagnostics", "children"),
-    #     Input("visualization-button", "n_clicks"),
-    #     Input("close-vis-modal", "n_clicks"),
-    #     State("visualization-modal", "is_open"),
-    #     State("layer-name", "children"),
-    #     State('config-store', 'data')
-    # )
-    # def toggle_visualization_modal(n_open, n_close, is_open, layer_name, config):
-    #     ctx = callback_context
-    #     if not ctx.triggered:
-    #         return is_open, no_update, no_update
-    #     triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
-    #
-    #     if triggered_id == "visualization-button" and layer_name in result_cache:
-    #         data = result_cache.get(layer_name, {})
-    #         ref = data.get("ref")
-    #         main = data.get("main")
-    #         if ref is None or main is None:
-    #             return is_open, no_update, no_update
-    #
-    #         diff = ref - main
-    #         start_time = time.perf_counter()
-    #         fig_3d = plot_volume_tensor(diff)
-    #         print(f"fig_3d time: {time.perf_counter() - start_time:.6f} seconds")
-    #         start_time = time.perf_counter()
-    #
-    #         ref_plugin_name = config["plugin1"]
-    #         main_plugin_name = config["plugin2"]
-    #         diag_fig = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
-    #         print(f"plot_diagnostics time: {time.perf_counter() - start_time:.6f} seconds")
-    #         start_time = time.perf_counter()
-    #
-    #         buf = io.BytesIO()
-    #         diag_fig.savefig(buf, format="png", bbox_inches="tight")
-    #         buf.seek(0)
-    #         encoded_diag = base64.b64encode(buf.getvalue()).decode("utf-8")
-    #         diag_img = html.Img(
-    #             src=f"data:image/png;base64,{encoded_diag}",
-    #             style={"width": "100%", "display": "block", "margin": "0 auto"}
-    #         )
-    #         print(f"b64encode time: {time.perf_counter() - start_time:.6f} seconds")
-    #         return True, fig_3d, diag_img
-    #
-    #     elif triggered_id == "close-vis-modal":
-    #         return False, None, None
-    #
-    #     return is_open, no_update, no_update
+    @app.callback(
+        Output("visualization-modal", "is_open"),
+        Output("vis-3d", "figure"),
+        Output("vis-diagnostics", "children"),
+        Input("visualization-button", "n_clicks"),
+        Input("close-vis-modal", "n_clicks"),
+        State("visualization-modal", "is_open"),
+        State("selected-node-store", "data"),
+        State('config-store', 'data')
+    )
+    def toggle_visualization_modal(n_open, n_close, is_open, node_id, config):
+        ctx = callback_context
+        if not ctx.triggered:
+            return is_open, no_update, no_update
+        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+
+        if triggered_id == "visualization-button" and node_id in result_cache:
+            data = result_cache.get(node_id, {})
+            ref = data.get("ref")
+            main = data.get("main")
+            if ref is None or main is None:
+                return is_open, no_update, no_update
+
+            diff = ref - main
+            start_time = time.perf_counter()
+            fig_3d = plot_volume_tensor(diff)
+            print(f"fig_3d time: {time.perf_counter() - start_time:.6f} seconds")
+            start_time = time.perf_counter()
+
+            ref_plugin_name = config["plugin1"]
+            main_plugin_name = config["plugin2"]
+            diag_fig = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
+            print(f"plot_diagnostics time: {time.perf_counter() - start_time:.6f} seconds")
+            start_time = time.perf_counter()
+
+            buf = io.BytesIO()
+            diag_fig.savefig(buf, format="png", bbox_inches="tight")
+            buf.seek(0)
+            encoded_diag = base64.b64encode(buf.getvalue()).decode("utf-8")
+            diag_img = html.Img(
+                src=f"data:image/png;base64,{encoded_diag}",
+                style={"width": "100%", "display": "block", "margin": "0 auto"}
+            )
+            print(f"b64encode time: {time.perf_counter() - start_time:.6f} seconds")
+            return True, fig_3d, diag_img
+
+        elif triggered_id == "close-vis-modal":
+            return False, None, None
+
+        return is_open, no_update, no_update
 
     @app.callback(
         Output("tab-3d-content", "style"),
