@@ -186,27 +186,24 @@ def register_callbacks(app):
 
         return right_panel_out, new_elements, layer_name_out, layer_list_out
 
+
     @app.callback(
         Output('layer-list', 'children'),
         Input('layer-store', 'data'),
         Input('selected-layer-index-store', 'data')
     )
     def render_layers(layers, selected_index):
-        """
-        Build a <ul> with <li> entries, highlighting the one at 'selected_index'.
-        """
         if not layers:
             return []
 
         li_elements = []
         for i, layer in enumerate(layers):
-            # Decide style if this item is the selected item
             is_selected = (i == selected_index)
             style = {'padding': '5px', 'marginBottom': '3px'}
             if is_selected:
                 style.update({
                     'fontWeight': 'bold',
-                    'backgroundColor': '#D3D3D3',  # highlight
+                    'backgroundColor': '#D3D3D3',
                     'border': '1px solid black'
                 })
 
@@ -219,6 +216,8 @@ def register_callbacks(app):
                         ],
                         style={'display': 'flex', 'justify-content': 'space-between'}
                     ),
+                    id={'type': 'layer-li', 'index': i},
+                    n_clicks=0,
                     style=style
                 )
             )
@@ -228,30 +227,58 @@ def register_callbacks(app):
     @app.callback(
         Output('selected-layer-index-store', 'data'),
         Input("keyboard", "n_keydowns"),
+        Input({'type': 'layer-li', 'index': ALL}, 'n_clicks'),
         State("keyboard", "keydown"),
         State('selected-layer-index-store', 'data'),
         State('layer-store', 'data'),
         prevent_initial_call=True
     )
-    def handle_arrow_keys(n_events, latest_event, current_index, layers):
-        pressed_key = latest_event.get('key')
+    def handle_keys_and_clicks(n_keydowns, li_n_clicks, keydown, current_index, layers):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update
 
-        PAGE_STEP = 5
+        triggered_prop_id = ctx.triggered[0]['prop_id']
+        # Only try to parse as JSON if the prop id starts with '{'
+        if triggered_prop_id.startswith('{'):
+            try:
+                id_part = triggered_prop_id.split('.')[0]
+                triggered_id = json.loads(id_part)
+            except Exception:
+                triggered_id = {}
+        else:
+            triggered_id = {}
+
+        # If a list item was clicked, update the selection.
+        if triggered_id.get("type") == "layer-li":
+            return triggered_id.get("index")
+
+        # For keyboard events, ensure keydown is provided.
+        if not keydown:
+            return no_update
+
+        pressed_key = keydown.get('key')
+        if pressed_key not in ("ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"):
+            return no_update
+
+        PAGE_STEP = 10  # Adjust this value as needed
 
         if pressed_key == "ArrowUp":
-            return max(0, current_index - 1)
+            new_index = max(0, current_index - 1)
         elif pressed_key == "ArrowDown":
-            return min(len(layers) - 1, current_index + 1)
+            new_index = min(len(layers) - 1, current_index + 1)
         elif pressed_key == "Home":
-            return 0
+            new_index = 0
         elif pressed_key == "End":
-            return len(layers) - 1
+            new_index = len(layers) - 1
         elif pressed_key == "PageUp":
-            return max(0, current_index - PAGE_STEP)
+            new_index = max(0, current_index - PAGE_STEP)
         elif pressed_key == "PageDown":
-            return min(len(layers) - 1, current_index + PAGE_STEP)
+            new_index = min(len(layers) - 1, current_index + PAGE_STEP)
+        else:
+            return no_update
 
-        return no_update
+        return new_index
 
 
 
