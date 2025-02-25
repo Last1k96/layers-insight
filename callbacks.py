@@ -53,21 +53,6 @@ def update_selection(elements, selected_id):
 
 def register_callbacks(app):
     @app.callback(
-        Output("selected-node-store", "data"),
-        Input("ir-graph", "tapNode"),
-        State("ir-graph", "selectedNodeData"),
-        prevent_initial_call=True
-    )
-    def update_selected_node(tap_node, selected_node_data):
-        ctx = callback_context
-        if not ctx.triggered:
-            return no_update
-        triggered_prop = ctx.triggered[0]["prop_id"]
-        if triggered_prop.startswith("ir-graph") and tap_node:
-            return tap_node["data"].get("id")
-        return no_update
-
-    @app.callback(
         Output('right-panel', 'children'),
         Output('ir-graph', 'elements'),
         Output('layer-name', 'children'),
@@ -186,6 +171,7 @@ def register_callbacks(app):
 
         li_elements = []
         for i, layer in enumerate(layers):
+            print(f"{layer=}")
             is_selected = (i == selected_index)
             style = {'padding': '5px', 'marginBottom': '3px'}
             if is_selected:
@@ -265,6 +251,20 @@ def register_callbacks(app):
             return no_update
 
         return new_index
+
+    @app.callback(
+        Output("selected-node-store", "data"),
+        Input("ir-graph", "tapNode"),
+        prevent_initial_call=True
+    )
+    def update_selected_node(tap_node):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update
+        triggered_prop = ctx.triggered[0]["prop_id"]
+        if triggered_prop.startswith("ir-graph") and tap_node:
+            return tap_node["data"].get("id")
+        return no_update
 
     #######################################################################################################################
 

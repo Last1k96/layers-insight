@@ -304,8 +304,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
     left_pane = html.Div([
         open_button,
-        dcc.Store(id='layer-store', data=[]),
-        dcc.Store(id='selected-layer-index-store', data=0),
 
         html.H3(children=["Inferred layers"]),
         Keyboard(
@@ -362,12 +360,9 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             visualization_modal,
             html.Div(id="dummy-output", style={"display": "none"}),
 
-            dcc.Store(id='graph-selection-store'),
-            dcc.Store(id='list-selection-store'),
+            dcc.Store(id='selected-layer-index-store', data=0),
             dcc.Store(id='selected-node-store'),
             dcc.Store(id='layer-store'),
-            dcc.Store(id='graph-elements-store', data=[]),
-            dcc.Store(id='right-panel-store'),
 
             dcc.Interval(id='update-interval', interval=500, n_intervals=0),
         ],
