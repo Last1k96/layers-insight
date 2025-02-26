@@ -88,7 +88,7 @@ def build_dynamic_stylesheet(elements):
         })
 
     stylesheet.append({
-        'selector': 'node:selected',
+        'selector': 'node.selected', # .selected is a custom class, :selected builtin bugs when resetting manually
         'style': {
             'background-color': 'red',
         }
@@ -317,7 +317,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
     ])
 
     right_pane = html.Div([
-        html.H3(id="layer-name", children=["Layer Name"]),
+        html.H3(id='right-panel-layer-name', children=["Layer Name"]),
         html.Div(
             id='right-panel',
             style={'padding': '10px', 'height': '100%', 'overflow': 'auto'},
@@ -358,12 +358,13 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             plugin_store,
             config_store,
             visualization_modal,
-            html.Div(id="dummy-output", style={"display": "none"}),
 
-            dcc.Store(id='selected-layer-index-store', data=0),
-            dcc.Store(id='selected-node-store'),
-            dcc.Store(id='layer-store'),
+            dcc.Location(id='first-load', refresh=False),
+            dcc.Store(id='selected-layer-index-store', data=-1),
+            dcc.Store(id='selected-node-id-store'),
+            dcc.Store(id='layer-store', data = []),
+            dcc.Store(id='just-finished-tasks-store', data=[]),
 
-            dcc.Interval(id='update-interval', interval=500, n_intervals=0),
+            dcc.Interval(id='update-interval', interval=1000, n_intervals=0),
         ],
     )
