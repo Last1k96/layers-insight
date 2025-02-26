@@ -80,6 +80,7 @@ def register_callbacks(app):
 
     @app.callback(
         Output('selected-node-id-store', 'data'),
+        Output('selected-layer-name-store', 'data'),
         Input('ir-graph', 'tapNode'),
         Input('selected-layer-index-store', 'data'),
         State('layer-store', 'data'),
@@ -93,15 +94,18 @@ def register_callbacks(app):
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         selected_node_id = no_update
+        selected_layer_name = no_update
 
         if any(trigger.startswith('ir-graph') for trigger in triggers):
             selected_node_id = tap_node['data'].get('id')
+            selected_layer_name = tap_node['data'].get('layer_name')
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
             selected_layer = layers_list[selected_layer_index]
             selected_node_id = selected_layer["node_id"]
+            selected_layer_name = selected_layer["layer_name"]
 
-        return selected_node_id
+        return selected_node_id, selected_layer_name
 
     @app.callback(
         Output('ir-graph', 'elements'),
@@ -169,7 +173,7 @@ def register_callbacks(app):
         State('layer-store', 'data'),
         prevent_initial_call=True
     )
-    def update_inferred_layers_list(_, finished_nodes, current_layers_list):
+    def update_inferred_layers_list(_, finished_nodes, layers_list):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -190,7 +194,7 @@ def register_callbacks(app):
 
         if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers) and finished_nodes:
             with lock:
-                layer_list_out = current_layers_list
+                layer_list_out = layers_list
                 for node_id in finished_nodes:
                     result = result_cache[node_id]
 
@@ -301,257 +305,44 @@ def register_callbacks(app):
 
         return new_index
 
-    # @app.callback(
-    #     Output('right-panel-layer-name', 'children'),
-    #     Output('right-panel', 'children'),
-    #     Input('selected-node-id-store', 'data'),
-    #     Input('selected-layer-index-store', 'data'),
-    #     State('layer-store', 'data'),
-    #     prevent_initial_call=True
-    # )
-    # def update_stats(selected_node_id, selected_layer_index, layers_list):
-    #     ctx = callback_context
-    #     if not ctx.triggered:
-    #         return no_update, no_update
-    #
-    #     triggered_prop = ctx.triggered[0]['prop_id']
-    #
-    #     if triggered_prop.startswith('selected-node-id-store'):
-    #         node_id = selected_node_id
-    #         layer_name = "" # tap_node['data'].get('layer_name')
-    #
-    #         cached_result = result_cache.get(node_id)
-    #         if cached_result:
-    #             return cached_result["layer_name"], cached_result["right-panel"]
-    #         else:
-    #             return layer_name, "Processing..."
-    #
-    #     elif triggered_prop.startswith('selected-layer-index-store'):
-    #         selected_layer = layers_list[selected_layer_index]
-    #         node_id = selected_layer["node_id"]
-    #         layer_name = selected_layer["layer_name"]
-    #
-    #         cached_result = result_cache.get(node_id)
-    #         if cached_result:
-    #             return layer_name, cached_result["right-panel"]
-    #         else:
-    #             return layer_name, "Processing..."
-    #
-    #     return no_update, no_update
+    @app.callback(
+        Output('right-panel-layer-name', 'children'),
+        Output('right-panel', 'children'),
+        Input('selected-node-id-store', 'data'),
+        Input('selected-layer-index-store', 'data'),
+        Input('just-finished-tasks-store', 'data'),
+        State('layer-store', 'data'),
+        State('selected-layer-name-store', 'data'),
+        prevent_initial_call=True
+    )
+    def update_stats(selected_node_id, selected_layer_index, finished_nodes, layers_list, selected_layer_name):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update
 
-    # @app.callback(
-    #     Output('right-panel', 'children'),
-    #     Output('ir-graph', 'elements'),
-    #     Output('layer-name', 'children'),
-    #     Output('layer-store', 'data'),
-    #     Input('ir-graph', 'tapNode'),
-    #     Input('update-interval', 'n_intervals'),
-    #     Input("selected-node-id-store", "data"),
-    #     Input('selected-layer-index-store', 'data'),
-    #     State('ir-graph', 'elements'),
-    #     State('config-store', 'data'),
-    #     State('layer-store', 'data'),
-    #     prevent_initial_call=True
-    # )
-    # def handle_updates(tap_node, n_intervals, selected_node_store,
-    #                    selected_layer_index, elements, config_data, current_layer_list):
-    #     ctx = callback_context
-    #     if not ctx.triggered:
-    #         return no_update, elements, no_update, no_update
-    # 
-    #     new_elements = copy.deepcopy(elements)
-    #     right_panel_out = no_update
-    #     layer_name_out = no_update
-    #     layer_list_out = no_update
-    #     selected_id = None
-    # 
-    #     triggered_prop = ctx.triggered[0]['prop_id']
-    # 
-    #     # Case 1: User clicked a node in the graph.
-    #     if triggered_prop.startswith('ir-graph'):
-    #         if tap_node and 'data' in tap_node:
-    #             layer_name = tap_node['data'].get('layer_name')
-    #             layer_type = tap_node['data'].get('type')
-    #             node_id = tap_node['data'].get('id')
-    #             cached_result = result_cache.get(node_id)
-    #             if cached_result:
-    #                 right_panel_out = cached_result["right-panel"]
-    #                 layer_name_out = layer_name
-    #             else:
-    #                 new_elements = update_node_style(new_elements, node_id, 'orange')
-    #                 right_panel_out = "Processing..."
-    #                 layer_name_out = layer_name
-    #                 processing_nodes.add(node_id)
-    #                 task_queue.put((node_id, layer_name, layer_type, config_data))
-    #             selected_id = node_id
-    # 
-    #     # Case 2: Update interval triggered.
-    #     elif triggered_prop.startswith('update-interval'):
-    #         finished = [node for node in processing_nodes if node in result_cache]
-    #         if finished:
-    #             # Update one finished node per interval update
-    #             node_id = finished[0]
-    #             result = result_cache[node_id]
-    #             layer_name = result['layer_name']
-    #             layer_type = result['layer_type']
-    #             color = 'green'
-    #             is_error = isinstance(result, str) and result.startswith('Error:')
-    #             if is_error:
-    #                 result_cache.pop(node_id)
-    #                 color = 'red'
-    #             new_elements = update_node_style(new_elements, node_id, color)
-    #             processing_nodes.remove(node_id)
-    # 
-    #             layer_list_out = copy.deepcopy(current_layer_list) if current_layer_list is not None else []
-    #             insertion_index = bisect.bisect_left(
-    #                 [int(item["node_id"]) for item in layer_list_out],
-    #                 int(node_id)
-    #             )
-    #             layer_list_out.insert(insertion_index, {
-    #                 "node_id": node_id,
-    #                 "layer_name": layer_name,
-    #                 "layer_type": layer_type
-    #             })
-    # 
-    #             # Always update the right panel and layer name when processing finishes.
-    #             right_panel_out = result["right-panel"] if not is_error else result
-    #             layer_name_out = layer_name
-    # 
-    #             # Preserve current selection from new_elements.
-    #             current_sel = None
-    #             for el in new_elements:
-    #                 if "selected" in el and el["selected"]:
-    #                     current_sel = el["data"].get("id")
-    #                     break
-    #             selected_id = current_sel if current_sel is not None else selected_node_store
-    # 
-    #     # Case 3: Selected layer index changed via keyboard arrow keys.
-    #     elif triggered_prop == 'selected-layer-index-store.data':
-    #         layer_list_copy = copy.deepcopy(current_layer_list)
-    #         if layer_list_copy:
-    #             if 0 <= selected_layer_index < len(layer_list_copy):
-    #                 selected_layer = layer_list_copy[selected_layer_index]
-    #                 node_id = selected_layer.get("node_id")
-    #                 layer_name = selected_layer.get("layer_name")
-    #                 cached_result = result_cache.get(node_id)
-    #                 right_panel_out = cached_result["right-panel"] if cached_result else no_update
-    #                 layer_name_out = layer_name
-    #                 selected_id = node_id
-    # 
-    #     else:
-    #         return no_update, no_update, no_update, no_update
-    # 
-    #     # Update selection in the graph elements so that only the selected node is marked.
-    #     if selected_id is not None:
-    #         new_elements = update_selection(new_elements, selected_id)
-    # 
-    #     return right_panel_out, new_elements, layer_name_out, layer_list_out
-    # 
-    # @app.callback(
-    #     Output('layer-list', 'children'),
-    #     Input('layer-store', 'data'),
-    #     Input('selected-layer-index-store', 'data')
-    # )
-    # def render_layers(layers, selected_index):
-    #     if not layers:
-    #         return []
-    # 
-    #     li_elements = []
-    #     for i, layer in enumerate(layers):
-    #         print(f"{layer=}")
-    #         is_selected = (i == selected_index)
-    #         style = {'padding': '5px', 'marginBottom': '3px'}
-    #         if is_selected:
-    #             style.update({
-    #                 'fontWeight': 'bold',
-    #                 'backgroundColor': '#D3D3D3',
-    #                 'border': '1px solid black'
-    #             })
-    # 
-    #         li_elements.append(
-    #             html.Li(
-    #                 html.Div(
-    #                     [
-    #                         html.Span(layer['layer_type']),
-    #                         html.Span(layer['layer_name'])
-    #                     ],
-    #                     style={'display': 'flex', 'justify-content': 'space-between'}
-    #                 ),
-    #                 id={'type': 'layer-li', 'index': i},
-    #                 n_clicks=0,
-    #                 style=style
-    #             )
-    #         )
-    #     return li_elements
-    # 
-    # @app.callback(
-    #     Output('selected-layer-index-store', 'data'),
-    #     Input("keyboard", "n_keydowns"),
-    #     Input({'type': 'layer-li', 'index': ALL}, 'n_clicks'),
-    #     State("keyboard", "keydown"),
-    #     State('selected-layer-index-store', 'data'),
-    #     State('layer-store', 'data'),
-    #     prevent_initial_call=True
-    # )
-    # def handle_keys_and_clicks(n_keydowns, li_n_clicks, keydown, current_index, layers):
-    #     ctx = callback_context
-    #     if not ctx.triggered:
-    #         return no_update
-    # 
-    #     triggered_prop_id = ctx.triggered[0]['prop_id']
-    #     if triggered_prop_id.startswith('{'):
-    #         try:
-    #             id_part = triggered_prop_id.split('.')[0]
-    #             triggered_id = json.loads(id_part)
-    #         except Exception:
-    #             triggered_id = {}
-    #     else:
-    #         triggered_id = {}
-    # 
-    #     # If a list item was clicked, update the selection.
-    #     if triggered_id.get("type") == "layer-li":
-    #         return triggered_id.get("index")
-    # 
-    #     # For keyboard events, ensure keydown is provided.
-    #     if not keydown:
-    #         return no_update
-    # 
-    #     pressed_key = keydown.get('key')
-    #     if pressed_key not in ("ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"):
-    #         return no_update
-    # 
-    #     PAGE_STEP = 10  # Adjust this value as needed
-    # 
-    #     if pressed_key == "ArrowUp":
-    #         new_index = max(0, current_index - 1)
-    #     elif pressed_key == "ArrowDown":
-    #         new_index = min(len(layers) - 1, current_index + 1)
-    #     elif pressed_key == "Home":
-    #         new_index = 0
-    #     elif pressed_key == "End":
-    #         new_index = len(layers) - 1
-    #     elif pressed_key == "PageUp":
-    #         new_index = max(0, current_index - PAGE_STEP)
-    #     elif pressed_key == "PageDown":
-    #         new_index = min(len(layers) - 1, current_index + PAGE_STEP)
-    #     else:
-    #         return no_update
-    # 
-    #     return new_index
-    # 
-    # @app.callback(
-    #     Output("selected-node-id-store", "data"),
-    #     Input("ir-graph", "tapNode"),
-    #     prevent_initial_call=True
-    # )
-    # def update_selected_node(tap_node):
-    #     ctx = callback_context
-    #     if not ctx.triggered:
-    #         return no_update
-    #     triggered_prop = ctx.triggered[0]["prop_id"]
-    #     if triggered_prop.startswith("ir-graph") and tap_node:
-    #         return tap_node["data"].get("id")
-    #     return no_update
+        triggers = [t['prop_id'] for t in ctx.triggered]
+
+        node_id = None
+
+        if any(trigger.startswith('selected-node-id-store') for trigger in triggers):
+            node_id = selected_node_id
+
+        if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
+            selected_layer = layers_list[selected_layer_index]
+            node_id = selected_layer["node_id"]
+
+        if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers) and finished_nodes:
+            if selected_node_id in finished_nodes:
+                node_id = selected_node_id
+
+        if node_id is None:
+            return no_update, no_update
+
+        cached_result = result_cache.get(node_id)
+        if cached_result:
+            return selected_layer_name, cached_result["right-panel"]
+        else:
+            return selected_layer_name, "Processing..."
 
     #######################################################################################################################
 

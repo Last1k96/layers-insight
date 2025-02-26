@@ -361,9 +361,12 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
             dcc.Location(id='first-load', refresh=False),
             dcc.Store(id='selected-layer-index-store', data=-1),
-            dcc.Store(id='selected-node-id-store'),
             dcc.Store(id='layer-store', data = []),
             dcc.Store(id='just-finished-tasks-store', data=[]),
+
+            # To preserve selected layer info and update Layer Status on interval trigger
+            dcc.Store(id='selected-layer-name-store', data=""),
+            dcc.Store(id='selected-node-id-store'),
 
             dcc.Interval(id='update-interval', interval=1000, n_intervals=0),
         ],
