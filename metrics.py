@@ -113,28 +113,23 @@ def compute_r2(ref, main):
 
 
 def compute_ssim(ref, main):
-    # Ensure the shapes match.
     if ref.shape != main.shape:
-        raise ValueError("ref and main must have the same shape")
+        return np.nan
+    if ref.ndim not in [2, 3, 4]:
+        return np.nan
 
-    # Handle 2D case: HW (grayscale image).
-    if ref.ndim == 2:
-        data_range = ref.max() - ref.min()
-        return ssim(ref, main, data_range=data_range)
+    try:
+        if ref.ndim == 2:
+            data_range = ref.max() - ref.min()
+            return ssim(ref, main, data_range=data_range)
 
-    # Handle 3D (CHW) and 4D (NCHW) cases.
-    elif ref.ndim in [3, 4]:
-        # For 4D input, check the batch dimension.
         if ref.ndim == 4:
-            # If batch size > 1, return NaN.
             if ref.shape[0] != 1:
                 return np.nan
-            # Squeeze the batch dimension.
+
             ref = ref.squeeze(0)
             main = main.squeeze(0)
 
-        # Now ref is in CHW format.
-        # If there's only one channel, treat it as grayscale.
         if ref.shape[0] == 1:
             ref_2d = ref.squeeze(0)
             main_2d = main.squeeze(0)
@@ -146,9 +141,7 @@ def compute_ssim(ref, main):
             main_hwc = np.moveaxis(main, 0, -1)
             data_range = ref_hwc.max() - ref_hwc.min()
             return ssim(ref_hwc, main_hwc, data_range=data_range, multichannel=True)
-
-    else:
-        # For any other number of dimensions, SSIM is not meaningful.
+    except Exception:
         return np.nan
 
 def compute_jsd(ref, main, num_bins=50):

@@ -308,6 +308,7 @@ def register_callbacks(app):
     @app.callback(
         Output('right-panel-layer-name', 'children'),
         Output('right-panel', 'children'),
+        Output('visualization-button', 'style'),
         Input('selected-node-id-store', 'data'),
         Input('selected-layer-index-store', 'data'),
         Input('just-finished-tasks-store', 'data'),
@@ -317,11 +318,11 @@ def register_callbacks(app):
     )
     def update_stats(selected_node_id, selected_layer_index, finished_nodes, layers_list, selected_layer_name):
         ctx = callback_context
+        # If there is no trigger, return no update and hide the button.
         if not ctx.triggered:
-            return no_update, no_update
+            return no_update, no_update, {"display": "none"}
 
         triggers = [t['prop_id'] for t in ctx.triggered]
-
         node_id = None
 
         if any(trigger.startswith('selected-node-id-store') for trigger in triggers):
@@ -336,13 +337,17 @@ def register_callbacks(app):
                 node_id = selected_node_id
 
         if node_id is None:
-            return no_update, no_update
+            return no_update, no_update, {"display": "none"}
 
         cached_result = result_cache.get(node_id)
         if cached_result:
-            return selected_layer_name, cached_result["right-panel"]
+            # Show the button when a cached result exists.
+            button_style = {"display": "block"}
+            return selected_layer_name, cached_result["right-panel"], button_style
         else:
-            return selected_layer_name, "Processing..."
+            # Hide the button while processing.
+            button_style = {"display": "none"}
+            return selected_layer_name, "Processing...", button_style
 
     #######################################################################################################################
 
