@@ -91,7 +91,7 @@ def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
         ch_diff = diff[i]
         bins = 64
         density, _, _ = np.histogram2d(ch_diff.flatten(), ch_cpu.flatten(), bins=bins)
-        density = np.power(density, 0.25)
+        density = np.power(density, 0.4) # NOTE original scale 0.25
         ax_density = fig.add_subplot(inner[1, 1])
         ax_density.imshow(density, cmap='gray', aspect='auto', origin='lower')
         ax_density.set_title("Density Map", fontsize=12, color='black')
