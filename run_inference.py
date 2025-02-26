@@ -9,7 +9,7 @@ import numpy as np
 import dash_bootstrap_components as dbc
 from dash import html
 
-from metrics import comparison_card
+from metrics import comparison_metrics_table
 
 
 # TODO extract to some kind of callback to run when openvino path is provided
@@ -178,7 +178,7 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
 
         right_panel_div = html.Div([
             dbc.CardGroup([
-                comparison_card(ref, main)
+                comparison_metrics_table(ref, main)
             ])
         ])
 

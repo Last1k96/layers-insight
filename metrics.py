@@ -5,23 +5,6 @@ from skimage.metrics import structural_similarity as ssim
 from dash import html
 import dash_bootstrap_components as dbc
 
-# -----------------------
-# Helper Functions & Data
-# -----------------------
-
-def format_value(val, precision=3): # 3 digits after the dot should be enough for fp16 tensors
-    return f"{val:.{precision}f}"
-
-
-def compute_metrics(data):
-    return {
-        "min": format_value(np.min(data)),
-        "mean": format_value(np.mean(data)),
-        "max": format_value(np.max(data)),
-        "std": format_value(np.std(data))
-    }
-
-
 METRIC_INFO = {
     "MAE": (
         "MAE",
@@ -81,30 +64,27 @@ METRIC_INFO = {
 }
 
 
+def format_value(val, precision=3):  # 3 digits after the dot should be enough for fp16 tensors
+    return f"{val:.{precision}f}"
+
+
+def compute_metrics(data):
+    return {
+        "min": format_value(np.min(data)),
+        "mean": format_value(np.mean(data)),
+        "max": format_value(np.max(data)),
+        "std": format_value(np.std(data))
+    }
 
 
 def metric_table_row(metric_key, value):
-    """Create a table row for a metric with a tooltip on the label."""
     full_name, description = METRIC_INFO.get(metric_key, (metric_key, ""))
-    # Use the title attribute for a simple tooltip on hover.
     return html.Tr([
         html.Td(html.Span(full_name, title=description)),
         html.Td(format_value(value) if isinstance(value, (int, float)) and not (
                 isinstance(value, float) and np.isnan(value)) else value)
     ])
 
-
-# -----------------------
-# Advanced Metrics Card
-# -----------------------
-
-def compute_mape(ref, main):
-    # Avoid division by zero: use only non-zero ref values.
-    non_zero = ref != 0
-    if np.any(non_zero):
-        return np.mean(np.abs((ref[non_zero] - main[non_zero]) / ref[non_zero])) * 100
-    else:
-        return np.inf
 
 def compute_r2(ref, main):
     ss_res = np.sum((ref - main) ** 2)
@@ -144,6 +124,7 @@ def compute_ssim(ref, main):
     except Exception:
         return np.nan
 
+
 def compute_jsd(ref, main, num_bins=50):
     # Compute histograms and normalize to form probability distributions.
     hist_ref, bins = np.histogram(ref, bins=num_bins, density=True)
@@ -157,40 +138,35 @@ def compute_jsd(ref, main, num_bins=50):
     kl_main_m = np.sum(hist_main * np.log(hist_main / m))
     return 0.5 * (kl_ref_m + kl_main_m)
 
+
 def compute_emd(ref, main):
-    # Flatten the arrays for EMD calculation.
     return wasserstein_distance(ref.flatten(), main.flatten())
 
-def advanced_diff_metrics_card(diff, ref_data, main_data):
-    """Return a card with additional metrics computed on the difference tensor, grouped by type."""
+
+def advanced_diff_metrics(diff, ref_data, main_data):
     # Standard error metrics.
     mae = np.mean(np.abs(diff))
     mse_value = np.mean(diff ** 2)
     rmse_value = np.sqrt(mse_value)
-    # NRMSE: normalized by the range of the reference data.
     ref_range = np.max(ref_data) - np.min(ref_data)
     nrmse_value = rmse_value / ref_range if ref_range != 0 else 0
     median_value = np.median(diff)
     iqr_value = np.percentile(diff, 75) - np.percentile(diff, 25)
 
-    # Quality metric: PSNR using the maximum absolute value in the reference data.
     max_val = np.max(np.abs(ref_data))
     psnr_value = float('inf') if mse_value == 0 else 20 * np.log10(max_val) - 10 * np.log10(mse_value)
 
-    # Pearson correlation between reference and main outputs.
     if np.std(ref_data) > 0 and np.std(main_data) > 0:
         pearson_value = np.corrcoef(ref_data.flatten(), main_data.flatten())[0, 1]
     else:
         pearson_value = 0
 
     # Additional sophisticated metrics.
-    mape_value = compute_mape(ref_data, main_data)
     r2_value = compute_r2(ref_data, main_data)
     ssim_value = compute_ssim(ref_data, main_data)
     jsd_value = compute_jsd(ref_data, main_data)
     emd_value = compute_emd(ref_data, main_data)
 
-    # Build rows for Error Metrics.
     error_metrics_rows = [
         # Element-wise / simple arithmetic metrics
         metric_table_row("MAE", format_value(mae)),
@@ -214,7 +190,6 @@ def advanced_diff_metrics_card(diff, ref_data, main_data):
         metric_table_row("R2", format_value(r2_value)),
     ]
 
-    # Assemble the table with a grouping header for quality metrics.
     table = dbc.Table(
         [
             html.Tbody(
@@ -231,24 +206,12 @@ def advanced_diff_metrics_card(diff, ref_data, main_data):
     return table
 
 
-# -----------------------
-# Main Comparison Card
-# -----------------------
-def comparison_card(ref_data, main_data):
-    """Return a Div containing two cards:
-       1. A main comparison card showing basic metrics for Reference, Main, and their Difference.
-       2. A second card with advanced difference metrics.
-       Plus a button at the bottom.
-
-       The cards are arranged in a responsive layout filling the available width.
-    """
-    # Compute basic statistics.
+def comparison_metrics_table(ref_data, main_data):
     ref_metrics = compute_metrics(ref_data)
     main_metrics = compute_metrics(main_data)
     diff = ref_data - main_data
     diff_metrics = compute_metrics(diff)
 
-    # Build the basic metrics table.
     table = dbc.Table(
         [
             html.Thead(
@@ -288,20 +251,17 @@ def comparison_card(ref_data, main_data):
         striped=True,
         hover=True,
         size="sm",
-        style={"margin" : "8px"}
+        style={"margin": "8px"}
     )
 
-    # Get the advanced metrics card.
-    additional_card = advanced_diff_metrics_card(diff, ref_data, main_data)
+    advanced_metrics = advanced_diff_metrics(diff, ref_data, main_data)
 
-    # Arrange cards and the button in a responsive layout.
     layout = dbc.Col(
         [
             dbc.Row(table),
-            dbc.Row(additional_card)
+            dbc.Row(advanced_metrics)
         ],
         className="w-100"
     )
 
     return html.Div(layout)
-
