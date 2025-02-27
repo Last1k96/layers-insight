@@ -475,3 +475,33 @@ def register_callbacks(app):
             return {"display": "block"}, {"display": "none"}
         else:
             return {"display": "none"}, {"display": "block"}
+
+
+def register_clientside_callbacks(app):
+    # Center on the node when Ctrl key is being held
+    app.clientside_callback(
+        """
+        function(nodeId, keysPressed) {
+            if (!keysPressed || !("Control" in keysPressed) || nodeId == null) {
+                return null;
+            }
+            if (window.cy) {
+                const element = window.cy.getElementById(nodeId);
+                if (element.length === 0) return null; // Check if node exists
+                const zoom = window.cy.zoom();
+                const nodePos = element.position();
+                const viewportCenterX = window.cy.width() / 2;
+                const viewportCenterY = window.cy.height() / 2;
+                const newPanX = viewportCenterX - (nodePos.x * zoom);
+                const newPanY = viewportCenterY - (nodePos.y * zoom);
+                window.cy.animate({
+                    pan: { x: newPanX, y: newPanY }
+                }, { duration: 180, easing: 'ease-in-out' });
+            }
+            return null;
+        }
+        """,
+        Output('dummy-output', 'children'),
+        Input('selected-node-id-store', 'data'),
+        State('keyboard', 'keys_pressed')
+    )
