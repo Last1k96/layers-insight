@@ -368,7 +368,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
             # To preserve selected layer info and update Layer Status on interval trigger
             dcc.Store(id='selected-layer-name-store', data=""),
-            dcc.Store(id='selected-node-id-store'),
+            dcc.Store(id='selected-node-id-store', data=None),
 
             html.Div(id='dummy-output'),  # dummy output for the clientside callback
             html.Div(id='center-node-trigger', style={'display': 'none'}),

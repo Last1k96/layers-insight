@@ -19,9 +19,11 @@ def create_app(openvino_path, ir_xml_path, inputs_path):
 
     app.clientside_callback(
         """
-        function(nodeData) {
-            if (nodeData && window.cy) {
-                const nodeId = nodeData.id;
+        function(nodeId) {
+            if (nodeId === undefined || nodeId === null) {
+                return window.dash_clientside.no_update;
+            }
+            if (window.cy) {
                 const element = window.cy.getElementById(nodeId);
                 const zoom = window.cy.zoom();
                 
@@ -38,16 +40,18 @@ def create_app(openvino_path, ir_xml_path, inputs_path):
                 const newPanY = viewportCenterY - (nodePos.y * zoom);
                 
                 // Apply the new pan position while keeping the same zoom.
-                window.cy.pan({
-                    x: newPanX,
-                    y: newPanY
+                window.cy.animate({
+                    pan: { x: newPanX, y: newPanY }
+                }, {
+                    duration: 150,   // Duration in milliseconds.
+                    easing: 'ease-in-out'
                 });
             }
             return window.dash_clientside.no_update;
         }
         """,
         Output('dummy-output', 'children'),
-        Input('ir-graph', 'tapNodeData')
+        Input('selected-node-id-store', 'data')
     )
 
     threading.Thread(target=process_tasks, daemon=True).start()
