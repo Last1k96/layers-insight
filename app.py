@@ -20,33 +20,21 @@ def create_app(openvino_path, ir_xml_path, inputs_path):
     app.clientside_callback(
         """
         function(nodeId, keysPressed) {
-            if (!keysPressed) {
-                return null;
-            }
-            if (!("Control" in keysPressed)) {
-                return null;
-            }
-            if (nodeId === undefined || nodeId === null) {
+            if (!keysPressed || !("Control" in keysPressed) || nodeId == null) {
                 return null;
             }
             if (window.cy) {
                 const element = window.cy.getElementById(nodeId);
+                if (element.length === 0) return null; // Check if node exists
                 const zoom = window.cy.zoom();
-                
                 const nodePos = element.position();
-                
                 const viewportCenterX = window.cy.width() / 2;
                 const viewportCenterY = window.cy.height() / 2;
-                
                 const newPanX = viewportCenterX - (nodePos.x * zoom);
                 const newPanY = viewportCenterY - (nodePos.y * zoom);
-                
                 window.cy.animate({
                     pan: { x: newPanX, y: newPanY }
-                }, {
-                    duration: 180,   // Duration in milliseconds.
-                    easing: 'ease-in-out'
-                }); 
+                }, { duration: 180, easing: 'ease-in-out' });
             }
             return null;
         }
