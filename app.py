@@ -19,23 +19,25 @@ def create_app(openvino_path, ir_xml_path, inputs_path):
 
     app.clientside_callback(
         """
-        function(nodeId) {
+        function(nodeId, keysPressed) {
+            if (!keysPressed) {
+                return null;
+            }
+            if (!("Control" in keysPressed)) {
+                return null;
+            }
             if (nodeId === undefined || nodeId === null) {
-                return window.dash_clientside.no_update;
+                return null;
             }
             if (window.cy) {
                 const element = window.cy.getElementById(nodeId);
                 const zoom = window.cy.zoom();
                 
-                // Use the node's model position instead of rendered position.
                 const nodePos = element.position();
                 
-                // Calculate the viewport center.
                 const viewportCenterX = window.cy.width() / 2;
                 const viewportCenterY = window.cy.height() / 2;
                 
-                // Compute new pan such that:
-                // (nodePos.x * zoom) + newPan.x = viewportCenterX, and similarly for y.
                 const newPanX = viewportCenterX - (nodePos.x * zoom);
                 const newPanY = viewportCenterY - (nodePos.y * zoom);
                 
@@ -45,13 +47,14 @@ def create_app(openvino_path, ir_xml_path, inputs_path):
                 }, {
                     duration: 150,   // Duration in milliseconds.
                     easing: 'ease-in-out'
-                });
+                }); 
             }
-            return window.dash_clientside.no_update;
+            return null;
         }
         """,
         Output('dummy-output', 'children'),
-        Input('selected-node-id-store', 'data')
+        Input('selected-node-id-store', 'data'),
+        State('keyboard', 'keys_pressed')
     )
 
     threading.Thread(target=process_tasks, daemon=True).start()
