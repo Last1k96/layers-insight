@@ -496,7 +496,7 @@ def register_clientside_callbacks(app):
                 const newPanY = viewportCenterY - (nodePos.y * zoom);
                 window.cy.animate({
                     pan: { x: newPanX, y: newPanY }
-                }, { duration: 180, easing: 'ease-in-out' });
+                }, { duration: 150, easing: 'ease-in-out' });
             }
             return null;
         }
