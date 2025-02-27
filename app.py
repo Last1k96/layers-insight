@@ -18,27 +18,37 @@ def create_app(openvino_path, ir_xml_path, inputs_path):
     register_callbacks(app)
 
     app.clientside_callback(
-    """
-    function(nodeData) {
-        if (nodeData && window.cy) {
-            const nodeId = nodeData.id;
-            const element = cy.getElementById(nodeId);
-            
-            // Corrected: Use viewport-level fit() with element parameter
-            cy.animate({
-                fit: {
-                    eles: element,
-                    padding: 50
-                },
-                duration: 500
-            });
+        """
+        function(nodeData) {
+            if (nodeData && window.cy) {
+                const nodeId = nodeData.id;
+                const element = window.cy.getElementById(nodeId);
+                const zoom = window.cy.zoom();
+                
+                // Use the node's model position instead of rendered position.
+                const nodePos = element.position();
+                
+                // Calculate the viewport center.
+                const viewportCenterX = window.cy.width() / 2;
+                const viewportCenterY = window.cy.height() / 2;
+                
+                // Compute new pan such that:
+                // (nodePos.x * zoom) + newPan.x = viewportCenterX, and similarly for y.
+                const newPanX = viewportCenterX - (nodePos.x * zoom);
+                const newPanY = viewportCenterY - (nodePos.y * zoom);
+                
+                // Apply the new pan position while keeping the same zoom.
+                window.cy.pan({
+                    x: newPanX,
+                    y: newPanY
+                });
+            }
+            return window.dash_clientside.no_update;
         }
-        return window.dash_clientside.no_update;
-    }
-    """,
-    Output('dummy-output', 'children'),
-    Input('ir-graph', 'tapNodeData')
-)
+        """,
+        Output('dummy-output', 'children'),
+        Input('ir-graph', 'tapNodeData')
+    )
 
     threading.Thread(target=process_tasks, daemon=True).start()
 
