@@ -41,11 +41,10 @@ def create_app(openvino_path, ir_xml_path, inputs_path):
                 const newPanX = viewportCenterX - (nodePos.x * zoom);
                 const newPanY = viewportCenterY - (nodePos.y * zoom);
                 
-                // Apply the new pan position while keeping the same zoom.
                 window.cy.animate({
                     pan: { x: newPanX, y: newPanY }
                 }, {
-                    duration: 150,   // Duration in milliseconds.
+                    duration: 180,   // Duration in milliseconds.
                     easing: 'ease-in-out'
                 }); 
             }
