@@ -224,7 +224,7 @@ def register_callbacks(app):
             if i == selected_index:
                 style.update({
                     'border': '1px solid black',
-                    'background-color': 'darkgray',
+                    'backgroundColor': 'darkgray',
                 })
 
             li_elements.append(
@@ -437,7 +437,7 @@ def register_callbacks(app):
             if ref is None or main is None:
                 return is_open, no_update, no_update
 
-            diff = ref - main
+            diff = main - ref
             start_time = time.perf_counter()
             fig_3d = plot_volume_tensor(diff)
             print(f"fig_3d time: {time.perf_counter() - start_time:.6f} seconds")

@@ -290,6 +290,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             'rankSep': 50,
         },
         autoungrabify=True,
+        autoRefreshLayout=True,  # Required for JavaScript access
         wheelSensitivity=0.2,
         stylesheet=dynamic_stylesheet
     )
@@ -368,6 +369,9 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             # To preserve selected layer info and update Layer Status on interval trigger
             dcc.Store(id='selected-layer-name-store', data=""),
             dcc.Store(id='selected-node-id-store'),
+
+            html.Div(id='dummy-output'),  # dummy output for the clientside callback
+            html.Div(id='center-node-trigger', style={'display': 'none'}),
 
             dcc.Interval(id='update-interval', interval=1000, n_intervals=0),
         ],
