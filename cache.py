@@ -6,7 +6,7 @@ from run_inference import run_partial_inference
 
 # Shared resources
 result_cache = {}
-processing_nodes = set()
+processing_nodes = {}
 task_queue = Queue()
 
 lock = threading.Lock()

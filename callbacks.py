@@ -72,7 +72,7 @@ def register_callbacks(app):
                 return no_update
 
             for node_id in finished_nodes:
-                processing_nodes.remove(node_id)
+                processing_nodes.pop(node_id)
 
             return finished_nodes
 
@@ -143,7 +143,12 @@ def register_callbacks(app):
                 if node_id not in result_cache:
                     layer_name = tap_node['data'].get('layer_name')
                     layer_type = tap_node['data'].get('type')
-                    processing_nodes.add(node_id)
+
+                    processing_nodes[node_id] = {
+                        "layer_name": layer_name,
+                        "layer_type": layer_type
+                    }
+
                     task_queue.put((node_id, layer_name, layer_type, config_data))
                     update_node_style(new_elements, node_id, 'orange')
 
