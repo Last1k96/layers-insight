@@ -167,11 +167,12 @@ def register_callbacks(app):
     @app.callback(
         Output('layers-store', 'data'),
         Input('first-load', 'pathname'),
+        Input('ir-graph', 'tapNode'),
         Input('just-finished-tasks-store', 'data'),
         State('layers-store', 'data'),
         prevent_initial_call=True
     )
-    def update_inferred_layers_list(_, finished_nodes, layers_list):
+    def update_finished_layers(_, tap_node, finished_nodes, layers_list):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -189,6 +190,13 @@ def register_callbacks(app):
                         "layer_name": result["layer_name"],
                         "layer_type": result["layer_type"]
                     })
+
+        if any(trigger.startswith('ir-graph') for trigger in triggers):
+            with lock:
+                node_id = tap_node['data'].get('id')
+
+                if node_id not in result_cache:
+                    pass
 
         if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers) and finished_nodes:
             with lock:
@@ -257,7 +265,7 @@ def register_callbacks(app):
         State('layers-store', 'data'),
         prevent_initial_call=True
     )
-    def handle_keys_and_clicks(n_keydowns, li_n_clicks, tap_node, keydown, selected_layer_index, layers_list):
+    def update_selected_index(n_keydowns, li_n_clicks, tap_node, keydown, selected_layer_index, layers_list):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
