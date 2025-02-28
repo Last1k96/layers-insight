@@ -81,7 +81,7 @@ def register_callbacks(app):
         Output('selected-layer-name-store', 'data'),
         Input('ir-graph', 'tapNode'),
         Input('selected-layer-index-store', 'data'),
-        State('layer-store', 'data'),
+        State('layers-store', 'data'),
         prevent_initial_call=True
     )
     def update_selected_node_id(tap_node, selected_layer_index, layers_list):
@@ -113,7 +113,7 @@ def register_callbacks(app):
         Input('selected-layer-index-store', 'data'),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
-        State('layer-store', 'data'),
+        State('layers-store', 'data'),
         prevent_initial_call=True
     )
     def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, elements, config_data, layers_list):
@@ -165,10 +165,10 @@ def register_callbacks(app):
         return new_elements
 
     @app.callback(
-        Output('layer-store', 'data'),
+        Output('layers-store', 'data'),
         Input('first-load', 'pathname'),
         Input('just-finished-tasks-store', 'data'),
-        State('layer-store', 'data'),
+        State('layers-store', 'data'),
         prevent_initial_call=True
     )
     def update_inferred_layers_list(_, finished_nodes, layers_list):
@@ -208,11 +208,12 @@ def register_callbacks(app):
 
     @app.callback(
         Output('layer-list', 'children'),
-        Input('layer-store', 'data'),
+        Input('layers-store', 'data'),
+        Input('queued-layers-store', "data"),
         Input('selected-layer-index-store', 'data'),
         prevent_initial_call=True
     )
-    def render_layers(layers_list, selected_index):
+    def render_layers(layers_list, queued_layers_list, selected_index):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -242,6 +243,8 @@ def register_callbacks(app):
                 )
             )
 
+        li_elements.append(html.Hr(style={'borderTop': '1px solid #ccc', 'margin': '20px 0'}))
+
         return li_elements
 
     @app.callback(
@@ -251,7 +254,7 @@ def register_callbacks(app):
         Input('ir-graph', 'tapNode'),
         State("keyboard", "keydown"),
         State('selected-layer-index-store', 'data'),
-        State('layer-store', 'data'),
+        State('layers-store', 'data'),
         prevent_initial_call=True
     )
     def handle_keys_and_clicks(n_keydowns, li_n_clicks, tap_node, keydown, selected_layer_index, layers_list):
@@ -310,7 +313,7 @@ def register_callbacks(app):
         Input('selected-node-id-store', 'data'),
         Input('selected-layer-index-store', 'data'),
         Input('just-finished-tasks-store', 'data'),
-        State('layer-store', 'data'),
+        State('layers-store', 'data'),
         State('selected-layer-name-store', 'data'),
         prevent_initial_call=True
     )

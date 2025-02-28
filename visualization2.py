@@ -69,4 +69,4 @@ def update_slice(selected_slice):
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run(debug=True)
