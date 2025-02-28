@@ -370,6 +370,8 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             dcc.Store(id='selected-layer-name-store', data=""),
             dcc.Store(id='selected-node-id-store', data=None),
 
+            dcc.Store(id='clicked-graph-node-id-store', data={}), # to break circular dependency
+
             html.Div(id='dummy-output'),  # dummy output for the clientside callback
             html.Div(id='center-node-trigger', style={'display': 'none'}),
 

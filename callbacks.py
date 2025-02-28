@@ -10,7 +10,7 @@ from dash import no_update, callback_context, exceptions, html
 from dash.dependencies import Input, Output, State, ALL
 from run_inference import get_available_plugins
 
-from cache import result_cache, task_queue, processing_nodes, lock
+from cache import result_cache, task_queue, processing_layers, lock
 from visualization import plot_volume_tensor
 from viz_bin_diff import plot_diagnostics
 
@@ -67,14 +67,26 @@ def register_callbacks(app):
             return no_update
 
         with lock:
-            finished_nodes = [node for node in processing_nodes if node in result_cache]
+            finished_nodes = [node for node in processing_layers if node in result_cache]
             if not finished_nodes:
                 return no_update
 
             for node_id in finished_nodes:
-                processing_nodes.pop(node_id)
+                processing_layers.pop(node_id)
 
             return finished_nodes
+
+    @app.callback(
+        Output('clicked-graph-node-id-store', 'data'),
+        Input('ir-graph', 'tapNode'),
+        prevent_initial_call=True
+    )
+    def clicked_graph_node_id_callback(tap_node):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update
+
+        return tap_node['data'].get('id')
 
     @app.callback(
         Output('selected-node-id-store', 'data'),
@@ -133,7 +145,7 @@ def register_callbacks(app):
                     if node_id in result_cache:
                         element['data']['border_color'] = 'green'
 
-                    if node_id in processing_nodes:
+                    if node_id in processing_layers:
                         element['data']['border_color'] = 'yellow'
 
         if any(trigger.startswith('ir-graph') for trigger in triggers):
@@ -144,7 +156,7 @@ def register_callbacks(app):
                     layer_name = tap_node['data'].get('layer_name')
                     layer_type = tap_node['data'].get('type')
 
-                    processing_nodes[node_id] = {
+                    processing_layers[node_id] = {
                         "layer_name": layer_name,
                         "layer_type": layer_type
                     }
@@ -189,56 +201,91 @@ def register_callbacks(app):
         if any(trigger.startswith('first-load') for trigger in triggers):
             with lock:
                 layer_list_out = []
-                for node_id, result in sorted(result_cache.items(), key=lambda item: int(item[1]["node_id"])):
+
+                for node_id, result in result_cache.items():
                     layer_list_out.append({
                         "node_id": node_id,
                         "layer_name": result["layer_name"],
-                        "layer_type": result["layer_type"]
+                        "layer_type": result["layer_type"],
+                        "done": True
                     })
+
+                for node_id, result in processing_layers.items():
+                    layer_list_out.append({
+                        "node_id": node_id,
+                        "layer_name": result["layer_name"],
+                        "layer_type": result["layer_type"],
+                        "done": False
+                    })
+
+                layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
 
         if any(trigger.startswith('ir-graph') for trigger in triggers):
             with lock:
-                node_id = tap_node['data'].get('id')
-
-                if node_id not in result_cache:
-                    pass
-
-        if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers) and finished_nodes:
-            with lock:
                 layer_list_out = layers_list
-                for node_id in finished_nodes:
-                    result = result_cache[node_id]
+
+                node_id = tap_node['data'].get('id')
+                if node_id not in result_cache:
+                    layer_name = tap_node['data'].get('layer_name')
+                    layer_type = tap_node['data'].get('type')
 
                     list_of_ids = [int(item["node_id"]) for item in layer_list_out]
                     insertion_index = bisect.bisect_left(list_of_ids, int(node_id))
                     layer_list_out.insert(insertion_index, {
                         "node_id": node_id,
-                        "layer_name": result['layer_name'],
-                        "layer_type": result['layer_type']
+                        "layer_name": layer_name,
+                        "layer_type": layer_type,
+                        "done": False
                     })
+
+        if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers) and finished_nodes:
+            layer_list_out = layers_list
+
+            for layer in layer_list_out:
+                if layer["node_id"] in finished_nodes:
+                    layer["done"] = True
 
         return layer_list_out
 
     @app.callback(
         Output('layer-list', 'children'),
-        Input('layers-store', 'data'),
         Input('selected-layer-index-store', 'data'),
+        Input('clicked-graph-node-id-store', 'data'),
+        Input('layers-store', 'data'),
+        State('layer-list', 'children'),
         prevent_initial_call=True
     )
-    def render_layers(layers_list, selected_index):
+    def render_layers(selected_index, clicked_graph_node_id, layers_list, rendered_layers):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
 
+        triggers = [t['prop_id'] for t in ctx.triggered]
+
+        layer_index = 0
+        if rendered_layers:
+            for index, layer in enumerate(rendered_layers):
+                background_color = layer["props"]["style"].get("backgroundColor", None)
+                if background_color:
+                    layer_index = index
+                    break
+
+        if any(trigger.startswith('clicked-graph-node-id-store') for trigger in triggers):
+            for index, element in enumerate(layers_list):
+                if element["node_id"] == clicked_graph_node_id:
+                    layer_index = index
+                    break
+
         li_elements = []
 
         for i, layer in enumerate(layers_list):
+            color = '#4CAF50' if layer["done"] else '#BA8E23'
             style = {
-                'color': '#4CAF50',
+                'color': color,
                 'padding': '4px',
                 'marginBottom': '2px',
             }
-            if i == selected_index:
+            if i == layer_index:
                 style.update({
                     'backgroundColor': '#292E37',
                 })
@@ -264,13 +311,13 @@ def register_callbacks(app):
         Output('selected-layer-index-store', 'data'),
         Input("keyboard", "n_keydowns"),
         Input({'type': 'layer-li', 'index': ALL}, 'n_clicks'),
-        Input('ir-graph', 'tapNode'),
+        State('layers-store', 'data'),
         State("keyboard", "keydown"),
         State('selected-layer-index-store', 'data'),
-        State('layers-store', 'data'),
         prevent_initial_call=True
     )
-    def update_selected_index(n_keydowns, li_n_clicks, tap_node, keydown, selected_layer_index, layers_list):
+    def update_selected_layer(n_keydowns, li_n_clicks, layers_list, keydown,
+                              selected_layer_index):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -278,13 +325,6 @@ def register_callbacks(app):
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         new_index = no_update
-
-        if any(trigger.startswith('ir-graph') for trigger in triggers):
-            node_id = tap_node['data'].get('id')
-            index = next((i for i, layer in enumerate(layers_list) if layer['node_id'] == node_id), None)
-
-            if index is not None:
-                new_index = index
 
         if any(trigger.startswith('keyboard') for trigger in triggers):
             num_layers = len(layers_list)
