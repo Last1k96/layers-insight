@@ -209,11 +209,10 @@ def register_callbacks(app):
     @app.callback(
         Output('layer-list', 'children'),
         Input('layers-store', 'data'),
-        Input('queued-layers-store', "data"),
         Input('selected-layer-index-store', 'data'),
         prevent_initial_call=True
     )
-    def render_layers(layers_list, queued_layers_list, selected_index):
+    def render_layers(layers_list, selected_index):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -221,11 +220,14 @@ def register_callbacks(app):
         li_elements = []
 
         for i, layer in enumerate(layers_list):
-            style = {'padding': '5px', 'marginBottom': '3px'}
+            style = {
+                'color': '#4CAF50',
+                'padding': '4px',
+                'marginBottom': '2px',
+            }
             if i == selected_index:
                 style.update({
-                    'border': '1px solid black',
-                    'backgroundColor': 'darkgray',
+                    'backgroundColor': '#292E37',
                 })
 
             li_elements.append(
@@ -242,8 +244,6 @@ def register_callbacks(app):
                     style=style
                 )
             )
-
-        li_elements.append(html.Hr(style={'borderTop': '1px solid #ccc', 'margin': '20px 0'}))
 
         return li_elements
 

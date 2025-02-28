@@ -301,6 +301,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         color="dark",
         n_clicks=0,
         className="w-100",
+        style={'margin-bottom': '10px'}
     )
 
     left_pane = html.Div([
@@ -312,7 +313,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         ),
         html.Ul(
             id='layer-list',
-            style={'padding': '10px', 'height': '100%', 'overflow': 'auto'},
+            style={'padding': '2px', 'height': '100%', 'overflow': 'auto'},
         ),
     ])
 
@@ -333,7 +334,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
     graph_and_right = DashSplitPane(
         split="vertical",
-        size="20%",
+        size="15%",
         primary="first",
         children=[
             left_pane,
@@ -343,7 +344,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
     dash_pane = DashSplitPane(
         split="vertical",
-        size="20%",
+        size="15%",
         primary="second",
         children=[
             graph_and_right,
@@ -363,7 +364,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             dcc.Location(id='first-load', refresh=False),
             dcc.Store(id='selected-layer-index-store', data=-1),
             dcc.Store(id='layers-store', data = []),
-            dcc.Store(id='queued-layers-store', data=[]),
             dcc.Store(id='just-finished-tasks-store', data=[]),
 
             # To preserve selected layer info and update Layer Status on interval trigger
