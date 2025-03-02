@@ -315,7 +315,6 @@ def register_callbacks(app):
         new_index = no_update
 
         if any(trigger.startswith('clicked-graph-node-id-store') for trigger in triggers):
-            print(f"{layers_list}")
             for index, element in enumerate(layers_list):
                 if element["node_id"] == clicked_graph_node_id:
                     new_index = index
