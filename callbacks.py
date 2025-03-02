@@ -77,18 +77,6 @@ def register_callbacks(app):
             return finished_nodes
 
     @app.callback(
-        Output('clicked-graph-node-id-store', 'data'),
-        Input('ir-graph', 'tapNode'),
-        prevent_initial_call=True
-    )
-    def clicked_graph_node_id_callback(tap_node):
-        ctx = callback_context
-        if not ctx.triggered:
-            return no_update
-
-        return tap_node['data'].get('id')
-
-    @app.callback(
         Output('selected-node-id-store', 'data'),
         Output('selected-layer-name-store', 'data'),
         Input('ir-graph', 'tapNode'),
@@ -183,20 +171,22 @@ def register_callbacks(app):
 
     @app.callback(
         Output('layers-store', 'data'),
+        Output('clicked-graph-node-id-store', 'data'),
         Input('first-load', 'pathname'),
         Input('ir-graph', 'tapNode'),
         Input('just-finished-tasks-store', 'data'),
         State('layers-store', 'data'),
         prevent_initial_call=True
     )
-    def update_finished_layers(_, tap_node, finished_nodes, layers_list):
+    def update_layers_list(_, tap_node, finished_nodes, layers_list):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update
+            return no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         layer_list_out = no_update
+        clicked_graph_node_id = no_update
 
         if any(trigger.startswith('first-load') for trigger in triggers):
             with lock:
@@ -225,6 +215,7 @@ def register_callbacks(app):
                 layer_list_out = layers_list
 
                 node_id = tap_node['data'].get('id')
+                clicked_graph_node_id = node_id  # To trigger layer selection after new layer was added to the list
                 if node_id not in result_cache:
                     layer_name = tap_node['data'].get('layer_name')
                     layer_type = tap_node['data'].get('type')
@@ -245,17 +236,16 @@ def register_callbacks(app):
                 if layer["node_id"] in finished_nodes:
                     layer["done"] = True
 
-        return layer_list_out
+        return layer_list_out, clicked_graph_node_id
 
     @app.callback(
-        Output('layer-list', 'children'),
+        Output('layer-panel-list', 'children'),
         Input('selected-layer-index-store', 'data'),
-        Input('clicked-graph-node-id-store', 'data'),
         Input('layers-store', 'data'),
-        State('layer-list', 'children'),
+        State('layer-panel-list', 'children'),
         prevent_initial_call=True
     )
-    def render_layers(selected_index, clicked_graph_node_id, layers_list, rendered_layers):
+    def render_layers(selected_index, layers_list, rendered_layers):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -270,11 +260,8 @@ def register_callbacks(app):
                     layer_index = index
                     break
 
-        if any(trigger.startswith('clicked-graph-node-id-store') for trigger in triggers):
-            for index, element in enumerate(layers_list):
-                if element["node_id"] == clicked_graph_node_id:
-                    layer_index = index
-                    break
+        if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
+            layer_index = selected_index
 
         li_elements = []
 
@@ -311,12 +298,13 @@ def register_callbacks(app):
         Output('selected-layer-index-store', 'data'),
         Input("keyboard", "n_keydowns"),
         Input({'type': 'layer-li', 'index': ALL}, 'n_clicks'),
+        Input('clicked-graph-node-id-store', 'data'),
         State('layers-store', 'data'),
         State("keyboard", "keydown"),
         State('selected-layer-index-store', 'data'),
         prevent_initial_call=True
     )
-    def update_selected_layer(n_keydowns, li_n_clicks, layers_list, keydown,
+    def update_selected_layer(n_keydowns, li_n_clicks, clicked_graph_node_id, layers_list, keydown,
                               selected_layer_index):
         ctx = callback_context
         if not ctx.triggered:
@@ -325,6 +313,13 @@ def register_callbacks(app):
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         new_index = no_update
+
+        if any(trigger.startswith('clicked-graph-node-id-store') for trigger in triggers):
+            print(f"{layers_list}")
+            for index, element in enumerate(layers_list):
+                if element["node_id"] == clicked_graph_node_id:
+                    new_index = index
+                    break
 
         if any(trigger.startswith('keyboard') for trigger in triggers):
             num_layers = len(layers_list)

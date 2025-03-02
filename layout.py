@@ -312,7 +312,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             captureKeys=["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown", "Control"],
         ),
         html.Ul(
-            id='layer-list',
+            id='layer-panel-list',
             style={'padding': '2px', 'height': '100%', 'overflow': 'auto'},
         ),
     ])
@@ -370,7 +370,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             dcc.Store(id='selected-layer-name-store', data=""),
             dcc.Store(id='selected-node-id-store', data=None),
 
-            dcc.Store(id='clicked-graph-node-id-store', data={}), # to break circular dependency
+            dcc.Store(id='clicked-graph-node-id-store'), # to break circular dependency
 
             html.Div(id='dummy-output'),  # dummy output for the clientside callback
             html.Div(id='center-node-trigger', style={'display': 'none'}),
