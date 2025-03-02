@@ -466,13 +466,13 @@ def register_callbacks(app):
 
     @app.callback(
         Output("visualization-modal", "is_open"),
-        Output("vis-3d", "figure"),
+        Output("vis-graph", "figure"),
         Output("vis-diagnostics", "children"),
         Input("visualization-button", "n_clicks"),
         Input("close-vis-modal", "n_clicks"),
         State("visualization-modal", "is_open"),
         State("selected-node-id-store", "data"),
-        State('config-store', 'data')
+        State("config-store", "data")
     )
     def toggle_visualization_modal(n_open, n_close, is_open, node_id, config):
         ctx = callback_context
@@ -487,18 +487,16 @@ def register_callbacks(app):
             if ref is None or main is None:
                 return is_open, no_update, no_update
 
+            # Compute the difference and create the 3D figure
             diff = main - ref
-            start_time = time.perf_counter()
             fig_3d = plot_volume_tensor(diff)
-            print(f"fig_3d time: {time.perf_counter() - start_time:.6f} seconds")
-            start_time = time.perf_counter()
 
+            # Create diagnostics figure
             ref_plugin_name = config["plugin1"]
             main_plugin_name = config["plugin2"]
             diag_fig = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
-            print(f"plot_diagnostics time: {time.perf_counter() - start_time:.6f} seconds")
-            start_time = time.perf_counter()
 
+            # Convert diagnostics figure to an image for display
             buf = io.BytesIO()
             diag_fig.savefig(buf, format="png", bbox_inches="tight")
             buf.seek(0)
@@ -507,7 +505,6 @@ def register_callbacks(app):
                 src=f"data:image/png;base64,{encoded_diag}",
                 style={"width": "100%", "display": "block", "margin": "0 auto"}
             )
-            print(f"b64encode time: {time.perf_counter() - start_time:.6f} seconds")
             return True, fig_3d, diag_img
 
         elif triggered_id == "close-vis-modal":
@@ -516,15 +513,22 @@ def register_callbacks(app):
         return is_open, no_update, no_update
 
     @app.callback(
-        Output("tab-3d-content", "style"),
-        Output("tab-diag-content", "style"),
-        Input("vis-tabs", "value")
+        Output("content-3d", "style"),
+        Output("content-diag", "style"),
+        Input("btn-3d", "n_clicks"),
+        Input("btn-diag", "n_clicks")
     )
-    def toggle_tab_contents(active_tab):
-        if active_tab == "tab-3d":
+    def toggle_content(n_3d, n_diag):
+        ctx = callback_context
+        if not ctx.triggered:
+            # Default: show the 3D view, hide diagnostics.
             return {"display": "block"}, {"display": "none"}
-        else:
+        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        if triggered_id == "btn-3d":
+            return {"display": "block"}, {"display": "none"}
+        elif triggered_id == "btn-diag":
             return {"display": "none"}, {"display": "block"}
+        return {"display": "block"}, {"display": "none"}
 
 
 def register_clientside_callbacks(app):

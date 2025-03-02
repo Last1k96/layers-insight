@@ -219,45 +219,51 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
     # Visualization modal with inline light background styles.
     visualization_modal = dbc.Modal(
         [
-            dbc.ModalHeader(
-                dbc.ModalTitle("Visualizations"),
-                style={'backgroundColor': '#f0f0f0'}
-            ),
+            dbc.ModalHeader(dbc.ModalTitle("Visualizations")),
             dbc.ModalBody(
-                [
-                    dcc.Tabs(
-                        id="vis-tabs",
-                        value="tab-3d",
-                        children=[
-                            dcc.Tab(label="3D Volume", value="tab-3d"),
-                            dcc.Tab(label="Diagnostics", value="tab-diag")
-                        ]
-                    ),
-                    html.Div(
-                        id="tab-3d-content",
-                        style={"display": "block"},
-                        children=[
-                            dcc.Graph(
-                                id="vis-3d",
-                                style={'width': 'calc(100vw - 50px)', 'height': 'calc(100vh - 150px)'}
-                            )
-                        ]
-                    ),
-                    html.Div(
-                        id="tab-diag-content",
-                        style={"display": "none"},
-                        children=[
-                            html.Div(
-                                id="vis-diagnostics",
-                                style={
-                                    "textAlign": "center",
-                                    "overflowY": "auto",
-                                    "maxHeight": "80vh"
-                                }
-                            )
-                        ]
-                    ),
-                ],
+                dbc.Row(
+                    [
+                        dbc.Col(
+                            [
+                                # Container for 3D visualization
+                                html.Div(
+                                    id="content-3d",
+                                    children=[
+                                        dcc.Graph(
+                                            id="vis-graph",  # Note: using "vis-graph" to match your layout
+                                            style={'width': '100%', 'height': 'calc(100vh - 150px)'}
+                                        )
+                                    ],
+                                    style={"display": "block"}
+                                ),
+                                # Container for diagnostics visualization
+                                html.Div(
+                                    id="content-diag",
+                                    children=[
+                                        html.Div(
+                                            id="vis-diagnostics",
+                                            style={
+                                                "textAlign": "center",
+                                                "overflowY": "auto",
+                                                "maxHeight": "80vh"
+                                            }
+                                        )
+                                    ],
+                                    style={"display": "none"}
+                                )
+                            ],
+                            width=9
+                        ),
+                        dbc.Col(
+                            [
+                                dbc.Button("3D Volume", id="btn-3d", color="primary", className="mb-2 btn-block"),
+                                dbc.Button("Diagnostics", id="btn-diag", color="secondary", className="mb-2 btn-block")
+                            ],
+                            width=3
+                        )
+                    ],
+                    style={'height': 'calc(100vh - 150px)'}
+                ),
                 style={'backgroundColor': '#f0f0f0'}
             ),
             dbc.ModalFooter(
