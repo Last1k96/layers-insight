@@ -3,7 +3,6 @@ import copy
 import io
 import json
 import os
-import time
 import bisect
 
 from dash import no_update, callback_context, exceptions, html
@@ -11,8 +10,8 @@ from dash.dependencies import Input, Output, State, ALL
 from run_inference import get_available_plugins
 
 from cache import result_cache, task_queue, processing_layers, lock
-from visualization import plot_volume_tensor
-from viz_bin_diff import plot_diagnostics
+from visualizations.visualization import plot_volume_tensor
+from visualizations.viz_bin_diff import plot_diagnostics
 
 
 class LockGuard:
