@@ -11,7 +11,9 @@ from run_inference import get_available_plugins
 
 from cache import result_cache, task_queue, processing_layers, lock
 from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, parallel_coordinates_diff, \
-    dim_reduction_diff, spectral_diff, tensor_unfolding_diff, probabilistic_diff, interactive_tensor_diff_dashboard
+    dim_reduction_diff, spectral_diff, tensor_unfolding_diff, probabilistic_diff, interactive_tensor_diff_dashboard, \
+    hierarchical_diff_visualization, tensor_network_visualization, tensor_network_diagram, channel_correlation_matrices, \
+    gradient_flow_visualization, tensor_histogram_comparison, spectral_analysis, eigenvalue_comparison
 from visualizations.visualization import plot_volume_tensor
 from visualizations.viz_bin_diff import plot_diagnostics, reshape_to_3d
 
@@ -612,6 +614,110 @@ def register_callbacks(app):
                 main = reshape_to_3d(main)
                 figure = interactive_tensor_diff_dashboard(ref, main)
                 store_figure["viz8"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz9":
+            if "viz9" in store_figure:
+                figure = store_figure["viz9"]
+            else:
+                ref = reshape_to_3d(ref)
+                main = reshape_to_3d(main)
+                figure = hierarchical_diff_visualization(ref, main)
+                store_figure["viz9"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz10":
+            if "viz10" in store_figure:
+                figure = store_figure["viz10"]
+            else:
+                ref = reshape_to_3d(ref)
+                main = reshape_to_3d(main)
+                figure = tensor_network_visualization(ref, main)
+                store_figure["viz10"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz11":
+            if "viz11" in store_figure:
+                figure = store_figure["viz11"]
+            else:
+                ref = reshape_to_3d(ref)
+                main = reshape_to_3d(main)
+                figure = tensor_network_diagram(ref, main)
+                store_figure["viz11"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz12":
+            if "viz12" in store_figure:
+                figure = store_figure["viz12"]
+            else:
+                ref = reshape_to_3d(ref)
+                main = reshape_to_3d(main)
+                figure = channel_correlation_matrices(ref, main)
+                store_figure["viz12"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz13":
+            if "viz13" in store_figure:
+                figure = store_figure["viz13"]
+            else:
+                ref = reshape_to_3d(ref)
+                main = reshape_to_3d(main)
+                figure = gradient_flow_visualization(ref, main)
+                store_figure["viz13"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz14":
+            if "viz14" in store_figure:
+                figure = store_figure["viz14"]
+            else:
+                ref = reshape_to_3d(ref)
+                main = reshape_to_3d(main)
+                figure = tensor_histogram_comparison(ref, main)
+                store_figure["viz14"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz15":
+            if "viz15" in store_figure:
+                figure = store_figure["viz15"]
+            else:
+                ref = reshape_to_3d(ref)
+                main = reshape_to_3d(main)
+                figure = spectral_analysis(ref, main)
+                store_figure["viz15"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz16":
+            if "viz16" in store_figure:
+                figure = store_figure["viz16"]
+            else:
+                ref = reshape_to_3d(ref)
+                main = reshape_to_3d(main)
+                figure = eigenvalue_comparison(ref, main)
+                store_figure["viz16"] = figure
 
             return dcc.Graph(id="vis-graph", figure=figure,
                              style={'width': '100%',
