@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from dash import html
 from matplotlib.animation import FuncAnimation
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -24,49 +25,39 @@ import io
 import base64
 from PIL import Image
 
+from visualizations.viz_bin_diff import reshape_to_3d
+
 
 # 1. Animated Slices
 def animated_slices(tensor1, tensor2, axis=0, fps=10):
-    """
-    Create an animation that shows slices of difference tensor along a specified axis.
-
-    Args:
-        tensor1, tensor2: Input tensors of same shape
-        axis: Axis along which to slice (0, 1, or 2)
-        fps: Frames per second for animation
-
-    Returns:
-        HTML object containing the animation
-    """
+    tensor1 = reshape_to_3d(tensor1)
+    tensor2 = reshape_to_3d(tensor2)
     diff = tensor1 - tensor2
     abs_max = max(abs(diff.min()), abs(diff.max()))
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(14, 10))
     slices = diff.shape[axis]
 
-    # Take first slice
+    # Initial slice
     slice_indices = [slice(None)] * 3
     slice_indices[axis] = 0
     im = ax.imshow(diff[tuple(slice_indices)], cmap='RdBu_r',
                    vmin=-abs_max, vmax=abs_max)
 
     plt.colorbar(im, ax=ax, label='Difference')
-    ax.set_title(f'Slice 0/{slices - 1} along axis {axis}')
+    ax.set_title(f'Channel {slices - 1}')
 
     def update(i):
         slice_indices[axis] = i
         im.set_array(diff[tuple(slice_indices)])
-        ax.set_title(f'Slice {i}/{slices - 1} along axis {axis}')
+        ax.set_title(f'Channel {i} / {slices - 1}')
         return [im]
 
     anim = FuncAnimation(fig, update, frames=slices, blit=True, interval=1000 / fps)
+    plt.close()  # Close the figure to avoid duplicate displays
 
-    # Convert animation to HTML
-    f = io.BytesIO()
-    anim.save(f, writer='pillow', fps=fps)
-    plt.close()
+    return anim.to_jshtml()
 
-    return HTML(anim.to_jshtml())
 
 
 # 2. Isosurface Rendering

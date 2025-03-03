@@ -10,6 +10,7 @@ from dash.dependencies import Input, Output, State, ALL
 from run_inference import get_available_plugins
 
 from cache import result_cache, task_queue, processing_layers, lock
+from visualizations.new_cool_visualizations import animated_slices
 from visualizations.visualization import plot_volume_tensor
 from visualizations.viz_bin_diff import plot_diagnostics
 
@@ -523,6 +524,32 @@ def register_callbacks(app):
                 store_figure["viz2"] = img
 
             return img, selected_visualization, store_figure
+
+        elif selected_visualization == "viz3":
+            if "viz3" in store_figure:
+                animation_html = store_figure["viz3"]
+            else:
+                animation_html = animated_slices(ref, main, axis=0, fps=2)
+                store_figure["viz3"] = animation_html
+
+            return html.Div(
+                html.Iframe(
+                    srcDoc=animation_html,
+                    style={
+                        "width": "50%",  # Use less than 100% to allow centering
+                        "height": "calc(100vh - 150px)",
+                        "border": "none",
+                        "minHeight": "600px"
+                    }
+                ),
+                style={
+                    "width": "100%",
+                    "display": "flex",
+                    "justifyContent": "center",  # Center horizontally
+                    "alignItems": "center",  # Center vertically
+                    "flex": "1"
+                }
+            ), selected_visualization, store_figure
 
         return no_update, no_update, no_update
 
