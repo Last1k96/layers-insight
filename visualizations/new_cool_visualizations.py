@@ -8,7 +8,7 @@ import plotly.express as px
 from scipy import fftpack
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
-import umap
+from umap import UMAP
 from skimage import measure
 import seaborn as sns
 from scipy.stats import entropy
@@ -111,16 +111,6 @@ def isosurface_diff(tensor1, tensor2, thresholds=None):
 
 # 3. Parallel Coordinates Plot
 def parallel_coordinates_diff(tensor1, tensor2, n_samples=500):
-    """
-    Create a parallel coordinates plot showing tensor differences.
-
-    Args:
-        tensor1, tensor2: Input tensors of same shape
-        n_samples: Number of points to sample
-
-    Returns:
-        Plotly figure
-    """
     # Flatten tensors
     tensor1_flat = tensor1.reshape(-1)
     tensor2_flat = tensor2.reshape(-1)
@@ -193,7 +183,7 @@ def dim_reduction_diff(tensor1, tensor2, method='pca', n_samples=1000, n_compone
     elif method == 'tsne':
         reducer = TSNE(n_components=n_components, perplexity=min(30, n_samples // 5))
     elif method == 'umap':
-        reducer = umap.UMAP(n_components=n_components)
+        reducer = UMAP(n_components=n_components)
     else:
         raise ValueError("Method must be one of: 'pca', 'tsne', 'umap'")
 

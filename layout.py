@@ -247,6 +247,8 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                                            className="mb-1 w-100"),
                                 dbc.Button("New Viz 4", id={"type": "visualization-btn", "index": "viz4"},
                                            className="mb-1 w-100"),
+                                dbc.Button("New Viz 5", id={"type": "visualization-btn", "index": "viz5"},
+                                           className="mb-1 w-100"),
                             ],
                             style={
                                 "width": "200px",  # Fixed width for the buttons

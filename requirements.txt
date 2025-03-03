@@ -4,7 +4,7 @@ dash-bootstrap-components~=1.7.1
 dash-split-pane
 dash_bootstrap_components
 openvino
-numpy~=2.2.2
+numpy==2.1.3
 opencv-python-headless
 scikit-image
 plotly~=6.0.0
@@ -12,3 +12,4 @@ matplotlib~=3.10.0
 dash_cytoscape~=1.0.2
 dash_split_pane~=1.0.0
 scipy~=1.15.1
+umap-learn

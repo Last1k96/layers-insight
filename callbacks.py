@@ -10,7 +10,8 @@ from dash.dependencies import Input, Output, State, ALL
 from run_inference import get_available_plugins
 
 from cache import result_cache, task_queue, processing_layers, lock
-from visualizations.new_cool_visualizations import animated_slices, isosurface_diff
+from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, parallel_coordinates_diff, \
+    dim_reduction_diff
 from visualizations.visualization import plot_volume_tensor
 from visualizations.viz_bin_diff import plot_diagnostics, reshape_to_3d
 
@@ -559,6 +560,19 @@ def register_callbacks(app):
                 main = reshape_to_3d(main)
                 figure = isosurface_diff(ref, main)
                 store_figure["viz4"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz5":
+            if "viz5" in store_figure:
+                figure = store_figure["viz5"]
+            else:
+                ref = reshape_to_3d(ref)
+                main = reshape_to_3d(main)
+                figure = dim_reduction_diff(ref, main, method='umap')
+                store_figure["viz5"] = figure
 
             return dcc.Graph(id="vis-graph", figure=figure,
                              style={'width': '100%',
