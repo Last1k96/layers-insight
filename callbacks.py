@@ -544,10 +544,10 @@ def register_callbacks(app):
                 ),
                 style={
                     "width": "100%",
+                    "height": "calc(100vh - 150px)",  # Added height for vertical centering
                     "display": "flex",
                     "justifyContent": "center",  # Center horizontally
-                    "alignItems": "center",  # Center vertically
-                    "flex": "1"
+                    "alignItems": "center"  # Center vertically
                 }
             ), selected_visualization, store_figure
 

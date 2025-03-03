@@ -234,7 +234,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                                     }
                                 )
                             ],
-                            style={"flex": "1"}
+                            style={"flex": "1", "width": "100%"},
                         ),
                         # Right side: fixed width button column
                         html.Div(
