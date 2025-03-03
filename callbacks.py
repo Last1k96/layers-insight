@@ -465,27 +465,37 @@ def register_callbacks(app):
 
     @app.callback(
         Output("visualization-container", "children"),
+        Output("last-selected-visualization", "data"),
+        Input("update-visualization-on-open", "data"),
         Input("btn-3d", "n_clicks"),
         Input("btn-diag", "n_clicks"),
         State("store-figure", "data"),
+        State("last-selected-visualization", "data"),
     )
-    def change_visualization_kind(n_3d, n_diag, store_figure):
+    def change_visualization_kind(on_open, n_3d, n_diag, store_figure, last_selected_visualization):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
 
         triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        selected_visualization = triggered_id
 
-        if triggered_id == "btn-3d":
+        if triggered_id == "update-visualization-on-open":
+            selected_visualization = last_selected_visualization if last_selected_visualization is not None else "btn-3d"
+
+        if selected_visualization == "btn-3d":
             return dcc.Graph(id="vis-graph", figure=store_figure["3d"],
-                                  style={'width': '100%', 'height': 'calc(100vh - 150px)'})
+                             style={'width': '100%', 'height': 'calc(100vh - 150px)'}), selected_visualization
 
-        elif triggered_id == "btn-diag":
-            return store_figure["diag"]
+        elif selected_visualization == "btn-diag":
+            return store_figure["diag"], selected_visualization
+
+        return no_update, selected_visualization
 
     @app.callback(
         Output("visualization-modal", "is_open"),
         Output("store-figure", "data"),
+        Output("update-visualization-on-open", "data"),
         Input("visualization-button", "n_clicks"),
         Input("close-modal", "n_clicks"),
         State("visualization-modal", "is_open"),
@@ -495,7 +505,7 @@ def register_callbacks(app):
     def handle_visualization(n_open, n_close, is_open, node_id, config):
         ctx = callback_context
         if not ctx.triggered:
-            return is_open, no_update
+            return is_open, no_update, no_update
 
         triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
@@ -530,12 +540,12 @@ def register_callbacks(app):
                 "diag": diag_img
             }
 
-            return True, store_figure
+            return True, store_figure, []
 
         elif triggered_id == "close-modal":
-            return False, {}
+            return False, {}, no_update
 
-        return is_open, no_update
+        return is_open, no_update, no_update
 
 
 def register_clientside_callbacks(app):
@@ -544,11 +554,11 @@ def register_clientside_callbacks(app):
         """
         function(nodeId, keysPressed) {
             if (!keysPressed || !("Control" in keysPressed) || nodeId == null) {
-                return null;
+                return;
             }
             if (window.cy) {
                 const element = window.cy.getElementById(nodeId);
-                if (element.length === 0) return null; // Check if node exists
+                if (element.length === 0) return; // Check if node exists
                 const zoom = window.cy.zoom();
                 const nodePos = element.position();
                 const viewportCenterX = window.cy.width() / 2;
@@ -559,10 +569,9 @@ def register_clientside_callbacks(app):
                     pan: { x: newPanX, y: newPanY }
                 }, { duration: 150, easing: 'ease-in-out' });
             }
-            return null;
+            return;
         }
         """,
-        Output('dummy-output', 'children'),
         Input('selected-node-id-store', 'data'),
         State('keyboard', 'keys_pressed')
     )

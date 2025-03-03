@@ -352,6 +352,8 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             config_store,
 
             dcc.Store(id='store-figure', data={}),
+            dcc.Store(id='update-visualization-on-open'),
+            dcc.Store(id='last-selected-visualization', data=None),
             visualization_modal,
 
             dcc.Location(id='first-load', refresh=False),
@@ -365,7 +367,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
             dcc.Store(id='clicked-graph-node-id-store'), # to break circular dependency
 
-            html.Div(id='dummy-output'),  # dummy output for the clientside callback
             html.Div(id='center-node-trigger', style={'display': 'none'}),
 
             dcc.Interval(id='update-interval', interval=1000, n_intervals=0),
