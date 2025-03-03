@@ -469,12 +469,11 @@ def register_callbacks(app):
         Output("vis-graph", "figure"),
         Output("vis-diagnostics", "children"),
         Input("visualization-button", "n_clicks"),
-        Input("close-vis-modal", "n_clicks"),
         State("visualization-modal", "is_open"),
         State("selected-node-id-store", "data"),
         State("config-store", "data")
     )
-    def toggle_visualization_modal(n_open, n_close, is_open, node_id, config):
+    def toggle_visualization_modal(n_open, is_open, node_id, config):
         ctx = callback_context
         if not ctx.triggered:
             return is_open, no_update, no_update

@@ -245,7 +245,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                                             style={
                                                 "textAlign": "center",
                                                 "overflowY": "auto",
-                                                "maxHeight": "80vh"
+                                                "maxHeight": "100vh"
                                             }
                                         )
                                     ],
@@ -259,17 +259,13 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                                 dbc.Button("3D Volume", id="btn-3d", color="primary", className="mb-2 btn-block"),
                                 dbc.Button("Diagnostics", id="btn-diag", color="secondary", className="mb-2 btn-block")
                             ],
-                            width=3
+                            width=2
                         )
                     ],
-                    style={'height': 'calc(100vh - 150px)'}
+                    style={'height': '100vh'}
                 ),
                 style={'backgroundColor': '#f0f0f0'}
             ),
-            dbc.ModalFooter(
-                dbc.Button("Close", id="close-vis-modal", className="ml-auto"),
-                style={'backgroundColor': '#f0f0f0'}
-            )
         ],
         id="visualization-modal",
         fullscreen=True,
