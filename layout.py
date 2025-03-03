@@ -351,6 +351,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             plugin_store,
             config_store,
 
+            dcc.Store(id='store-figure', data={}),
             visualization_modal,
 
             dcc.Location(id='first-load', refresh=False),

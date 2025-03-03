@@ -466,18 +466,20 @@ def register_callbacks(app):
     @app.callback(
         Output("visualization-modal", "is_open"),
         Output("visualization-container", "children"),
+        Output("store-figure", "data"),
         Input("visualization-button", "n_clicks"),
         Input("close-modal", "n_clicks"),
         Input("btn-3d", "n_clicks"),
         Input("btn-diag", "n_clicks"),
         State("visualization-modal", "is_open"),
         State("selected-node-id-store", "data"),
+        State("store-figure", "data"),
         State("config-store", "data")
     )
-    def handle_visualization(n_open, n_close, n_3d, n_diag, is_open, node_id, config):
+    def handle_visualization(n_open, n_close, n_3d, n_diag, is_open, node_id, store_figure, config):
         ctx = callback_context
         if not ctx.triggered:
-            return is_open, no_update
+            return is_open, no_update, no_update
 
         triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
 
@@ -487,7 +489,7 @@ def register_callbacks(app):
             ref = data.get("ref")
             main = data.get("main")
             if ref is None or main is None:
-                return is_open, no_update
+                return is_open, no_update, no_update
 
             # Compute visualizations once
             diff = main - ref
@@ -508,27 +510,27 @@ def register_callbacks(app):
             )
 
             # Store the computed visualizations in a dcc.Store component
-            app.store_figure = {
+            store_figure = {
                 "3d": fig_3d,
                 "diag": diag_img
             }
 
             # Default to showing 3D view
             return True, dcc.Graph(id="vis-graph", figure=fig_3d,
-                                   style={'width': '100%', 'height': 'calc(100vh - 150px)'})
+                                   style={'width': '100%', 'height': 'calc(100vh - 150px)'}), store_figure
 
         elif triggered_id == "close-modal":
-            return False, no_update
+            return False, no_update, {}
 
         # Handle visualization toggle
-        elif triggered_id == "btn-3d" and hasattr(app, 'store_figure'):
-            return is_open, dcc.Graph(id="vis-graph", figure=app.store_figure["3d"],
-                                      style={'width': '100%', 'height': 'calc(100vh - 150px)'})
+        elif triggered_id == "btn-3d":
+            return is_open, dcc.Graph(id="vis-graph", figure=store_figure["3d"],
+                                      style={'width': '100%', 'height': 'calc(100vh - 150px)'}), no_update
 
-        elif triggered_id == "btn-diag" and hasattr(app, 'store_figure'):
-            return is_open, app.store_figure["diag"]
+        elif triggered_id == "btn-diag":
+            return is_open, store_figure["diag"], no_update
 
-        return is_open, no_update
+        return is_open, no_update, no_update
 
 
 def register_clientside_callbacks(app):
