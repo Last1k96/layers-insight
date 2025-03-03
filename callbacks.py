@@ -536,7 +536,7 @@ def register_callbacks(app):
                 html.Iframe(
                     srcDoc=animation_html,
                     style={
-                        "width": "50%",  # Use less than 100% to allow centering
+                        "width": "70%",
                         "height": "calc(100vh - 150px)",
                         "border": "none",
                         "minHeight": "600px"

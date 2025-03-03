@@ -41,7 +41,7 @@ def animated_slices(tensor1, tensor2, axis=0, fps=10):
     # Initial slice
     slice_indices = [slice(None)] * 3
     slice_indices[axis] = 0
-    im = ax.imshow(diff[tuple(slice_indices)], cmap='RdBu_r',
+    im = ax.imshow(diff[tuple(slice_indices)], cmap='bwr',
                    vmin=-abs_max, vmax=abs_max)
 
     plt.colorbar(im, ax=ax, label='Difference')
