@@ -62,16 +62,6 @@ def animated_slices(tensor1, tensor2, axis=0, fps=10):
 
 # 2. Isosurface Rendering
 def isosurface_diff(tensor1, tensor2, thresholds=None):
-    """
-    Visualize isosurfaces of the difference tensor.
-
-    Args:
-        tensor1, tensor2: Input tensors of same shape
-        thresholds: List of threshold values for isosurfaces
-
-    Returns:
-        Plotly figure
-    """
     diff = np.abs(tensor1 - tensor2)
 
     # Default thresholds based on percentiles of the difference
