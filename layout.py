@@ -88,7 +88,7 @@ def build_dynamic_stylesheet(elements):
         })
 
     stylesheet.append({
-        'selector': 'node.selected', # .selected is a custom class, :selected builtin bugs when resetting manually
+        'selector': 'node.selected',  # .selected is a custom class, :selected builtin bugs when resetting manually
         'style': {
             'background-color': 'red',
         }
@@ -239,8 +239,10 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                         # Right side: fixed width button column
                         html.Div(
                             [
-                                dbc.Button("3D Volume", id="btn-3d", color="primary", className="mb-1 w-100"),
-                                dbc.Button("Diagnostics", id="btn-diag", color="secondary", className="mb-1 w-100")
+                                dbc.Button("New Viz 1", id={"type": "visualization-btn", "index": "viz1"},
+                                           className="mb-1 w-100"),
+                                dbc.Button("New Viz 2", id={"type": "visualization-btn", "index": "viz2"},
+                                           className="mb-1 w-100"),
                             ],
                             style={
                                 "width": "200px",  # Fixed width for the buttons
@@ -256,7 +258,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         fullscreen=True,
         is_open=False,
     )
-
 
     plugin_store = dcc.Store(id="plugin-store", data=discovered_plugins)
     config_store = dcc.Store(id="config-store", data=initial_config)
@@ -356,14 +357,14 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
             dcc.Location(id='first-load', refresh=False),
             dcc.Store(id='selected-layer-index-store', data=-1),
-            dcc.Store(id='layers-store', data = []),
+            dcc.Store(id='layers-store', data=[]),
             dcc.Store(id='just-finished-tasks-store', data=[]),
 
             # To preserve selected layer info and update Layer Status on interval trigger
             dcc.Store(id='selected-layer-name-store', data=""),
             dcc.Store(id='selected-node-id-store', data=None),
 
-            dcc.Store(id='clicked-graph-node-id-store'), # to break circular dependency
+            dcc.Store(id='clicked-graph-node-id-store'),  # to break circular dependency
 
             html.Div(id='center-node-trigger', style={'display': 'none'}),
 

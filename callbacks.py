@@ -457,31 +457,38 @@ def register_callbacks(app):
         Output("visualization-container", "children"),
         Output("last-selected-visualization", "data"),
         Input("visualization-modal", "is_open"),
-        Input("btn-3d", "n_clicks"),
-        Input("btn-diag", "n_clicks"),
+        Input({"type": "visualization-btn", "index": ALL}, "n_clicks"),
         State("store-figure", "data"),
         State("last-selected-visualization", "data"),
     )
-    def change_visualization_kind(is_open, n_3d, n_diag, store_figure, last_selected_visualization):
+    def change_visualization_kind(is_open, btn_clicks, store_figure, last_selected_visualization):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update
 
         triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
-        selected_visualization = triggered_id
 
+        # Handle the modal case first
+        default_viz_name = "viz1"
         if triggered_id == "visualization-modal":
             if is_open:
-                selected_visualization = last_selected_visualization if last_selected_visualization is not None else "btn-3d"
+                selected_visualization = last_selected_visualization if last_selected_visualization is not None else default_viz_name
             else:
-                return html.Div(), selected_visualization
+                return html.Div(), last_selected_visualization
 
-        if selected_visualization == "btn-3d":
-            return dcc.Graph(id="vis-graph", figure=store_figure["3d"],
+        # Handle button clicks
+        else:
+            # Parse the JSON string to get the button that was clicked
+            button_id = json.loads(triggered_id)
+            selected_visualization = button_id["index"]
+
+        # Handle each visualization type
+        if selected_visualization == "viz1":
+            return dcc.Graph(id="vis-graph", figure=store_figure["viz1"],
                              style={'width': '100%', 'height': 'calc(100vh - 150px)'}), selected_visualization
 
-        elif selected_visualization == "btn-diag":
-            return store_figure["diag"], selected_visualization
+        elif selected_visualization == "viz2":
+            return store_figure["viz2"], selected_visualization
 
         return no_update, selected_visualization
 
@@ -522,8 +529,8 @@ def register_callbacks(app):
         )
 
         store_figure = {
-            "3d": fig_3d,
-            "diag": diag_img
+            "viz1": fig_3d,
+            "viz2": diag_img
         }
 
         return store_figure, True
