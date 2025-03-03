@@ -11,7 +11,7 @@ from run_inference import get_available_plugins
 
 from cache import result_cache, task_queue, processing_layers, lock
 from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, parallel_coordinates_diff, \
-    dim_reduction_diff
+    dim_reduction_diff, spectral_diff, tensor_unfolding_diff, probabilistic_diff, interactive_tensor_diff_dashboard
 from visualizations.visualization import plot_volume_tensor
 from visualizations.viz_bin_diff import plot_diagnostics, reshape_to_3d
 
@@ -573,6 +573,45 @@ def register_callbacks(app):
                 main = reshape_to_3d(main)
                 figure = dim_reduction_diff(ref, main, method='tsne')
                 store_figure["viz5"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz6":
+            if "viz6" in store_figure:
+                figure = store_figure["viz6"]
+            else:
+                ref = reshape_to_3d(ref)
+                main = reshape_to_3d(main)
+                figure = spectral_diff(ref, main)
+                store_figure["viz6"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz7":
+            if "viz7" in store_figure:
+                figure = store_figure["viz7"]
+            else:
+                ref = reshape_to_3d(ref)
+                main = reshape_to_3d(main)
+                figure = probabilistic_diff(ref, main)
+                store_figure["viz7"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz8":
+            if "viz8" in store_figure:
+                figure = store_figure["viz8"]
+            else:
+                ref = reshape_to_3d(ref)
+                main = reshape_to_3d(main)
+                figure = interactive_tensor_diff_dashboard(ref, main)
+                store_figure["viz8"] = figure
 
             return dcc.Graph(id="vis-graph", figure=figure,
                              style={'width': '100%',
