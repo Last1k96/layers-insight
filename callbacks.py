@@ -456,17 +456,25 @@ def register_callbacks(app):
     @app.callback(
         Output("visualization-container", "children"),
         Output("last-selected-visualization", "data"),
+        Output("store-figure", "data"),
         Input("visualization-modal", "is_open"),
         Input({"type": "visualization-btn", "index": ALL}, "n_clicks"),
         State("store-figure", "data"),
         State("last-selected-visualization", "data"),
+        State("config-store", "data"),
+        State("selected-node-id-store", "data"),
     )
-    def change_visualization_kind(is_open, btn_clicks, store_figure, last_selected_visualization):
+    def select_visualization_type(is_open, btn_clicks, store_figure, last_selected_visualization, config, node_id):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update, no_update
+            return no_update, no_update, no_update
 
         triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+
+        # Clear cache if the new node was clicked
+        if store_figure and store_figure.get("node_id", None) != node_id:
+            store_figure.clear()
+            store_figure["node_id"] = node_id
 
         # Handle the modal case first
         default_viz_name = "viz1"
@@ -474,66 +482,61 @@ def register_callbacks(app):
             if is_open:
                 selected_visualization = last_selected_visualization if last_selected_visualization is not None else default_viz_name
             else:
-                return html.Div(), last_selected_visualization
+                return html.Div(), last_selected_visualization, no_update
 
-        # Handle button clicks
         else:
-            # Parse the JSON string to get the button that was clicked
             button_id = json.loads(triggered_id)
             selected_visualization = button_id["index"]
-
-        # Handle each visualization type
-        if selected_visualization == "viz1":
-            return dcc.Graph(id="vis-graph", figure=store_figure["viz1"],
-                             style={'width': '100%', 'height': 'calc(100vh - 150px)'}), selected_visualization
-
-        elif selected_visualization == "viz2":
-            return store_figure["viz2"], selected_visualization
-
-        return no_update, selected_visualization
-
-    @app.callback(
-        Output("store-figure", "data"),
-        Output("visualization-modal", "is_open"),
-        Input("visualization-button", "n_clicks"),
-        State("selected-node-id-store", "data"),
-        State("config-store", "data")
-    )
-    def handle_visualization(n_open, node_id, config):
-        ctx = callback_context
-        if not ctx.triggered:
-            return no_update
 
         data = result_cache.get(node_id, {})
         ref = data.get("ref")
         main = data.get("main")
-        if ref is None or main is None:
+
+        # Handle each visualization type
+        if selected_visualization == "viz1":
+            if "viz1" in store_figure:
+                figure = store_figure["viz1"]
+            else:
+                diff = main - ref
+                figure = plot_volume_tensor(diff)
+                store_figure["viz1"] = figure
+
+            return dcc.Graph(id="vis-graph", figure=figure,
+                             style={'width': '100%',
+                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+
+        elif selected_visualization == "viz2":
+            if "viz2" in store_figure:
+                img = store_figure["viz2"]
+            else:
+                ref_plugin_name = config["plugin1"]
+                main_plugin_name = config["plugin2"]
+                figure = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
+                buf = io.BytesIO()
+                figure.savefig(buf, format="png", bbox_inches="tight")
+                buf.seek(0)
+                encoded_diag = base64.b64encode(buf.getvalue()).decode("utf-8")
+                img = html.Img(
+                    src=f"data:image/png;base64,{encoded_diag}",
+                    style={"width": "100%", "display": "block", "margin": "0 auto"}
+                )
+                store_figure["viz2"] = img
+
+            return img, selected_visualization, store_figure
+
+        return no_update, no_update, no_update
+
+    @app.callback(
+        Output("visualization-modal", "is_open"),
+        Input("visualization-button", "n_clicks"),
+        prevent_initial_call=True
+    )
+    def open_visualization_modal(n_open):
+        ctx = callback_context
+        if not ctx.triggered:
             return no_update
 
-        # Compute visualizations once
-        diff = main - ref
-        fig_3d = plot_volume_tensor(diff)
-
-        ref_plugin_name = config["plugin1"]
-        main_plugin_name = config["plugin2"]
-        diag_fig = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
-
-        # Convert diagnostics figure to an image
-        buf = io.BytesIO()
-        diag_fig.savefig(buf, format="png", bbox_inches="tight")
-        buf.seek(0)
-        encoded_diag = base64.b64encode(buf.getvalue()).decode("utf-8")
-        diag_img = html.Img(
-            src=f"data:image/png;base64,{encoded_diag}",
-            style={"width": "100%", "display": "block", "margin": "0 auto"}
-        )
-
-        store_figure = {
-            "viz1": fig_3d,
-            "viz2": diag_img
-        }
-
-        return store_figure, True
+        return True
 
 
 def register_clientside_callbacks(app):
