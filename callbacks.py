@@ -571,7 +571,7 @@ def register_callbacks(app):
             else:
                 ref = reshape_to_3d(ref)
                 main = reshape_to_3d(main)
-                figure = dim_reduction_diff(ref, main, method='umap')
+                figure = dim_reduction_diff(ref, main, method='tsne')
                 store_figure["viz5"] = figure
 
             return dcc.Graph(id="vis-graph", figure=figure,
