@@ -208,9 +208,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                     ),
                 ],
             ),
-            dbc.ModalFooter(
-                dbc.Button("Close", id="close-modal", className="ms-auto", n_clicks=0, color="dark"),
-            ),
         ],
         id="config-modal",
         is_open=False,
@@ -353,6 +350,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
             dcc.Store(id='store-figure', data={}),
             dcc.Store(id='update-visualization-on-open'),
+            dcc.Store(id='update-visualization-on-close'),
             dcc.Store(id='last-selected-visualization', data=None),
             visualization_modal,
 

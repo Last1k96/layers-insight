@@ -399,16 +399,6 @@ def register_callbacks(app):
     #######################################################################################################################
 
     @app.callback(
-        Output("config-modal", "is_open"),
-        Input("open-modal", "n_clicks"), Input("close-modal", "n_clicks"),
-        State("config-modal", "is_open"),
-    )
-    def toggle_modal(open_clicks, close_clicks, is_open):
-        if open_clicks or close_clicks:
-            return not is_open
-        return is_open
-
-    @app.callback(
         Output("plugin-store", "data"),
         Output('reference-plugin-dropdown', 'options'),
         Output('main-plugin-dropdown', 'options'),
@@ -441,7 +431,7 @@ def register_callbacks(app):
 
     @app.callback(
         Output("config-store", "data"),
-        Input("close-modal", "n_clicks"),
+        Input("config-modal", "is_open"),
         State("model-xml-path", "value"),
         State("ov-bin-path", "value"),
         State("reference-plugin-dropdown", "value"),
@@ -450,10 +440,10 @@ def register_callbacks(app):
         State("config-store", "data"),
         prevent_initial_call=True
     )
-    def save_config(n_clicks_close, model_xml, bin_path, ref_plugin,
+    def save_config(is_open, model_xml, bin_path, ref_plugin,
                     other_plugin, all_input_values, current_data):
-        if not n_clicks_close:
-            raise exceptions.PreventUpdate
+        if is_open:
+            return no_update
 
         updated_data = current_data.copy() if current_data else {}
         updated_data["model_xml"] = model_xml
@@ -466,22 +456,25 @@ def register_callbacks(app):
     @app.callback(
         Output("visualization-container", "children"),
         Output("last-selected-visualization", "data"),
-        Input("update-visualization-on-open", "data"),
+        Input("visualization-modal", "is_open"),
         Input("btn-3d", "n_clicks"),
         Input("btn-diag", "n_clicks"),
         State("store-figure", "data"),
         State("last-selected-visualization", "data"),
     )
-    def change_visualization_kind(on_open, n_3d, n_diag, store_figure, last_selected_visualization):
+    def change_visualization_kind(is_open, n_3d, n_diag, store_figure, last_selected_visualization):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update
+            return no_update, no_update
 
         triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
         selected_visualization = triggered_id
 
-        if triggered_id == "update-visualization-on-open":
-            selected_visualization = last_selected_visualization if last_selected_visualization is not None else "btn-3d"
+        if triggered_id == "visualization-modal":
+            if is_open:
+                selected_visualization = last_selected_visualization if last_selected_visualization is not None else "btn-3d"
+            else:
+                return html.Div(), selected_visualization
 
         if selected_visualization == "btn-3d":
             return dcc.Graph(id="vis-graph", figure=store_figure["3d"],
@@ -493,59 +486,47 @@ def register_callbacks(app):
         return no_update, selected_visualization
 
     @app.callback(
-        Output("visualization-modal", "is_open"),
         Output("store-figure", "data"),
-        Output("update-visualization-on-open", "data"),
+        Output("visualization-modal", "is_open"),
         Input("visualization-button", "n_clicks"),
-        Input("close-modal", "n_clicks"),
-        State("visualization-modal", "is_open"),
         State("selected-node-id-store", "data"),
         State("config-store", "data")
     )
-    def handle_visualization(n_open, n_close, is_open, node_id, config):
+    def handle_visualization(n_open, node_id, config):
         ctx = callback_context
         if not ctx.triggered:
-            return is_open, no_update, no_update
+            return no_update
 
-        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        data = result_cache.get(node_id, {})
+        ref = data.get("ref")
+        main = data.get("main")
+        if ref is None or main is None:
+            return no_update
 
-        # Cache the data when opening the modal
-        if triggered_id == "visualization-button" and node_id in result_cache:
-            data = result_cache.get(node_id, {})
-            ref = data.get("ref")
-            main = data.get("main")
-            if ref is None or main is None:
-                return is_open, no_update, no_update
+        # Compute visualizations once
+        diff = main - ref
+        fig_3d = plot_volume_tensor(diff)
 
-            # Compute visualizations once
-            diff = main - ref
-            fig_3d = plot_volume_tensor(diff)
+        ref_plugin_name = config["plugin1"]
+        main_plugin_name = config["plugin2"]
+        diag_fig = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
 
-            ref_plugin_name = config["plugin1"]
-            main_plugin_name = config["plugin2"]
-            diag_fig = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
+        # Convert diagnostics figure to an image
+        buf = io.BytesIO()
+        diag_fig.savefig(buf, format="png", bbox_inches="tight")
+        buf.seek(0)
+        encoded_diag = base64.b64encode(buf.getvalue()).decode("utf-8")
+        diag_img = html.Img(
+            src=f"data:image/png;base64,{encoded_diag}",
+            style={"width": "100%", "display": "block", "margin": "0 auto"}
+        )
 
-            # Convert diagnostics figure to an image
-            buf = io.BytesIO()
-            diag_fig.savefig(buf, format="png", bbox_inches="tight")
-            buf.seek(0)
-            encoded_diag = base64.b64encode(buf.getvalue()).decode("utf-8")
-            diag_img = html.Img(
-                src=f"data:image/png;base64,{encoded_diag}",
-                style={"width": "100%", "display": "block", "margin": "0 auto"}
-            )
+        store_figure = {
+            "3d": fig_3d,
+            "diag": diag_img
+        }
 
-            store_figure = {
-                "3d": fig_3d,
-                "diag": diag_img
-            }
-
-            return True, store_figure, []
-
-        elif triggered_id == "close-modal":
-            return False, {}, no_update
-
-        return is_open, no_update, no_update
+        return store_figure, True
 
 
 def register_clientside_callbacks(app):
