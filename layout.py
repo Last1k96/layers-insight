@@ -222,39 +222,19 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             dbc.ModalHeader(dbc.ModalTitle("Visualizations")),
             dbc.ModalBody(
                 html.Div(
-                    style={
-                        "display": "flex",
-                    },
+                    style={"display": "flex"},
                     children=[
-                        # Left side: visualization area fills remaining space
+                        # Left side: Single visualization container with flexible width
                         html.Div(
+                            id="visualization-container",
                             children=[
-                                html.Div(
-                                    id="content-3d",
-                                    children=[
-                                        dcc.Graph(
-                                            id="vis-graph",
-                                            style={
-                                                'width': '100%',
-                                                'height': 'calc(100vh - 150px)'
-                                            }
-                                        )
-                                    ],
-                                    style={"display": "block"}
-                                ),
-                                html.Div(
-                                    id="content-diag",
-                                    children=[
-                                        html.Div(
-                                            id="vis-diagnostics",
-                                            style={
-                                                "textAlign": "center",
-                                                "overflowY": "auto",
-                                                "maxHeight": "100vh"
-                                            }
-                                        )
-                                    ],
-                                    style={"display": "none"}
+                                # Default content will be the 3D graph
+                                dcc.Graph(
+                                    id="vis-graph",
+                                    style={
+                                        'width': '100%',
+                                        'height': 'calc(100vh - 150px)'
+                                    }
                                 )
                             ],
                             style={"flex": "1"}
@@ -266,7 +246,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                                 dbc.Button("Diagnostics", id="btn-diag", color="secondary", className="mb-1 w-100")
                             ],
                             style={
-                                "width": "200px",  # Fixed width
+                                "width": "200px",  # Fixed width for the buttons
                                 "display": "flex",
                                 "flexDirection": "column"
                             }
@@ -279,6 +259,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         fullscreen=True,
         is_open=False,
     )
+
 
     plugin_store = dcc.Store(id="plugin-store", data=discovered_plugins)
     config_store = dcc.Store(id="config-store", data=initial_config)
@@ -369,6 +350,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             config_modal,
             plugin_store,
             config_store,
+
             visualization_modal,
 
             dcc.Location(id='first-load', refresh=False),
