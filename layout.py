@@ -221,22 +221,27 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         [
             dbc.ModalHeader(dbc.ModalTitle("Visualizations")),
             dbc.ModalBody(
-                dbc.Row(
-                    [
-                        dbc.Col(
-                            [
-                                # Container for 3D visualization
+                html.Div(
+                    style={
+                        "display": "flex",
+                    },
+                    children=[
+                        # Left side: visualization area fills remaining space
+                        html.Div(
+                            children=[
                                 html.Div(
                                     id="content-3d",
                                     children=[
                                         dcc.Graph(
-                                            id="vis-graph",  # Note: using "vis-graph" to match your layout
-                                            style={'width': '100%', 'height': 'calc(100vh - 150px)'}
+                                            id="vis-graph",
+                                            style={
+                                                'width': '100%',
+                                                'height': 'calc(100vh - 150px)'
+                                            }
                                         )
                                     ],
                                     style={"display": "block"}
                                 ),
-                                # Container for diagnostics visualization
                                 html.Div(
                                     id="content-diag",
                                     children=[
@@ -252,19 +257,22 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                                     style={"display": "none"}
                                 )
                             ],
-                            width=9
+                            style={"flex": "1"}
                         ),
-                        dbc.Col(
+                        # Right side: fixed width button column
+                        html.Div(
                             [
-                                dbc.Button("3D Volume", id="btn-3d", color="primary", className="mb-2 btn-block"),
-                                dbc.Button("Diagnostics", id="btn-diag", color="secondary", className="mb-2 btn-block")
+                                dbc.Button("3D Volume", id="btn-3d", color="primary", className="mb-1 w-100"),
+                                dbc.Button("Diagnostics", id="btn-diag", color="secondary", className="mb-1 w-100")
                             ],
-                            width=2
+                            style={
+                                "width": "200px",  # Fixed width
+                                "display": "flex",
+                                "flexDirection": "column"
+                            }
                         )
-                    ],
-                    style={'height': '100vh'}
-                ),
-                style={'backgroundColor': '#f0f0f0'}
+                    ]
+                )
             ),
         ],
         id="visualization-modal",
