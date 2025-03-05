@@ -225,14 +225,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                         html.Div(
                             id="visualization-container",
                             children=[
-                                # Default content will be the 3D graph
-                                dcc.Graph(
-                                    id="vis-graph",
-                                    style={
-                                        'width': '100%',
-                                        'height': 'calc(100vh - 150px)'
-                                    }
-                                )
+
                             ],
                             style={"flex": "1", "width": "100%"},
                         ),
