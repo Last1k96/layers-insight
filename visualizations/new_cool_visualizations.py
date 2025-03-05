@@ -251,103 +251,6 @@ def dim_reduction_diff(tensor1, tensor2, method='pca', n_samples=1000, n_compone
     return fig
 
 
-# 5. Spectral Analysis
-def spectral_diff(tensor1, tensor2):
-    """
-    Visualize differences in the frequency domain.
-
-    Args:
-        tensor1, tensor2: Input tensors of same shape
-
-    Returns:
-        Plotly figure
-    """
-    # Compute 3D FFT for both tensors
-    fft1 = np.abs(fftpack.fftn(tensor1))
-    fft2 = np.abs(fftpack.fftn(tensor2))
-
-    # Compute difference in frequency domain
-    fft_diff = np.abs(fft1 - fft2)
-
-    # For visualization, take log of the absolute values (common in spectral analysis)
-    log_fft1 = np.log1p(fft1)
-    log_fft2 = np.log1p(fft2)
-    log_fft_diff = np.log1p(fft_diff)
-
-    # Create 2D visualizations by taking the central slice of each dimension
-    slices = []
-    for axis in range(3):
-        slice_indices = [tensor1.shape[i] // 2 for i in range(3)]
-
-        # Replace the current axis with slice(None) to get the full slice
-        slice_indices[axis] = slice(None)
-
-        # For the other axes, create slices across all possible index combinations
-        other_axes = [i for i in range(3) if i != axis]
-
-        for i in range(tensor1.shape[other_axes[0]]):
-            slice_indices[other_axes[0]] = i
-
-            # Visualize these slices
-            slice_fft1 = log_fft1[tuple(slice_indices)]
-            slice_fft2 = log_fft2[tuple(slice_indices)]
-            slice_diff = log_fft_diff[tuple(slice_indices)]
-
-            slices.append({
-                'axis': axis,
-                'index': i,
-                'fft1': slice_fft1,
-                'fft2': slice_fft2,
-                'diff': slice_diff
-            })
-
-    # Choose a representative slice to visualize
-    central_slices = []
-    for axis in range(3):
-        slice_indices = [tensor1.shape[i] // 2 for i in range(3)]
-        slice_indices[axis] = slice(None)
-        central_slices.append({
-            'axis': axis,
-            'fft1': log_fft1[tuple(slice_indices)],
-            'fft2': log_fft2[tuple(slice_indices)],
-            'diff': log_fft_diff[tuple(slice_indices)]
-        })
-
-    # Create a 3x3 subplot to visualize central slices
-    fig = make_subplots(
-        rows=3, cols=3,
-        subplot_titles=[
-            'FFT Tensor 1 (Axis 0)', 'FFT Tensor 2 (Axis 0)', 'FFT Difference (Axis 0)',
-            'FFT Tensor 1 (Axis 1)', 'FFT Tensor 2 (Axis 1)', 'FFT Difference (Axis 1)',
-            'FFT Tensor 1 (Axis 2)', 'FFT Tensor 2 (Axis 2)', 'FFT Difference (Axis 2)'
-        ]
-    )
-
-    for i, slice_data in enumerate(central_slices):
-        row = i + 1
-
-        fig.add_trace(
-            go.Heatmap(z=slice_data['fft1'], colorscale='Viridis'),
-            row=row, col=1
-        )
-
-        fig.add_trace(
-            go.Heatmap(z=slice_data['fft2'], colorscale='Viridis'),
-            row=row, col=2
-        )
-
-        fig.add_trace(
-            go.Heatmap(z=slice_data['diff'], colorscale='Viridis'),
-            row=row, col=3
-        )
-
-    fig.update_layout(
-        title="Spectral Analysis of Tensor Differences",
-        height=900,
-        width=1000
-    )
-
-    return fig
 
 
 # 6. Multiple-View Tensor Unfolding
@@ -751,95 +654,108 @@ def interactive_tensor_diff_dashboard(tensor1, tensor2):
 
 
 # 9. Hierarchical Visualization (Tree Map)
+import numpy as np
+import plotly.graph_objects as go
+import plotly.express as px
+
+import numpy as np
+import plotly.graph_objects as go
+import plotly.express as px
+
+
 def hierarchical_diff_visualization(tensor1, tensor2, max_depth=3):
     """
     Create a hierarchical visualization of tensor differences.
 
     Args:
-        tensor1, tensor2: Input tensors of same shape
-        max_depth: Maximum depth for hierarchical segmentation
+        tensor1, tensor2: Input tensors of the same shape (with CHW layout).
+        max_depth: Maximum depth for hierarchical segmentation.
 
     Returns:
-        Plotly figure
+        Plotly figure.
     """
+    # Compute the absolute difference between tensors.
     diff = np.abs(tensor1 - tensor2)
-    shape = diff.shape
 
-    # Generate hierarchical data
+    # Define axis names for CHW layout.
+    axis_names = ['C', 'H', 'W']
+
+    # Recursive function to build hierarchy with improved labels.
     def build_hierarchy(tensor, path=(), depth=0):
-        if depth >= max_depth:
+        current_mean = np.mean(tensor)
+        # Create an ID and label from the current path.
+        id_str = " > ".join(path) if path else "Root"
+        label_str = f"{id_str}\nMean diff: {current_mean:.4f}"
+
+        # Stop recursion at max_depth or if tensor is empty.
+        if depth >= max_depth or tensor.size == 0:
             return {
-                'id': '_'.join(map(str, path)),
-                'value': np.mean(tensor),
-                'name': f"{'.'.join(map(str, path))}: {np.mean(tensor):.4f}"
+                'id': id_str,
+                'value': current_mean,
+                'name': label_str
             }
 
         result = {
-            'id': '_'.join(map(str, path)) if path else 'root',
-            'name': '.'.join(map(str, path)) if path else 'Root',
+            'id': id_str,
+            'value': current_mean,
+            'name': label_str,
             'children': []
         }
 
-        axis = depth % len(shape)
-        n_segments = min(4, shape[axis])  # Limit to 4 segments per axis
-        segment_size = shape[axis] // n_segments
+        # Use the current tensor's shape for segmentation.
+        current_shape = tensor.shape
+        axis = depth % len(current_shape)
+        n_segments = min(4, current_shape[axis])  # Limit to 4 segments per axis.
+        segment_size = current_shape[axis] // n_segments if n_segments > 0 else current_shape[axis]
 
         for i in range(n_segments):
             start = i * segment_size
-            end = start + segment_size if i < n_segments - 1 else shape[axis]
+            end = start + segment_size if i < n_segments - 1 else current_shape[axis]
 
-            # Create slice indices
-            idx = [slice(None)] * len(shape)
+            # Create slice indices for the current axis.
+            idx = [slice(None)] * len(current_shape)
             idx[axis] = slice(start, end)
 
             subtensor = tensor[tuple(idx)]
-            new_path = path + (f"{axis}:{start}-{end}",)
+            new_path = path + (f"{axis_names[axis]}: {start}-{end}",)
 
             child = build_hierarchy(subtensor, new_path, depth + 1)
             result['children'].append(child)
 
         return result
 
-    # Build the hierarchy
+    # Build the hierarchy using the difference tensor.
     hierarchy = build_hierarchy(diff)
 
-    # Flatten hierarchy for treemap
+    # Flatten the hierarchy to build lists for the treemap.
     treemap_data = []
 
     def flatten_hierarchy(node, parent=""):
+        treemap_data.append({
+            'ids': node['id'],
+            'labels': node['name'],
+            'parents': parent,
+            'value': node.get('value', 0)
+        })
         if 'children' in node:
             for child in node['children']:
                 flatten_hierarchy(child, node['id'])
-        else:
-            treemap_data.append({
-                'ids': node['id'],
-                'labels': node['name'],
-                'parents': parent,
-                'values': node['value'],
-                'marker': {'colors': [px.colors.sequential.Blues[int(node['value'] * 8)]]}
-            })
 
     flatten_hierarchy(hierarchy)
 
-    # Combine all data
-    ids = []
-    labels = []
-    parents = []
-    values = []
-    for item in treemap_data:
-        ids.append(item['ids'])
-        labels.append(item['labels'])
-        parents.append(item['parents'])
-        values.append(item['value'])
+    ids = [item['ids'] for item in treemap_data]
+    labels = [item['labels'] for item in treemap_data]
+    parents = [item['parents'] for item in treemap_data]
+    values = [item['value'] for item in treemap_data]
 
-    # Normalize values for color mapping
+    # Normalize values for color mapping.
     norm_values = np.array(values)
     if norm_values.max() > 0:
         norm_values = norm_values / norm_values.max()
 
-    colors = [px.colors.sequential.Blues[int(v * 8)] for v in norm_values]
+    colors = [px.colors.sequential.Blues[min(int(v * 8), 8)] for v in norm_values]
 
-    # Create treemap
+    # Create the treemap figure.
     fig = go.Figure(go.Treemap(
         ids=ids,
         labels=labels,
@@ -963,131 +879,6 @@ def tensor_network_visualization(tensor1, tensor2):
 
     return fig
 
-
-def tensor_network_diagram(tensor1, tensor2, threshold=0.1):
-    """
-    Create a visual representation of tensor difference using a network diagram.
-
-    Args:
-        tensor1: First tensor (3D numpy array)
-        tensor2: Second tensor (3D numpy array)
-        threshold: Minimum difference magnitude to display
-
-    Returns:
-        Plotly figure object
-    """
-    diff = np.abs(tensor1 - tensor2)
-
-    # Check tensor shapes
-    if tensor1.shape != tensor2.shape:
-        raise ValueError("Tensors must have the same shape")
-
-    channels, height, width = diff.shape
-
-    # Create a graph structure
-    G = nx.Graph()
-
-    # Add nodes for each channel
-    for c in range(channels):
-        avg_diff = np.mean(diff[c])
-        if avg_diff > threshold:
-            G.add_node(f"C{c}", size=avg_diff, group=1)
-
-    # Add additional nodes for significant spatial locations
-    for c in range(channels):
-        for h in range(height):
-            for w in range(width):
-                if diff[c, h, w] > threshold * 2:
-                    node_id = f"P{c}_{h}_{w}"
-                    G.add_node(node_id, size=diff[c, h, w] / 5, group=2)
-                    G.add_edge(f"C{c}", node_id, weight=diff[c, h, w])
-
-    # If graph is empty, add a placeholder node
-    if len(G.nodes) == 0:
-        G.add_node("No significant differences", size=1, group=0)
-
-    # Create positions using spring layout
-    pos = nx.spring_layout(G, seed=42)
-
-    # Create traces for nodes
-    node_trace = []
-
-    # Create groups of nodes (channels and points)
-    for group in range(3):
-        x, y, sizes, labels, colors = [], [], [], [], []
-
-        for node in G.nodes():
-            if G.nodes[node].get('group', 0) == group:
-                x.append(pos[node][0])
-                y.append(pos[node][1])
-                size = G.nodes[node].get('size', 0.1)
-                sizes.append(size * 30)
-                labels.append(node)
-
-                if group == 0:  # Placeholder
-                    colors.append('gray')
-                elif group == 1:  # Channels
-                    colors.append('blue')
-                else:  # Points
-                    colors.append('red')
-
-        if x:  # Only add trace if there are nodes in this group
-            marker_size = [max(5, s) for s in sizes]
-            scatter = go.Scatter(
-                x=x, y=y,
-                mode='markers+text',
-                marker=dict(
-                    size=marker_size,
-                    color=colors,
-                    line=dict(width=1, color='black')
-                ),
-                text=labels,
-                textposition="top center",
-                hoverinfo='text',
-                name=f"Group {group}"
-            )
-            node_trace.append(scatter)
-
-    # Create edges
-    edge_x, edge_y, edge_colors = [], [], []
-    edge_weights = []
-
-    for edge in G.edges():
-        x0, y0 = pos[edge[0]]
-        x1, y1 = pos[edge[1]]
-        edge_x.extend([x0, x1, None])
-        edge_y.extend([y0, y1, None])
-        weight = G.edges[edge].get('weight', 0.1)
-        edge_weights.append(weight)
-        edge_colors.extend([weight, weight, None])
-
-    if edge_x:  # Only add trace if there are edges
-        edge_trace = go.Scatter(
-            x=edge_x, y=edge_y,
-            mode='lines',
-            line=dict(
-                width=1,
-                color='rgba(150, 150, 150, 0.5)'
-            ),
-            hoverinfo='none',
-            name='Connections'
-        )
-        node_trace.append(edge_trace)
-
-    # Create the figure
-    fig = go.Figure(
-        data=node_trace,
-        layout=go.Layout(
-            title='Tensor Network Difference Diagram',
-            showlegend=True,
-            hovermode='closest',
-            plot_bgcolor='rgba(240, 240, 240, 0.8)',
-            xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-            yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
-        )
-    )
-
-    return fig
 
 
 def channel_correlation_matrices(tensor1, tensor2):
