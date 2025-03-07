@@ -496,18 +496,21 @@ def register_callbacks(app):
         ref = data.get("ref")
         main = data.get("main")
 
+        # figure = None
+
         # Handle each visualization type
         if selected_visualization == "viz1":
             if "viz1" in store_figure:
-                figure = store_figure["viz1"]
+                graph = store_figure["viz1"]
             else:
                 diff = main - ref
                 figure = plot_volume_tensor(diff)
-                store_figure["viz1"] = figure
+                graph = dcc.Graph(id="vis-graph", figure=figure,
+                                                 style={'width': '100%',
+                                                        'height': 'calc(100vh - 150px)'})
+                store_figure["viz1"] = graph
 
-            return dcc.Graph(id="vis-graph", figure=figure,
-                             style={'width': '100%',
-                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+            return graph, selected_visualization, store_figure
 
         elif selected_visualization == "viz2":
             if "viz2" in store_figure:

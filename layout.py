@@ -219,17 +219,23 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             dbc.ModalHeader(dbc.ModalTitle("Visualizations")),
             dbc.ModalBody(
                 html.Div(
-                    style={"display": "flex"},
+                    style={
+                        "display": "flex",
+                        "height": "100%",  # use full height of modal body
+                        "overflow": "hidden"  # disable scrolling on the container
+                    },
                     children=[
-                        # Left side: Single visualization container with flexible width
+                        # Left side: Visualization container that scrolls internally
                         html.Div(
                             id="visualization-container",
-                            children=[
-
-                            ],
-                            style={"flex": "1", "width": "100%"},
+                            children=[],  # your image(s) will be added here
+                            style={
+                                "flex": "1",
+                                "overflowY": "auto",  # vertical scroll for tall image
+                                "overflowX": "hidden"  # hide horizontal scrollbar
+                            },
                         ),
-                        # Right side: fixed width button column
+                        # Right side: Fixed width button column
                         html.Div(
                             [
                                 dbc.Button("New Viz 1", id={"type": "visualization-btn", "index": "viz1"},
@@ -260,13 +266,18 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                                            className="mb-1 w-100"),
                             ],
                             style={
-                                "width": "200px",  # Fixed width for the buttons
+                                "width": "200px",  # fixed width for the buttons column
                                 "display": "flex",
                                 "flexDirection": "column"
                             }
                         )
                     ]
-                )
+                ),
+                style={
+                    "padding": 0,
+                    "height": "100vh",  # ensure modal body fills the viewport
+                    "overflow": "hidden"  # disable modal-level scrolling
+                }
             ),
         ],
         id="visualization-modal",
