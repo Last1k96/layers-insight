@@ -11,7 +11,7 @@ from run_inference import get_available_plugins
 
 from cache import result_cache, task_queue, processing_layers, lock
 from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, parallel_coordinates_diff, \
-    dim_reduction_diff, tensor_unfolding_diff, probabilistic_diff, interactive_tensor_diff_dashboard, \
+    tensor_unfolding_diff, probabilistic_diff, interactive_tensor_diff_dashboard, \
     hierarchical_diff_visualization, tensor_network_visualization, channel_correlation_matrices, \
     gradient_flow_visualization, tensor_histogram_comparison, spectral_analysis, eigenvalue_comparison
 from visualizations.visualization import plot_volume_tensor
@@ -562,19 +562,6 @@ def register_callbacks(app):
                 main = reshape_to_3d(main)
                 figure = isosurface_diff(ref, main)
                 store_figure["viz4"] = figure
-
-            return dcc.Graph(id="vis-graph", figure=figure,
-                             style={'width': '100%',
-                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
-
-        elif selected_visualization == "viz5":
-            if "viz5" in store_figure:
-                figure = store_figure["viz5"]
-            else:
-                ref = reshape_to_3d(ref)
-                main = reshape_to_3d(main)
-                figure = dim_reduction_diff(ref, main, method='tsne')
-                store_figure["viz5"] = figure
 
             return dcc.Graph(id="vis-graph", figure=figure,
                              style={'width': '100%',
