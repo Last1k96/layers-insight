@@ -27,6 +27,29 @@ from PIL import Image
 
 from visualizations.viz_bin_diff import reshape_to_3d
 
+responsive_css = """
+        <style>
+          html, body {
+            width: 100% !important;
+            height: 100% !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+          }
+          /* Override canvas size; inline attributes are overridden with !important */
+          canvas {
+            width: 100% !important;
+            height: auto !important;
+            max-width: 100%;
+            display: block;
+            margin: 0 auto !important;
+          }
+        </style>
+        """
+
 
 # 1. Animated Slices
 def animated_slices(tensor1, tensor2, axis=0, fps=10):
@@ -54,10 +77,9 @@ def animated_slices(tensor1, tensor2, axis=0, fps=10):
         return [im]
 
     anim = FuncAnimation(fig, update, frames=slices, blit=True, interval=1000 / fps)
-    plt.close()  # Close the figure to avoid duplicate displays
+    plt.close()
 
-    return anim.to_jshtml()
-
+    return responsive_css + anim.to_jshtml()
 
 
 # 2. Isosurface Rendering
@@ -148,7 +170,6 @@ def parallel_coordinates_diff(tensor1, tensor2, n_samples=500):
     )
 
     return fig
-
 
 
 # 6. Multiple-View Tensor Unfolding
@@ -298,253 +319,125 @@ def probabilistic_diff(tensor1, tensor2):
 
 
 # 8. Interactive 3D Dashboard (Basic Version)
-def interactive_tensor_diff_dashboard(tensor1, tensor2):
-    """
-    Create an interactive dashboard for exploring tensor differences with
-    integrated sliders in each visualization panel.
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
 
-    Args:
-        tensor1, tensor2: Input tensors of same shape
+def interactive_tensor_diff_dashboard(reference, target):
+    """
+    Create a Plotly figure that visualizes the difference between two 3D tensors in CHW layout.
+
+    The returned figure contains a 2×2 grid:
+      - Top left: Heatmap of the HW slice (fixed channel) with a slider to select the channel.
+      - Top right: Heatmap of the CW slice (fixed height) with a slider to select the height.
+      - Bottom left: Heatmap of the CH slice (fixed width) with a slider to select the width.
+      - Bottom right: Histogram of all error values (difference between target and reference).
+
+    Parameters:
+        reference (np.ndarray): A 3D tensor (channels, height, width).
+        target (np.ndarray): A 3D tensor (channels, height, width).
 
     Returns:
-        Plotly figure with integrated controls
+        go.Figure: A Plotly figure object with interactive sliders.
     """
-    import numpy as np
-    import plotly.graph_objects as go
+    # Compute the difference tensor
+    diff = target - reference
+    C, H, W = diff.shape
 
-    # Compute differences
-    diff = tensor1 - tensor2
-    abs_diff = np.abs(diff)
-    rel_diff = np.where(tensor2 != 0, diff / tensor2, np.zeros_like(diff))
-
-    # Get dimensions
-    dim_x, dim_y, dim_z = diff.shape
-
-    # Create central slices for initial view
-    x_slice = dim_x // 2
-    y_slice = dim_y // 2
-    z_slice = dim_z // 2
-
-    # Get global min/max for consistent color scaling
-    vmin = diff.min()
-    vmax = diff.max()
-    abs_max = max(abs(vmin), abs(vmax))
-
-    # Create a grid layout for our visualizations
-    fig = go.Figure()
-
-    # XY plane heatmap (trace 0)
-    fig.add_trace(go.Heatmap(
-        z=diff[x_slice, :, :],
-        colorscale='RdBu_r',
-        zmid=0,
-        zmin=-abs_max,
-        zmax=abs_max,
-        showscale=True,
-        name=f'XY Plane (X={x_slice})',
-        xaxis='x',
-        yaxis='y'
-    ))
-
-    # XZ plane heatmap (trace 1)
-    fig.add_trace(go.Heatmap(
-        z=diff[:, y_slice, :],
-        colorscale='RdBu_r',
-        zmid=0,
-        zmin=-abs_max,
-        zmax=abs_max,
-        showscale=True,
-        name=f'XZ Plane (Y={y_slice})',
-        xaxis='x2',
-        yaxis='y2'
-    ))
-
-    # YZ plane heatmap (trace 2)
-    fig.add_trace(go.Heatmap(
-        z=diff[:, :, z_slice],
-        colorscale='RdBu_r',
-        zmid=0,
-        zmin=-abs_max,
-        zmax=abs_max,
-        showscale=True,
-        name=f'YZ Plane (Z={z_slice})',
-        xaxis='x3',
-        yaxis='y3'
-    ))
-
-    # Histogram of differences (trace 3)
-    fig.add_trace(go.Histogram(
-        x=diff.flatten(),
-        nbinsx=50,
-        marker_color='rgba(0, 0, 255, 0.5)',
-        name='Difference Distribution',
-        xaxis='x4',
-        yaxis='y4'
-    ))
-
-    # Set up the grid layout
-    fig.update_layout(
-        grid={
-            'rows': 2,
-            'columns': 2,
-            'pattern': 'independent',
-            'roworder': 'top to bottom'
-        },
-        xaxis={'domain': [0, 0.45], 'anchor': 'y', 'title': 'Y dimension'},
-        yaxis={'domain': [0.55, 1], 'anchor': 'x', 'title': 'Z dimension'},
-        xaxis2={'domain': [0.55, 1], 'anchor': 'y2', 'title': 'Z dimension'},
-        yaxis2={'domain': [0.55, 1], 'anchor': 'x2', 'title': 'X dimension'},
-        xaxis3={'domain': [0, 0.45], 'anchor': 'y3', 'title': 'Y dimension'},
-        yaxis3={'domain': [0, 0.45], 'anchor': 'x3', 'title': 'X dimension'},
-        xaxis4={'domain': [0.55, 1], 'anchor': 'y4', 'title': 'Difference value'},
-        yaxis4={'domain': [0, 0.45], 'anchor': 'x4', 'title': 'Count'},
+    # Create a 2x2 grid of subplots with reduced spacing
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=("HW Slice", "CW Slice", "CH Slice", "Error Histogram"),
+        horizontal_spacing=0.05,
+        vertical_spacing=0.12
     )
 
-    # Add annotations for plot titles
-    fig.update_layout(
-        annotations=[
-            {'text': f'XY Plane (X={x_slice})', 'x': 0.225, 'y': 1.0, 'xref': 'paper', 'yref': 'paper',
-             'showarrow': False},
-            {'text': f'XZ Plane (Y={y_slice})', 'x': 0.775, 'y': 1.0, 'xref': 'paper', 'yref': 'paper',
-             'showarrow': False},
-            {'text': f'YZ Plane (Z={z_slice})', 'x': 0.225, 'y': 0.45, 'xref': 'paper', 'yref': 'paper',
-             'showarrow': False},
-            {'text': 'Difference Histogram', 'x': 0.775, 'y': 0.45, 'xref': 'paper', 'yref': 'paper',
-             'showarrow': False}
-        ]
+    # --- Add initial traces ---
+    # Top left: HW slice (fix channel=0)
+    fig.add_trace(
+        go.Heatmap(z=diff[0, :, :], coloraxis="coloraxis"),
+        row=1, col=1
     )
 
-    # Create sliders for controlling each view
-    sliders = [
-        # X-slice slider (controls trace 0)
-        {
-            'active': x_slice,
-            'currentvalue': {'prefix': 'X-Slice: ', 'xanchor': 'right'},
-            'pad': {'t': 0, 'b': 0},
-            'len': 0.4,
-            'x': 0.225,
-            'y': 0.52,
-            'yanchor': 'top',
-            'xanchor': 'center',
-            'steps': [
-                {
-                    'label': f"{i}",
-                    'method': 'restyle',
-                    'args': [{'z': [diff[i, :, :]]}, [0]]
-                }
-                for i in range(0, dim_x, max(1, dim_x // 10))
-            ]
-        },
-        # Y-slice slider (controls trace 1)
-        {
-            'active': y_slice,
-            'currentvalue': {'prefix': 'Y-Slice: ', 'xanchor': 'right'},
-            'pad': {'t': 0, 'b': 0},
-            'len': 0.4,
-            'x': 0.775,
-            'y': 0.52,
-            'yanchor': 'top',
-            'xanchor': 'center',
-            'steps': [
-                {
-                    'label': f"{i}",
-                    'method': 'restyle',
-                    'args': [{'z': [diff[:, i, :]]}, [1]]
-                }
-                for i in range(0, dim_y, max(1, dim_y // 10))
-            ]
-        },
-        # Z-slice slider (controls trace 2)
-        {
-            'active': z_slice,
-            'currentvalue': {'prefix': 'Z-Slice: ', 'xanchor': 'right'},
-            'pad': {'t': 10, 'b': 0},
-            'len': 0.4,
-            'x': 0.225,
-            'y': 0.0,
-            'yanchor': 'top',
-            'xanchor': 'center',
-            'steps': [
-                {
-                    'label': f"{i}",
-                    'method': 'restyle',
-                    'args': [{'z': [diff[:, :, i]]}, [2]]
-                }
-                for i in range(0, dim_z, max(1, dim_z // 10))
-            ]
-        }
-    ]
+    # Top right: CW slice (fix height=0)
+    fig.add_trace(
+        go.Heatmap(z=diff[:, 0, :], coloraxis="coloraxis"),
+        row=1, col=2
+    )
 
-    # Create buttons for view control
-    updatemenus = [
-        # Difference type selector
-        {
-            'buttons': [
-                {'label': 'Absolute Difference',
-                 'method': 'restyle',
-                 'args': [{'z': [
-                     diff[x_slice, :, :],
-                     diff[:, y_slice, :],
-                     diff[:, :, z_slice]
-                 ]}, [0, 1, 2]]},
-                {'label': 'Relative Difference',
-                 'method': 'restyle',
-                 'args': [{'z': [
-                     rel_diff[x_slice, :, :],
-                     rel_diff[:, y_slice, :],
-                     rel_diff[:, :, z_slice]
-                 ]}, [0, 1, 2]]}
-            ],
-            'direction': 'down',
-            'showactive': True,
-            'x': 0.1,
-            'y': 1.15,
-            'xanchor': 'left',
-            'yanchor': 'top',
-        },
-        # Color scale selector
-        {
-            'buttons': [
-                {'label': scale,
-                 'method': 'restyle',
-                 'args': [{'colorscale': [scale, scale, scale]}, [0, 1, 2]]}
-                for scale in ['RdBu_r', 'Viridis', 'Plasma', 'Inferno', 'Magma', 'Cividis']
-            ],
-            'direction': 'down',
-            'showactive': True,
-            'x': 0.35,
-            'y': 1.15,
-            'xanchor': 'left',
-            'yanchor': 'top',
-        },
-        # Threshold control
-        {
-            'buttons': [
-                {'label': f'Threshold: {i}%',
-                 'method': 'restyle',
-                 'args': [{
-                     'zmin': [-abs_max * (1 - i / 100)]*3,
-                     'zmax': [abs_max * (1 - i / 100)]*3
-                 }, [0, 1, 2]]}
-                for i in range(0, 101, 10)
-            ],
-            'direction': 'down',
-            'showactive': True,
-            'x': 0.6,
-            'y': 1.15,
-            'xanchor': 'left',
-            'yanchor': 'top',
-        }
-    ]
+    # Bottom left: CH slice (fix width=0)
+    fig.add_trace(
+        go.Heatmap(z=diff[:, :, 0], coloraxis="coloraxis"),
+        row=2, col=1
+    )
 
-    # Update layout with controls and styling
+    # Bottom right: Histogram of error values (static)
+    fig.add_trace(
+        go.Histogram(x=diff.flatten()),
+        row=2, col=2
+    )
+
+    # Set a shared color scale for heatmaps
+    fig.update_layout(coloraxis=dict(colorscale='Viridis'))
+
+    # Reverse y-axis for heatmap subplots so that the image is oriented correctly
+    fig.update_yaxes(autorange='reversed', row=1, col=1)
+    fig.update_yaxes(autorange='reversed', row=1, col=2)
+    fig.update_yaxes(autorange='reversed', row=2, col=1)
+
+    # --- Define sliders for each interactive view ---
+    # Slider for HW slice (channel slider updates trace 0)
+    steps_hw = []
+    for i in range(C):
+        steps_hw.append(dict(
+            method="restyle",
+            args=[{"z": [diff[i, :, :]]}, [0]],  # update trace 0
+            label=str(i)
+        ))
+    slider_hw = dict(
+        active=0,
+        currentvalue={"prefix": "Channel: "},
+        pad={"t": 10},
+        steps=steps_hw,
+        x=0.0, y=0.555, len=0.482
+    )
+
+    # Slider for CW slice (height slider updates trace 1)
+    steps_cw = []
+    for j in range(H):
+        steps_cw.append(dict(
+            method="restyle",
+            args=[{"z": [diff[:, j, :]]}, [1]],  # update trace 1
+            label=str(j)
+        ))
+    slider_cw = dict(
+        active=0,
+        currentvalue={"prefix": "Height: "},
+        pad={"t": 10},
+        steps=steps_cw,
+        x=0.525, y=0.555, len=0.482
+    )
+
+    # Slider for CH slice (width slider updates trace 2)
+    steps_ch = []
+    for k in range(W):
+        steps_ch.append(dict(
+            method="restyle",
+            args=[{"z": [diff[:, :, k]]}, [2]],  # update trace 2
+            label=str(k)
+        ))
+    slider_ch = dict(
+        active=0,
+        currentvalue={"prefix": "Width: "},
+        pad={"t": 10},
+        steps=steps_ch,
+        x=0.0, y=0.00, len=0.482
+    )
+
+    # Add the sliders to the layout (they will appear over the figure)
     fig.update_layout(
-        title='Interactive Tensor Difference Explorer',
-        height=800,
-        width=1000,
-        sliders=sliders,
-        updatemenus=updatemenus,
-        margin=dict(l=80, r=80, t=100, b=80)
+        sliders=[slider_hw, slider_cw, slider_ch],
+        margin=dict(t=30, b=30, l=30, r=30),
+        autosize=True
     )
 
     return fig
@@ -776,7 +669,6 @@ def tensor_network_visualization(tensor1, tensor2):
     )
 
     return fig
-
 
 
 def channel_correlation_matrices(tensor1, tensor2):

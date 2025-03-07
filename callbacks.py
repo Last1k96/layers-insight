@@ -506,8 +506,8 @@ def register_callbacks(app):
                 diff = main - ref
                 figure = plot_volume_tensor(diff)
                 graph = dcc.Graph(id="vis-graph", figure=figure,
-                                                 style={'width': '100%',
-                                                        'height': 'calc(100vh - 150px)'})
+                                  style={'width': '100%',
+                                         'height': 'calc(100vh - 150px)'})
                 store_figure["viz1"] = graph
 
             return graph, selected_visualization, store_figure
@@ -579,9 +579,29 @@ def register_callbacks(app):
                 figure = interactive_tensor_diff_dashboard(ref, main)
                 store_figure["viz8"] = figure
 
-            return dcc.Graph(id="vis-graph", figure=figure,
-                             style={'width': '100%',
-                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+            return html.Div(
+                html.Div(
+                    dcc.Graph(
+                        id="vis-graph",
+                        figure=figure,
+                        config={'responsive': True},
+                        style={
+                            "width": "100%",
+                            "height": "100%"
+                        }
+                    ),
+                    style={
+                        "height": "100%",
+                        "aspectRatio": f"{12/9}",
+                    }
+                ),
+                style={
+                    "height": "calc(100vh - 150px)",
+                    "display": "flex",
+                    "justifyContent": "center",  # center horizontally
+                    "alignItems": "center"  # center vertically
+                }
+            ), selected_visualization, store_figure
 
         elif selected_visualization == "viz9":
             if "viz9" in store_figure:
