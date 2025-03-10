@@ -84,7 +84,8 @@ def pool_each_dim_individually(volume: np.ndarray, max_size: int) -> np.ndarray:
 def plot_volume_tensor(tensor):
     # Convert the input tensor to a volume with shape (C, H, W)
     volume = convert_to_volume(tensor)
-    volume = pool_each_dim_individually(volume, 40)
+    # Optionally you could reduce the number of points by "MaxPooling" the data.
+    # volume = pool_each_dim_individually(volume, 40)
 
     # Rearrange dimensions from (C, H, W) to (C, W, H)
     volume_swapped = volume.transpose(0, 2, 1)  # Now shape is (C, W, H)
@@ -97,10 +98,6 @@ def plot_volume_tensor(tensor):
     h = np.arange(H)
     X, Y, Z = np.meshgrid(c, w, h, indexing='ij')
 
-    # Compute the overall data range for proper scaling.
-    data_min = np.min(volume_swapped)
-    data_max = np.max(volume_swapped)
-
     # Create the Plotly volume figure.
     x_coords = X.flatten()
     y_coords = Y.flatten()
@@ -109,7 +106,6 @@ def plot_volume_tensor(tensor):
 
     vals_abs = np.abs(vals)
 
-    # Map vals to point sizes (e.g., from 2 to 12)
     val_min, val_max = vals_abs.min(), vals_abs.max()
     point_sizes = 30 * (vals_abs - val_min) / (val_max - val_min)
 

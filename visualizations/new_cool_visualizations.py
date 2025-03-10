@@ -85,6 +85,7 @@ def animated_slices(tensor1, tensor2, axis=0, fps=10):
 # 2. Isosurface Rendering
 def isosurface_diff(tensor1, tensor2, thresholds=None):
     diff = np.abs(tensor1 - tensor2)
+    diff = diff.transpose(0, 2, 1)
 
     # Default thresholds based on percentiles of the difference
     if thresholds is None:
@@ -120,11 +121,18 @@ def isosurface_diff(tensor1, tensor2, thresholds=None):
 
     fig.update_layout(
         scene=dict(
-            xaxis_title='X',
-            yaxis_title='Y',
-            zaxis_title='Z',
-            aspectmode='cube'
+            dragmode='turntable',
+            xaxis=dict(title="x (Channel)", autorange='reversed'),
+            yaxis=dict(title="y (Width)"),
+            zaxis=dict(title="z (Height)", autorange='reversed'),
+            camera=dict(
+                projection=dict(type='orthographic'),
+                eye=dict(x=3, y=0, z=0),
+                center=dict(x=0, y=0, z=0),
+            ),
         ),
+        autosize=True,
+        margin=dict(l=0, r=0, t=0, b=0),
         title=f"Isosurfaces of Tensor Difference at {len(thresholds)} thresholds"
     )
 
