@@ -10,10 +10,9 @@ from dash.dependencies import Input, Output, State, ALL
 from run_inference import get_available_plugins
 
 from cache import result_cache, task_queue, processing_layers, lock
-from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, parallel_coordinates_diff, \
-    tensor_unfolding_diff, probabilistic_diff, interactive_tensor_diff_dashboard, \
-    hierarchical_diff_visualization, tensor_network_visualization, channel_correlation_matrices, \
-    gradient_flow_visualization, tensor_histogram_comparison, spectral_analysis, eigenvalue_comparison
+from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, \
+    interactive_tensor_diff_dashboard, \
+    hierarchical_diff_visualization, tensor_network_visualization, channel_correlation_matrices
 from visualizations.visualization import plot_volume_tensor
 from visualizations.viz_bin_diff import plot_diagnostics, reshape_to_3d
 
@@ -592,7 +591,7 @@ def register_callbacks(app):
                     ),
                     style={
                         "height": "100%",
-                        "aspectRatio": f"{12/9}",
+                        "aspectRatio": f"{12 / 9}",
                     }
                 ),
                 style={
@@ -612,9 +611,29 @@ def register_callbacks(app):
                 figure = hierarchical_diff_visualization(ref, main)
                 store_figure["viz9"] = figure
 
-            return dcc.Graph(id="vis-graph", figure=figure,
-                             style={'width': '100%',
-                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+            return html.Div(
+                html.Div(
+                    dcc.Graph(
+                        id="vis-graph",
+                        figure=figure,
+                        config={'responsive': True},
+                        style={
+                            "width": "100%",
+                            "height": "100%"
+                        }
+                    ),
+                    style={
+                        "height": "100%",
+                        "width": "100%",
+                    }
+                ),
+                style={
+                    "height": "calc(100vh - 150px)",
+                    "display": "flex",
+                    "justifyContent": "center",  # center horizontally
+                    "alignItems": "center"  # center vertically
+                }
+            ), selected_visualization, store_figure
 
         elif selected_visualization == "viz10":
             if "viz10" in store_figure:
@@ -625,9 +644,29 @@ def register_callbacks(app):
                 figure = tensor_network_visualization(ref, main)
                 store_figure["viz10"] = figure
 
-            return dcc.Graph(id="vis-graph", figure=figure,
-                             style={'width': '100%',
-                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+            return html.Div(
+                html.Div(
+                    dcc.Graph(
+                        id="vis-graph",
+                        figure=figure,
+                        config={'responsive': True},
+                        style={
+                            "width": "100%",
+                            "height": "100%"
+                        }
+                    ),
+                    style={
+                        "width": "100%",
+                        "height": "100%",
+                    }
+                ),
+                style={
+                    "height": "calc(100vh - 150px)",
+                    "display": "flex",
+                    "justifyContent": "center",  # center horizontally
+                    "alignItems": "center"  # center vertically
+                }
+            ), selected_visualization, store_figure
 
         elif selected_visualization == "viz12":
             if "viz12" in store_figure:
@@ -638,63 +677,30 @@ def register_callbacks(app):
                 figure = channel_correlation_matrices(ref, main)
                 store_figure["viz12"] = figure
 
-            return dcc.Graph(id="vis-graph", figure=figure,
-                             style={'width': '100%',
-                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+            return html.Div(
+                html.Div(
+                    dcc.Graph(
+                        id="vis-graph",
+                        figure=figure,
+                        config={'responsive': True},
+                        style={
+                            "width": "100%",
+                            "height": "100%"
+                        }
+                    ),
+                    style={
+                        "width": "100%",
+                        "aspectRatio": f"{7 / 2}",
+                    }
+                ),
+                style={
+                    "height": "calc(100vh - 150px)",
+                    "display": "flex",
+                    "justifyContent": "center",  # center horizontally
+                    "alignItems": "center"  # center vertically
+                }
+            ), selected_visualization, store_figure
 
-        elif selected_visualization == "viz13":
-            if "viz13" in store_figure:
-                figure = store_figure["viz13"]
-            else:
-                ref = reshape_to_3d(ref)
-                main = reshape_to_3d(main)
-                figure = gradient_flow_visualization(ref, main)
-                store_figure["viz13"] = figure
-
-            return dcc.Graph(id="vis-graph", figure=figure,
-                             style={'width': '100%',
-                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
-
-        elif selected_visualization == "viz14":
-            if "viz14" in store_figure:
-                figure = store_figure["viz14"]
-            else:
-                ref = reshape_to_3d(ref)
-                main = reshape_to_3d(main)
-                figure = tensor_histogram_comparison(ref, main)
-                store_figure["viz14"] = figure
-
-            return dcc.Graph(id="vis-graph", figure=figure,
-                             style={'width': '100%',
-                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
-
-        elif selected_visualization == "viz15":
-            if "viz15" in store_figure:
-                figure = store_figure["viz15"]
-            else:
-                ref = reshape_to_3d(ref)
-                main = reshape_to_3d(main)
-                figure = spectral_analysis(ref, main)
-                store_figure["viz15"] = figure
-
-            return dcc.Graph(id="vis-graph", figure=figure,
-                             style={'width': '100%',
-                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
-
-        elif selected_visualization == "viz16":
-            if "viz16" in store_figure:
-                figure = store_figure["viz16"]
-            else:
-                ref = reshape_to_3d(ref)
-                main = reshape_to_3d(main)
-                figure = eigenvalue_comparison(ref, main)
-                store_figure["viz16"] = figure
-
-            return dcc.Graph(id="vis-graph", figure=figure,
-                             style={'width': '100%',
-                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
-
-        return no_update, no_update, no_update
 
     @app.callback(
         Output("visualization-modal", "is_open"),

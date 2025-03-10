@@ -131,47 +131,6 @@ def isosurface_diff(tensor1, tensor2, thresholds=None):
     return fig
 
 
-# 3. Parallel Coordinates Plot
-def parallel_coordinates_diff(tensor1, tensor2, n_samples=500):
-    # Flatten tensors
-    tensor1_flat = tensor1.reshape(-1)
-    tensor2_flat = tensor2.reshape(-1)
-    diff_flat = np.abs(tensor1_flat - tensor2_flat)
-
-    # Sample points with higher probability for larger differences
-    weights = diff_flat / diff_flat.sum()
-    indices = np.random.choice(
-        len(tensor1_flat),
-        size=min(n_samples, len(tensor1_flat)),
-        p=weights,
-        replace=False
-    )
-
-    # Create dataframe for parallel coordinates
-    data = {
-        'Index': indices,
-        'Tensor1': tensor1_flat[indices],
-        'Tensor2': tensor2_flat[indices],
-        'Difference': diff_flat[indices]
-    }
-
-    # Create the parallel coordinates plot
-    fig = px.parallel_coordinates(
-        data,
-        dimensions=['Tensor1', 'Tensor2', 'Difference'],
-        color='Difference',
-        color_continuous_scale='Viridis',
-        labels={'Tensor1': 'Tensor 1', 'Tensor2': 'Tensor 2', 'Difference': 'Abs Difference'}
-    )
-
-    fig.update_layout(
-        title='Parallel Coordinates View of Tensor Differences',
-        coloraxis_colorbar=dict(title='Abs Difference')
-    )
-
-    return fig
-
-
 # 6. Multiple-View Tensor Unfolding
 def tensor_unfolding_diff(tensor1, tensor2):
     """
@@ -223,96 +182,7 @@ def tensor_unfolding_diff(tensor1, tensor2):
 
     fig.update_layout(
         title="Tensor Difference Unfoldings",
-        height=300 * len(shape),
-        width=800
-    )
-
-    return fig
-
-
-# 7. Probabilistic Visualization (KL Divergence)
-def probabilistic_diff(tensor1, tensor2):
-    """
-    Visualize KL divergence between tensors after normalizing.
-
-    Args:
-        tensor1, tensor2: Input tensors of same shape
-
-    Returns:
-        Plotly figure
-    """
-    # Ensure tensors are positive for treating as probabilities
-    tensor1_pos = np.maximum(tensor1 - np.min(tensor1), 1e-10)
-    tensor2_pos = np.maximum(tensor2 - np.min(tensor2), 1e-10)
-
-    # Normalize each channel/slice to sum to 1
-    kl_divs = []
-    js_divs = []
-
-    for c in range(tensor1.shape[0]):
-        # Normalize slices
-        t1_slice = tensor1_pos[c] / np.sum(tensor1_pos[c])
-        t2_slice = tensor2_pos[c] / np.sum(tensor2_pos[c])
-
-        # Compute KL divergence for each direction
-        kl_t1_t2 = entropy(t1_slice.flatten(), t2_slice.flatten())
-        kl_t2_t1 = entropy(t2_slice.flatten(), t1_slice.flatten())
-
-        # Jensen-Shannon divergence (symmetric)
-        m = 0.5 * (t1_slice + t2_slice)
-        js_div = 0.5 * (entropy(t1_slice.flatten(), m.flatten()) +
-                        entropy(t2_slice.flatten(), m.flatten()))
-
-        kl_divs.append((c, kl_t1_t2, kl_t2_t1))
-        js_divs.append((c, js_div))
-
-    # Create bar chart for KL divergence
-    fig = make_subplots(rows=2, cols=1,
-                        subplot_titles=['KL Divergence by Channel',
-                                        'Jensen-Shannon Divergence by Channel'])
-
-    channels = [item[0] for item in kl_divs]
-    kl_t1_t2_vals = [item[1] for item in kl_divs]
-    kl_t2_t1_vals = [item[2] for item in kl_divs]
-    js_vals = [item[1] for item in js_divs]
-
-    # KL divergence (both directions)
-    fig.add_trace(
-        go.Bar(
-            x=channels,
-            y=kl_t1_t2_vals,
-            name='KL(Tensor1 || Tensor2)'
-        ),
-        row=1, col=1
-    )
-
-    fig.add_trace(
-        go.Bar(
-            x=channels,
-            y=kl_t2_t1_vals,
-            name='KL(Tensor2 || Tensor1)'
-        ),
-        row=1, col=1
-    )
-
-    # Jensen-Shannon divergence
-    fig.add_trace(
-        go.Bar(
-            x=channels,
-            y=js_vals,
-            name='JS Divergence',
-            marker_color='green'
-        ),
-        row=2, col=1
-    )
-
-    fig.update_layout(
-        title='Probabilistic Divergence Between Tensors',
-        xaxis_title='Channel',
-        yaxis_title='KL Divergence',
-        xaxis2_title='Channel',
-        yaxis2_title='JS Divergence',
-        height=800
+        margin=dict(t=30, b=5, l=30, r=30),
     )
 
     return fig
@@ -321,6 +191,7 @@ def probabilistic_diff(tensor1, tensor2):
 # 8. Interactive 3D Dashboard (Basic Version)
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
+
 
 def interactive_tensor_diff_dashboard(reference, target):
     """
@@ -343,6 +214,10 @@ def interactive_tensor_diff_dashboard(reference, target):
     diff = target - reference
     C, H, W = diff.shape
 
+    # Determine global min and max values for fixed color scaling
+    min_val = diff.min()
+    max_val = diff.max()
+
     # Create a 2x2 grid of subplots with reduced spacing
     fig = make_subplots(
         rows=2, cols=2,
@@ -354,19 +229,31 @@ def interactive_tensor_diff_dashboard(reference, target):
     # --- Add initial traces ---
     # Top left: HW slice (fix channel=0)
     fig.add_trace(
-        go.Heatmap(z=diff[0, :, :], coloraxis="coloraxis"),
+        go.Heatmap(
+            z=diff[0, :, :],
+            zmin=min_val, zmax=max_val,
+            coloraxis="coloraxis"
+        ),
         row=1, col=1
     )
 
     # Top right: CW slice (fix height=0)
     fig.add_trace(
-        go.Heatmap(z=diff[:, 0, :], coloraxis="coloraxis"),
+        go.Heatmap(
+            z=diff[:, 0, :],
+            zmin=min_val, zmax=max_val,
+            coloraxis="coloraxis"
+        ),
         row=1, col=2
     )
 
     # Bottom left: CH slice (fix width=0)
     fig.add_trace(
-        go.Heatmap(z=diff[:, :, 0], coloraxis="coloraxis"),
+        go.Heatmap(
+            z=diff[:, :, 0],
+            zmin=min_val, zmax=max_val,
+            coloraxis="coloraxis"
+        ),
         row=2, col=1
     )
 
@@ -377,7 +264,12 @@ def interactive_tensor_diff_dashboard(reference, target):
     )
 
     # Set a shared color scale for heatmaps
-    fig.update_layout(coloraxis=dict(colorscale='Viridis'))
+    fig.update_layout(
+        coloraxis=dict(
+            colorscale='Viridis',
+            cmin=min_val, cmax=max_val
+        )
+    )
 
     # Reverse y-axis for heatmap subplots so that the image is oriented correctly
     fig.update_yaxes(autorange='reversed', row=1, col=1)
@@ -441,7 +333,6 @@ def interactive_tensor_diff_dashboard(reference, target):
     )
 
     return fig
-
 
 
 # 9. Hierarchical Visualization (Tree Map)
@@ -753,8 +644,7 @@ def channel_correlation_matrices(tensor1, tensor2):
     # Update layout
     fig.update_layout(
         title='Channel Correlation Analysis',
-        height=500,
-        width=1200
+        margin=dict(t=50, l=25, r=25, b=25)
     )
 
     return fig
@@ -842,8 +732,7 @@ def gradient_flow_visualization(tensor1, tensor2, channel_idx=0):
     # Update layout
     fig.update_layout(
         title=f'Gradient Flow Visualization (Channel {channel_idx})',
-        height=500,
-        width=1000
+        margin=dict(t=50, l=25, r=25, b=25)
     )
 
     # Update axes
@@ -852,261 +741,3 @@ def gradient_flow_visualization(tensor1, tensor2, channel_idx=0):
 
     return fig
 
-
-# Additional creative visualization methods
-
-def tensor_histogram_comparison(tensor1, tensor2):
-    """
-    Create a histogram comparison of tensor values with difference highlighting.
-
-    Args:
-        tensor1: First tensor (3D numpy array)
-        tensor2: Second tensor (3D numpy array)
-
-    Returns:
-        Plotly figure object
-    """
-    if tensor1.shape != tensor2.shape:
-        raise ValueError("Tensors must have the same shape")
-
-    channels = tensor1.shape[0]
-
-    # Create subplots for each channel
-    fig = make_subplots(
-        rows=channels, cols=1,
-        subplot_titles=[f'Channel {i} Distribution' for i in range(channels)],
-        vertical_spacing=0.04
-    )
-
-    # Add histograms for each channel
-    for i in range(channels):
-        fig.add_trace(
-            go.Histogram(
-                x=tensor1[i].flatten(),
-                opacity=0.7,
-                name=f'Tensor 1 Ch{i}',
-                marker_color='blue',
-                nbinsx=50
-            ),
-            row=i + 1, col=1
-        )
-
-        fig.add_trace(
-            go.Histogram(
-                x=tensor2[i].flatten(),
-                opacity=0.7,
-                name=f'Tensor 2 Ch{i}',
-                marker_color='red',
-                nbinsx=50
-            ),
-            row=i + 1, col=1
-        )
-
-        # Add KDE curves
-        x_range = np.linspace(
-            min(tensor1[i].min(), tensor2[i].min()),
-            max(tensor1[i].max(), tensor2[i].max()),
-            1000
-        )
-
-        kde1 = stats.gaussian_kde(tensor1[i].flatten())
-        kde2 = stats.gaussian_kde(tensor2[i].flatten())
-
-        fig.add_trace(
-            go.Scatter(
-                x=x_range,
-                y=kde1(x_range) * len(tensor1[i].flatten()) * (x_range[1] - x_range[0]),
-                mode='lines',
-                line=dict(color='blue', width=2),
-                name=f'KDE Tensor 1 Ch{i}'
-            ),
-            row=i + 1, col=1
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=x_range,
-                y=kde2(x_range) * len(tensor2[i].flatten()) * (x_range[1] - x_range[0]),
-                mode='lines',
-                line=dict(color='red', width=2),
-                name=f'KDE Tensor 2 Ch{i}'
-            ),
-            row=i + 1, col=1
-        )
-
-    # Update layout
-    fig.update_layout(
-        title='Tensor Distribution Comparison',
-        barmode='overlay',
-        height=300 * channels,
-        width=800,
-        showlegend=True
-    )
-
-    return fig
-
-
-def spectral_analysis(tensor1, tensor2):
-    """
-    Perform spectral analysis on tensors and visualize the difference
-    in frequency domain.
-
-    Args:
-        tensor1: First tensor (3D numpy array)
-        tensor2: Second tensor (3D numpy array)
-
-    Returns:
-        Plotly figure object
-    """
-    if tensor1.shape != tensor2.shape:
-        raise ValueError("Tensors must have the same shape")
-
-    channels = tensor1.shape[0]
-
-    # Create the subplot titles correctly - flatten the nested list
-    subplot_titles = []
-    for i in range(channels):
-        subplot_titles.extend([
-            f'Ch{i} Tensor 1 Spectrum',
-            f'Ch{i} Tensor 2 Spectrum',
-            f'Ch{i} Spectrum Diff'
-        ])
-
-    # Create subplots
-    fig = make_subplots(
-        rows=channels,
-        cols=3,
-        subplot_titles=subplot_titles,
-        vertical_spacing=0.05,
-        horizontal_spacing=0.02
-    )
-
-    for i in range(channels):
-        # Compute FFT for each channel
-        fft1 = np.abs(np.fft.fftshift(np.fft.fft2(tensor1[i])))
-        fft2 = np.abs(np.fft.fftshift(np.fft.fft2(tensor2[i])))
-
-        # Log scale for better visualization
-        fft1_log = np.log1p(fft1)
-        fft2_log = np.log1p(fft2)
-
-        # Compute difference
-        fft_diff = fft2_log - fft1_log
-
-        # Add heatmaps
-        fig.add_trace(
-            go.Heatmap(z=fft1_log, colorscale='Viridis'),
-            row=i + 1, col=1
-        )
-
-        fig.add_trace(
-            go.Heatmap(z=fft2_log, colorscale='Viridis'),
-            row=i + 1, col=2
-        )
-
-        fig.add_trace(
-            go.Heatmap(z=fft_diff, colorscale='RdBu', zmin=-np.max(np.abs(fft_diff)), zmax=np.max(np.abs(fft_diff))),
-            row=i + 1, col=3
-        )
-
-    # Update layout
-    fig.update_layout(
-        title='Spectral Analysis of Tensor Differences',
-        height=300 * channels,
-        width=1200
-    )
-
-    # Update axes
-    fig.update_xaxes(showticklabels=False)
-    fig.update_yaxes(showticklabels=False)
-
-    return fig
-
-
-def eigenvalue_comparison(tensor1, tensor2):
-    """
-    Compare eigenvalues of flattened tensor channels to identify structural differences.
-
-    Args:
-        tensor1: First tensor (3D numpy array)
-        tensor2: Second tensor (3D numpy array)
-
-    Returns:
-        Plotly figure object
-    """
-    if tensor1.shape != tensor2.shape:
-        raise ValueError("Tensors must have the same shape")
-
-    channels = tensor1.shape[0]
-
-    # Create figure
-    fig = go.Figure()
-
-    # Convert each channel to a correlation/covariance matrix and compute eigenvalues
-    for i in range(channels):
-        # Reshape to 2D matrix (flatten spatial dimensions)
-        matrix1 = tensor1[i].reshape(-1, 1)
-        matrix2 = tensor2[i].reshape(-1, 1)
-
-        # If matrices are large, sample them
-        max_size = 1000
-        if matrix1.shape[0] > max_size:
-            indices = np.random.choice(matrix1.shape[0], max_size, replace=False)
-            matrix1 = matrix1[indices]
-            matrix2 = matrix2[indices]
-
-        # Compute correlation matrices
-        corr1 = np.corrcoef(matrix1.T, matrix1.T)
-        corr2 = np.corrcoef(matrix2.T, matrix2.T)
-
-        # Compute eigenvalues
-        eig1 = np.linalg.eigvalsh(corr1)
-        eig2 = np.linalg.eigvalsh(corr2)
-
-        # Sort eigenvalues in descending order
-        eig1 = np.sort(eig1)[::-1]
-        eig2 = np.sort(eig2)[::-1]
-
-        # Take top eigenvalues
-        top_n = min(20, len(eig1))
-        eig1 = eig1[:top_n]
-        eig2 = eig2[:top_n]
-
-        # Pad with zeros if needed
-        if len(eig1) < top_n:
-            eig1 = np.pad(eig1, (0, top_n - len(eig1)))
-        if len(eig2) < top_n:
-            eig2 = np.pad(eig2, (0, top_n - len(eig2)))
-
-        # Add traces
-        fig.add_trace(
-            go.Scatter(
-                x=list(range(top_n)),
-                y=eig1,
-                mode='lines+markers',
-                name=f'Tensor 1 Ch{i}',
-                line=dict(dash='solid', color=px.colors.qualitative.Plotly[i % 10])
-            )
-        )
-
-        fig.add_trace(
-            go.Scatter(
-                x=list(range(top_n)),
-                y=eig2,
-                mode='lines+markers',
-                name=f'Tensor 2 Ch{i}',
-                line=dict(dash='dash', color=px.colors.qualitative.Plotly[i % 10])
-            )
-        )
-
-    # Update layout
-    fig.update_layout(
-        title='Eigenvalue Comparison',
-        xaxis_title='Eigenvalue Index',
-        yaxis_title='Eigenvalue Magnitude',
-        height=600,
-        width=1000,
-        yaxis_type='log'
-    )
-
-    return fig
