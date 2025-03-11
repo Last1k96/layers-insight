@@ -124,7 +124,7 @@ def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
         fig.add_artist(rect)
 
         # Add a single channel label above the top-left corner of the border.
-        overall_label_offset = 0.001  # Adjust vertical offset as needed.
+        overall_label_offset = 0.000  # Adjust vertical offset as needed.
         fig.text(left, top + overall_label_offset, f"Channel {i}",
                  va="bottom", ha="left", fontsize=13, fontweight='bold', color='#66ff66')
 

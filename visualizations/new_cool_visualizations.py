@@ -1,29 +1,6 @@
-import numpy as np
-import matplotlib.pyplot as plt
-from dash import html
 from matplotlib.animation import FuncAnimation
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import plotly.express as px
-from scipy import fftpack
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
-from umap import UMAP
 from skimage import measure
-import seaborn as sns
-from scipy.stats import entropy
-import io
-from IPython.display import HTML
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
-import networkx as nx
-from scipy import stats
 import matplotlib.pyplot as plt
-import io
-import base64
-from PIL import Image
 
 from visualizations.viz_bin_diff import reshape_to_3d
 
@@ -114,7 +91,7 @@ def isosurface_diff(tensor1, tensor2, thresholds=None):
         fig.add_trace(go.Mesh3d(
             x=x, y=y, z=z,
             i=i_faces[:, 0], j=i_faces[:, 1], k=i_faces[:, 2],
-            opacity=0.7 - i * 0.2,
+            opacity=0.7 - i * 0.25,
             color=colors[i],
             name=f'Threshold: {threshold:.3f}'
         ))
@@ -274,7 +251,7 @@ def interactive_tensor_diff_dashboard(reference, target):
     # Set a shared color scale for heatmaps
     fig.update_layout(
         coloraxis=dict(
-            colorscale='Viridis',
+            colorscale='rdbu',
             cmin=min_val, cmax=max_val
         )
     )
@@ -748,4 +725,3 @@ def gradient_flow_visualization(tensor1, tensor2, channel_idx=0):
     fig.update_yaxes(showgrid=False)
 
     return fig
-

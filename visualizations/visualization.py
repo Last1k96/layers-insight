@@ -1,5 +1,7 @@
 import numpy as np
 import plotly.graph_objects as go
+from dash import html
+
 
 # For demonstration, we create a synthetic 3D difference tensor.
 # In practice, replace this with your actual difference tensor data.
@@ -81,6 +83,7 @@ def pool_each_dim_individually(volume: np.ndarray, max_size: int) -> np.ndarray:
 
     return out
 
+
 def plot_volume_tensor(tensor):
     # Convert the input tensor to a volume with shape (C, H, W)
     volume = convert_to_volume(tensor)
@@ -107,7 +110,10 @@ def plot_volume_tensor(tensor):
     vals_abs = np.abs(vals)
 
     val_min, val_max = vals_abs.min(), vals_abs.max()
-    point_sizes = 30 * (vals_abs - val_min) / (val_max - val_min)
+    threshold = 0.2  # Define your threshold
+    normalized = (vals_abs - val_min) / (val_max - val_min)
+    clamped = np.where(normalized < threshold, 0, normalized)
+    point_sizes = 30 * clamped ** 1.5
 
     fig = go.Figure(
         data=go.Scatter3d(

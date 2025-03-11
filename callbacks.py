@@ -495,9 +495,6 @@ def register_callbacks(app):
         ref = data.get("ref")
         main = data.get("main")
 
-        # figure = None
-
-        # Handle each visualization type
         if selected_visualization == "viz1":
             if "viz1" in store_figure:
                 graph = store_figure["viz1"]
