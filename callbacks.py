@@ -483,60 +483,60 @@ def register_callbacks(app):
         default_viz_name = "viz1"
         if triggered_id == "visualization-modal":
             if is_open:
-                selected_visualization = last_selected_visualization if last_selected_visualization is not None else default_viz_name
+                viz_name = last_selected_visualization if last_selected_visualization is not None else default_viz_name
             else:
                 return html.Div(), last_selected_visualization, no_update
 
         else:
             button_id = json.loads(triggered_id)
-            selected_visualization = button_id["index"]
+            viz_name = button_id["index"]
 
         data = result_cache.get(node_id, {})
         ref = data.get("ref")
         main = data.get("main")
 
-        if selected_visualization == "viz1":
-            if "viz1" in store_figure:
-                graph = store_figure["viz1"]
+        if viz_name == "viz1":
+            if viz_name in store_figure:
+                viz = store_figure[viz_name]
             else:
                 diff = main - ref
-                figure = plot_volume_tensor(diff)
-                graph = dcc.Graph(id="vis-graph", figure=figure,
+                viz = plot_volume_tensor(diff)
+                viz = dcc.Graph(id="vis-graph", figure=viz,
                                   style={'width': '100%',
                                          'height': 'calc(100vh - 150px)'})
-                store_figure["viz1"] = graph
+                store_figure[viz_name] = viz
 
-            return graph, selected_visualization, store_figure
+            return viz, viz_name, store_figure
 
-        elif selected_visualization == "viz2":
-            if "viz2" in store_figure:
-                img = store_figure["viz2"]
+        elif viz_name == "viz2":
+            if viz_name in store_figure:
+                viz = store_figure[viz_name]
             else:
                 ref_plugin_name = config["plugin1"]
                 main_plugin_name = config["plugin2"]
-                figure = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
+                viz = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
                 buf = io.BytesIO()
-                figure.savefig(buf, format="png", bbox_inches="tight")
+                viz.savefig(buf, format="png", bbox_inches="tight")
                 buf.seek(0)
                 encoded_diag = base64.b64encode(buf.getvalue()).decode("utf-8")
-                img = html.Img(
+                viz = html.Img(
                     src=f"data:image/png;base64,{encoded_diag}",
                     style={"width": "100%", "display": "block", "margin": "0 auto"}
                 )
-                store_figure["viz2"] = img
+                store_figure[viz_name] = viz
 
-            return img, selected_visualization, store_figure
+            return viz, viz_name, store_figure
 
-        elif selected_visualization == "viz3":
-            if "viz3" in store_figure:
-                animation_html = store_figure["viz3"]
+        elif viz_name == "viz3":
+            if viz_name in store_figure:
+                viz = store_figure[viz_name]
             else:
-                animation_html = animated_slices(ref, main, axis=0, fps=2)
-                store_figure["viz3"] = animation_html
+                viz = animated_slices(ref, main, axis=0, fps=2)
+                store_figure[viz_name] = viz
 
             return html.Div(
                 html.Iframe(
-                    srcDoc=animation_html,
+                    srcDoc=viz,
                     style={
                         "width": "70%",
                         "height": "calc(100vh - 150px)",
@@ -551,35 +551,35 @@ def register_callbacks(app):
                     "justifyContent": "center",  # Center horizontally
                     "alignItems": "center"  # Center vertically
                 }
-            ), selected_visualization, store_figure
+            ), viz_name, store_figure
 
-        elif selected_visualization == "viz4":
-            if "viz4" in store_figure:
-                figure = store_figure["viz4"]
+        elif viz_name == "viz4":
+            if viz_name in store_figure:
+                viz = store_figure[viz_name]
             else:
                 ref = reshape_to_3d(ref)
                 main = reshape_to_3d(main)
-                figure = isosurface_diff(ref, main)
-                store_figure["viz4"] = figure
+                viz = isosurface_diff(ref, main)
+                store_figure[viz_name] = viz
 
-            return dcc.Graph(id="vis-graph", figure=figure,
+            return dcc.Graph(id="vis-graph", figure=viz,
                              style={'width': '100%',
-                                    'height': 'calc(100vh - 150px)'}), selected_visualization, store_figure
+                                    'height': 'calc(100vh - 150px)'}), viz_name, store_figure
 
-        elif selected_visualization == "viz8":
-            if "viz8" in store_figure:
-                figure = store_figure["viz8"]
+        elif viz_name == "viz8":
+            if viz_name in store_figure:
+                viz = store_figure[viz_name]
             else:
                 ref = reshape_to_3d(ref)
                 main = reshape_to_3d(main)
-                figure = interactive_tensor_diff_dashboard(ref, main)
-                store_figure["viz8"] = figure
+                viz = interactive_tensor_diff_dashboard(ref, main)
+                store_figure[viz_name] = viz
 
             return html.Div(
                 html.Div(
                     dcc.Graph(
                         id="vis-graph",
-                        figure=figure,
+                        figure=viz,
                         config={'responsive': True},
                         style={
                             "width": "100%",
@@ -597,22 +597,22 @@ def register_callbacks(app):
                     "justifyContent": "center",  # center horizontally
                     "alignItems": "center"  # center vertically
                 }
-            ), selected_visualization, store_figure
+            ), viz_name, store_figure
 
-        elif selected_visualization == "viz9":
-            if "viz9" in store_figure:
-                figure = store_figure["viz9"]
+        elif viz_name == "viz9":
+            if viz_name in store_figure:
+                viz = store_figure[viz_name]
             else:
                 ref = reshape_to_3d(ref)
                 main = reshape_to_3d(main)
-                figure = hierarchical_diff_visualization(ref, main)
-                store_figure["viz9"] = figure
+                viz = hierarchical_diff_visualization(ref, main)
+                store_figure[viz_name] = viz
 
             return html.Div(
                 html.Div(
                     dcc.Graph(
                         id="vis-graph",
-                        figure=figure,
+                        figure=viz,
                         config={'responsive': True},
                         style={
                             "width": "100%",
@@ -630,22 +630,22 @@ def register_callbacks(app):
                     "justifyContent": "center",  # center horizontally
                     "alignItems": "center"  # center vertically
                 }
-            ), selected_visualization, store_figure
+            ), viz_name, store_figure
 
-        elif selected_visualization == "viz10":
-            if "viz10" in store_figure:
-                figure = store_figure["viz10"]
+        elif viz_name == "viz10":
+            if viz_name in store_figure:
+                viz = store_figure[viz_name]
             else:
                 ref = reshape_to_3d(ref)
                 main = reshape_to_3d(main)
-                figure = tensor_network_visualization(ref, main)
-                store_figure["viz10"] = figure
+                viz = tensor_network_visualization(ref, main)
+                store_figure[viz_name] = viz
 
             return html.Div(
                 html.Div(
                     dcc.Graph(
                         id="vis-graph",
-                        figure=figure,
+                        figure=viz,
                         config={'responsive': True},
                         style={
                             "width": "100%",
@@ -663,22 +663,22 @@ def register_callbacks(app):
                     "justifyContent": "center",  # center horizontally
                     "alignItems": "center"  # center vertically
                 }
-            ), selected_visualization, store_figure
+            ), viz_name, store_figure
 
-        elif selected_visualization == "viz12":
-            if "viz12" in store_figure:
-                figure = store_figure["viz12"]
+        elif viz_name == "viz12":
+            if viz_name in store_figure:
+                viz = store_figure[viz_name]
             else:
                 ref = reshape_to_3d(ref)
                 main = reshape_to_3d(main)
-                figure = channel_correlation_matrices(ref, main)
-                store_figure["viz12"] = figure
+                viz = channel_correlation_matrices(ref, main)
+                store_figure[viz_name] = viz
 
             return html.Div(
                 html.Div(
                     dcc.Graph(
                         id="vis-graph",
-                        figure=figure,
+                        figure=viz,
                         config={'responsive': True},
                         style={
                             "width": "100%",
@@ -696,7 +696,7 @@ def register_callbacks(app):
                     "justifyContent": "center",  # center horizontally
                     "alignItems": "center"  # center vertically
                 }
-            ), selected_visualization, store_figure
+            ), viz_name, store_figure
 
 
     @app.callback(
