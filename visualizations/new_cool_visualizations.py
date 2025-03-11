@@ -487,11 +487,13 @@ def tensor_network_visualization(tensor1, tensor2):
     node_size = []
     node_color = []
 
+    dim_names = ['Channel', 'Height', 'Width']
+
     # Add dimension nodes
     for dim, pos in positions.items():
         node_x.append(pos['x'])
         node_y.append(pos['y'])
-        node_text.append(f"Dimension {dim[-1]}")
+        node_text.append(f"{dim_names[int(dim[-1])]}")
         node_size.append(30)
         node_color.append('rgba(100, 100, 255, 0.8)')
 
@@ -508,7 +510,7 @@ def tensor_network_visualization(tensor1, tensor2):
 
         node_x.append(x)
         node_y.append(y)
-        node_text.append(f"Dim{dim}[{idx}]: {slice_info['mean_diff']:.4f}")
+        node_text.append(f"{dim_names[dim][0]}[{idx}]: {slice_info['mean_diff']:.4f}")
 
         # Size node by max difference
         node_size.append(10 + 40 * slice_info['max_diff'] / np.max(diff))
