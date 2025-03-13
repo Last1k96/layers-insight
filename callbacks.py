@@ -457,6 +457,19 @@ def register_callbacks(app):
         return updated_data
 
     @app.callback(
+        Output("visualization-buttons", "children"),
+        Input("last-selected-visualization", "data"),
+        State("visualization-buttons", "children"),
+        prevent_initial_call=True
+    )
+    def update_visualization_button_selection(last_selected, viz_buttons):
+        for btn in viz_buttons:
+            btn_id = btn["props"]["id"]
+            btn["props"]["active"] = (btn_id["index"] == last_selected)
+
+        return viz_buttons
+
+    @app.callback(
         Output("visualization-container", "children"),
         Output("last-selected-visualization", "data"),
         Output("store-figure", "data"),
@@ -466,10 +479,15 @@ def register_callbacks(app):
         State("last-selected-visualization", "data"),
         State("config-store", "data"),
         State("selected-node-id-store", "data"),
+        prevent_initial_call=True
     )
     def select_visualization_type(is_open, btn_clicks, store_figure, last_selected_visualization, config, node_id):
         ctx = callback_context
         if not ctx.triggered:
+            return no_update, no_update, no_update
+
+        # Skip phantom click event on first loading
+        if ctx.triggered[0]["value"] is None:
             return no_update, no_update, no_update
 
         triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
@@ -502,8 +520,8 @@ def register_callbacks(app):
                 diff = main - ref
                 viz = plot_volume_tensor(diff)
                 viz = dcc.Graph(id="vis-graph", figure=viz,
-                                  style={'width': '100%',
-                                         'height': 'calc(100vh - 150px)'})
+                                style={'width': '100%',
+                                       'height': 'calc(100vh - 150px)'})
                 store_figure[viz_name] = viz
 
             return viz, viz_name, store_figure
@@ -697,7 +715,6 @@ def register_callbacks(app):
                     "alignItems": "center"  # center vertically
                 }
             ), viz_name, store_figure
-
 
     @app.callback(
         Output("visualization-modal", "is_open"),

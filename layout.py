@@ -237,7 +237,8 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                         ),
                         # Right side: Fixed width button column
                         html.Div(
-                            [
+                            id="visualization-buttons",
+                            children=[
                                 dbc.Button("Volumetric", id={"type": "visualization-btn", "index": "viz1"},
                                            className="mb-1 w-100"),
                                 dbc.Button("Isosurfaces", id={"type": "visualization-btn", "index": "viz4"},
