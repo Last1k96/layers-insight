@@ -4,6 +4,7 @@ import io
 import json
 import os
 import bisect
+from datetime import datetime
 
 from dash import no_update, callback_context, exceptions, html, dcc
 from dash.dependencies import Input, Output, State, ALL
@@ -744,13 +745,17 @@ def register_callbacks(app):
 
     @app.callback(
         Output("notification-toast", "is_open"),
+        Output("notification-toast", "children"),
         Input("save-outputs-button", "n_clicks"),
         State("notification-toast", "is_open"),
     )
     def toggle_toast(n, is_open):
-        if n:
-            return not is_open
-        return is_open
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update
+
+        folder_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        return True, folder_name
 
 
 def register_clientside_callbacks(app):
