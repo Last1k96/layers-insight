@@ -209,7 +209,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                 ],
             ),
         ],
-        id="config-modal",
+        id="inference-settings-modal",
         is_open=False,
     )
 
@@ -303,7 +303,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
     open_button = dbc.Button(
         "Inference settings",
-        id="open-modal",
+        id="inference-settings-btn",
         color="dark",
         n_clicks=0,
         className="w-100",

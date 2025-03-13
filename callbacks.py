@@ -435,7 +435,7 @@ def register_callbacks(app):
 
     @app.callback(
         Output("config-store", "data"),
-        Input("config-modal", "is_open"),
+        Input("inference-settings-modal", "is_open"),
         State("model-xml-path", "value"),
         State("ov-bin-path", "value"),
         State("reference-plugin-dropdown", "value"),
@@ -723,6 +723,19 @@ def register_callbacks(app):
         prevent_initial_call=True
     )
     def open_visualization_modal(n_open):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update
+
+        return True
+    
+
+    @app.callback(
+        Output("inference-settings-modal", "is_open"),
+        Input("inference-settings-btn", "n_clicks"),
+        prevent_initial_call=True
+    )
+    def open_settings_modal(n_open):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
