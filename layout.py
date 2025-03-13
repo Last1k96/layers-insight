@@ -354,35 +354,33 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         duration=5000,
         style={
             "position": "absolute",
+            "left": "-310px",  # Negative offset to place the toast to the left of the right pane.
             "top": "10px",
-            "right": "10px",
             "width": "300px",
             "zIndex": 1000,
         }
     )
 
-    # Wrap the graph and notification in a container with relative positioning
-    graph_with_notification = html.Div(
-        children=[
-            graph_container,
-            notification_toast
-        ],
-        style={"position": "relative", "width": "100%", "height": "100%"}
-    )
-
-    # Incorporate graph_with_notification into your layout, for example:
-    graph_and_right = DashSplitPane(
+    graph_and_left = DashSplitPane(
         split="vertical",
         size="15%",
         primary="first",
-        children=[left_pane, graph_with_notification]
+        children=[left_pane, graph_container]
+    )
+
+    right_pane_with_notification = html.Div(
+        children=[
+            right_pane,
+            notification_toast
+        ],
+        style={"position": "relative", "width": "100%", "height": "100%"}
     )
 
     dash_pane = DashSplitPane(
         split="vertical",
         size="15%",
         primary="second",
-        children=[graph_and_right, right_pane]
+        children=[graph_and_left, right_pane_with_notification]
     )
 
     return html.Div(
