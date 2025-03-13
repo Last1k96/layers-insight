@@ -370,7 +370,6 @@ def register_callbacks(app):
     )
     def update_stats(selected_node_id, selected_layer_index, finished_nodes, layers_list, selected_layer_name):
         ctx = callback_context
-        # If there is no trigger, return no update and hide the button.
         if not ctx.triggered:
             return no_update, no_update, {'display': 'none'}, {'display': 'none'}
 
@@ -404,14 +403,27 @@ def register_callbacks(app):
     #######################################################################################################################
 
     @app.callback(
+        Output("inference-settings-modal", "is_open"),
+        Input("inference-settings-btn", "n_clicks"),
+        prevent_initial_call=True
+    )
+    def open_settings_modal(n_open):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update
+
+        return True
+
+    @app.callback(
         Output("plugin-store", "data"),
         Output('reference-plugin-dropdown', 'options'),
         Output('main-plugin-dropdown', 'options'),
+        Output('reference-plugin-dropdown', 'placeholder'),
+        Output('main-plugin-dropdown', 'placeholder'),
         Output('reference-plugin-dropdown', 'value'),
         Output('main-plugin-dropdown', 'value'),
         Input('find-plugins-button', 'n_clicks'),
         State('ov-bin-path', 'value'),
-        prevent_initial_call=False
     )
     def find_plugins(n_clicks, openvino_bin):
         if not openvino_bin or not os.path.exists(openvino_bin):
@@ -431,32 +443,29 @@ def register_callbacks(app):
             device_options,
             device_options,
             ref_value,
-            other_value
+            other_value,
+            None, # Set the default value to None to avoid bugged behavior of pre-selected Dropdown element
+            None
         )
 
     @app.callback(
         Output("config-store", "data"),
-        Input("inference-settings-modal", "is_open"),
+        Input("save-inference-config-button", "n_clicks"),
         State("model-xml-path", "value"),
         State("ov-bin-path", "value"),
         State("reference-plugin-dropdown", "value"),
         State("main-plugin-dropdown", "value"),
         State({"type": "model-input", "name": ALL}, "value"),
-        State("config-store", "data"),
         prevent_initial_call=True
     )
-    def save_config(is_open, model_xml, bin_path, ref_plugin,
-                    other_plugin, all_input_values, current_data):
-        if is_open:
+    def save_config(n_clicks, model_xml, bin_path, ref_plugin,
+                    other_plugin, all_input_values):
+        ctx = callback_context
+        if not ctx.triggered:
             return no_update
 
-        updated_data = current_data.copy() if current_data else {}
-        updated_data["model_xml"] = model_xml
-        updated_data["ov_bin_path"] = bin_path
-        updated_data["plugin1"] = ref_plugin
-        updated_data["plugin2"] = other_plugin
-        updated_data["model_inputs"] = all_input_values
-        return updated_data
+        return {"model_xml": model_xml, "ov_bin_path": bin_path, "plugin1": ref_plugin, "plugin2": other_plugin,
+                "model_inputs": all_input_values}
 
     @app.callback(
         Output("visualization-buttons", "children"),
@@ -724,19 +733,6 @@ def register_callbacks(app):
         prevent_initial_call=True
     )
     def open_visualization_modal(n_open):
-        ctx = callback_context
-        if not ctx.triggered:
-            return no_update
-
-        return True
-    
-
-    @app.callback(
-        Output("inference-settings-modal", "is_open"),
-        Input("inference-settings-btn", "n_clicks"),
-        prevent_initial_call=True
-    )
-    def open_settings_modal(n_open):
         ctx = callback_context
         if not ctx.triggered:
             return no_update

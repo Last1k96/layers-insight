@@ -144,7 +144,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
     dynamic_stylesheet = build_dynamic_stylesheet(elements)
 
     if openvino_path and os.path.exists(openvino_path):
-        discovered_plugins = get_available_plugins(openvino_path)
+        discovered_plugins = list(get_available_plugins(openvino_path))
     else:
         discovered_plugins = []
 
@@ -189,13 +189,12 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                         placeholder="Path to OpenVINO bin/ folder"
                     ),
                     html.Br(),
-                    dbc.Button("Find Plugins", id="find-plugins-button", color="dark", n_clicks=0),
+                    dbc.Button("Find Plugins", id="find-plugins-button", n_clicks=0),
                     html.Br(), html.Br(),
                     dbc.Label("Reference Plugin"),
                     dcc.Dropdown(
                         id="reference-plugin-dropdown",
                         options=discovered_plugins,
-                        value=plugin1_value,
                         clearable=False,
                     ),
                     html.Br(),
@@ -203,10 +202,12 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                     dcc.Dropdown(
                         id="main-plugin-dropdown",
                         options=discovered_plugins,
-                        value=plugin2_value,
                         clearable=False,
                     ),
                 ],
+            ),
+            dbc.ModalFooter(
+                dbc.Button("Save", id="save-inference-config-button", n_clicks=0),
             ),
         ],
         id="inference-settings-modal",
@@ -407,8 +408,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             dcc.Store(id='selected-node-id-store', data=None),
 
             dcc.Store(id='clicked-graph-node-id-store'),  # to break circular dependency
-
-            html.Div(id='center-node-trigger', style={'display': 'none'}),
 
             dcc.Interval(id='update-interval', interval=1000, n_intervals=0),
         ],
