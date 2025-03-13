@@ -729,6 +729,16 @@ def register_callbacks(app):
 
         return True
 
+    @app.callback(
+        Output("notification-toast", "is_open"),
+        Input("save-outputs-button", "n_clicks"),
+        State("notification-toast", "is_open"),
+    )
+    def toggle_toast(n, is_open):
+        if n:
+            return not is_open
+        return is_open
+
 
 def register_clientside_callbacks(app):
     # Center on the node when Ctrl key is being held
