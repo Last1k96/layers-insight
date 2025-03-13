@@ -334,7 +334,14 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             id="visualization-button",
             color="secondary",
             className="w-100",
-            style={"display": "none"}
+            style={'display': 'none'}  # will be updated by update_stats callback
+        ),
+        dbc.Button(
+            "Save outputs",
+            id="save-outputs-button",
+            color="secondary",
+            className="w-100",
+            style={'display': 'none'}  # will be updated by update_stats callback
         )
     ])
 
