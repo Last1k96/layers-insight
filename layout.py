@@ -349,9 +349,9 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
         "Notification message",
         id="notification-toast",
         header="Notification",
-        is_open=True,  # Set to True to show the notification
+        is_open=False,
         dismissable=True,
-        duration=5000,  # Auto-dismiss after 5 seconds
+        duration=5000,
         style={
             "position": "absolute",
             "top": "10px",
