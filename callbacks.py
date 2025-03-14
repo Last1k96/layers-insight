@@ -411,12 +411,11 @@ def register_callbacks(app):
         Output("plugin-store", "data"),
         Output('reference-plugin-dropdown', 'options'),
         Output('main-plugin-dropdown', 'options'),
-        Input('find-plugins-button', 'n_clicks'),
-        State('ov-bin-path', 'value'),
+        Input("ov-bin-path", "value"),
     )
-    def find_plugins(n_clicks, openvino_bin):
+    def find_plugins(openvino_bin):
         if not openvino_bin or not os.path.exists(openvino_bin):
-            return "Invalid OpenVINO bin path", [], [], None, None
+            return [], [], []
 
         devices = get_available_plugins(openvino_bin)
         if not devices:

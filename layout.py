@@ -189,8 +189,6 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                         placeholder="Path to OpenVINO bin/ folder"
                     ),
                     html.Br(),
-                    dbc.Button("Find Plugins", id="find-plugins-button", n_clicks=0),
-                    html.Br(), html.Br(),
                     dbc.Label("Reference Plugin"),
                     dcc.Dropdown(
                         id="reference-plugin-dropdown",
