@@ -305,12 +305,17 @@ def register_callbacks(app):
         State('layers-store', 'data'),
         State("keyboard", "keydown"),
         State('selected-layer-index-store', 'data'),
+        State("inference-settings-modal", "is_open"),
+        State("visualization-modal", "is_open"),
         prevent_initial_call=True
     )
     def update_selected_layer(n_keydowns, li_n_clicks, clicked_graph_node_id, layers_list, keydown,
-                              selected_layer_index):
+                              selected_layer_index, is_settings_opened, is_visualization_opened):
         ctx = callback_context
         if not ctx.triggered:
+            return no_update
+
+        if is_settings_opened or is_visualization_opened:
             return no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
@@ -758,10 +763,19 @@ def register_clientside_callbacks(app):
     # Center on the node when Ctrl key is being held
     app.clientside_callback(
         """
-        function(nodeId, keysPressed) {
+        function(nodeId, keysPressed, settingsOpened, visualizationOpened) {
+            const isSettingsOpen = settingsOpened ?? false;
+            const isVisualizationOpen = visualizationOpened ?? false;
+            console.log("isSettingsOpen:", isSettingsOpen);
+            console.log("isVisualizationOpen:", isVisualizationOpen);
+            if (isSettingsOpen || isVisualizationOpen) {
+                return;
+            }
+            
             if (!keysPressed || !("Control" in keysPressed) || nodeId == null) {
                 return;
             }
+            
             if (window.cy) {
                 const element = window.cy.getElementById(nodeId);
                 if (element.length === 0) return; // Check if node exists
@@ -779,5 +793,7 @@ def register_clientside_callbacks(app):
         }
         """,
         Input('selected-node-id-store', 'data'),
-        State('keyboard', 'keys_pressed')
+        State('keyboard', 'keys_pressed'),
+        State("inference-settings-modal", "is_open"),
+        State("visualization-modal", "is_open"),
     )
