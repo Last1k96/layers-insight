@@ -408,25 +408,9 @@ def register_callbacks(app):
     #######################################################################################################################
 
     @app.callback(
-        Output("inference-settings-modal", "is_open"),
-        Input("inference-settings-btn", "n_clicks"),
-        prevent_initial_call=True
-    )
-    def open_settings_modal(n_open):
-        ctx = callback_context
-        if not ctx.triggered:
-            return no_update
-
-        return True
-
-    @app.callback(
         Output("plugin-store", "data"),
         Output('reference-plugin-dropdown', 'options'),
         Output('main-plugin-dropdown', 'options'),
-        Output('reference-plugin-dropdown', 'placeholder'),
-        Output('main-plugin-dropdown', 'placeholder'),
-        Output('reference-plugin-dropdown', 'value'),
-        Output('main-plugin-dropdown', 'value'),
         Input('find-plugins-button', 'n_clicks'),
         State('ov-bin-path', 'value'),
     )
@@ -436,26 +420,29 @@ def register_callbacks(app):
 
         devices = get_available_plugins(openvino_bin)
         if not devices:
-            return "No plugins found.", [], [], None, None
+            return [], [], []
 
         device_options = [{'label': d, 'value': d} for d in devices]
-        ref_value = 'CPU' if 'CPU' in devices else devices[0]
-        non_cpu_devices = [d for d in devices if d != 'CPU']
-        other_value = non_cpu_devices[0] if len(non_cpu_devices) > 0 else ref_value
 
         return (
-            "",
             device_options,
             device_options,
-            ref_value,
-            other_value,
-            None, # Set the default value to None to avoid bugged behavior of pre-selected Dropdown element
-            None
+            device_options
         )
 
     @app.callback(
+        Output("inference-settings-modal", "is_open"),
         Output("config-store", "data"),
+        Output("model-xml-path", "value"),
+        Output("ov-bin-path", "value"),
+        Output("reference-plugin-dropdown", "value"),
+        Output("main-plugin-dropdown", "value"),
+        Output("reference-plugin-dropdown", "placeholder"),
+        Output("main-plugin-dropdown", "placeholder"),
+        Output({"type": "model-input", "name": ALL}, "value"),
         Input("save-inference-config-button", "n_clicks"),
+        Input("inference-settings-btn", "n_clicks"),
+        State("config-store", "data"),
         State("model-xml-path", "value"),
         State("ov-bin-path", "value"),
         State("reference-plugin-dropdown", "value"),
@@ -463,14 +450,43 @@ def register_callbacks(app):
         State({"type": "model-input", "name": ALL}, "value"),
         prevent_initial_call=True
     )
-    def save_config(n_clicks, model_xml, bin_path, ref_plugin,
+    def save_config(save_btn_clicks, open_settings_btn_clicks, config, model_xml, bin_path, ref_plugin,
                     other_plugin, all_input_values):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
 
-        return {"model_xml": model_xml, "ov_bin_path": bin_path, "plugin1": ref_plugin, "plugin2": other_plugin,
-                "model_inputs": all_input_values}
+        triggers = [t['prop_id'] for t in ctx.triggered]
+
+        if any(trigger.startswith('inference-settings-btn') for trigger in triggers):
+            return True, no_update, config["model_xml"], config["ov_bin_path"], None, None, config["plugin1"], config[
+                "plugin2"], config["model_inputs"]
+
+        if any(trigger.startswith('save-inference-config-button') for trigger in triggers):
+            date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+            plugin1 = ref_plugin if ref_plugin is not None else config["plugin1"]
+            plugin2 = other_plugin if other_plugin is not None else config["plugin2"]
+
+            config = {"datetime": date_time, "model_xml": model_xml, "ov_bin_path": bin_path,
+                      "plugin1": plugin1, "plugin2": plugin2,
+                      "model_inputs": all_input_values}
+
+            return False, config, no_update, no_update, no_update, no_update, no_update, no_update, [no_update] * len(all_input_values)
+
+    @app.callback(
+        Output("notification-toast", "is_open"),
+        Output("notification-toast", "children"),
+        Input("save-outputs-button", "n_clicks"),
+        State("notification-toast", "is_open"),
+    )
+    def toggle_toast(n, is_open):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update
+
+        folder_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        return True, folder_name
 
     @app.callback(
         Output("visualization-buttons", "children"),
@@ -743,20 +759,6 @@ def register_callbacks(app):
             return no_update
 
         return True
-
-    @app.callback(
-        Output("notification-toast", "is_open"),
-        Output("notification-toast", "children"),
-        Input("save-outputs-button", "n_clicks"),
-        State("notification-toast", "is_open"),
-    )
-    def toggle_toast(n, is_open):
-        ctx = callback_context
-        if not ctx.triggered:
-            return no_update
-
-        folder_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        return True, folder_name
 
 
 def register_clientside_callbacks(app):
