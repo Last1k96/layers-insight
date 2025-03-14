@@ -5,6 +5,7 @@ import json
 import os
 import bisect
 from datetime import datetime
+from pathlib import Path
 
 from dash import no_update, callback_context, exceptions, html, dcc
 from dash.dependencies import Input, Output, State, ALL
@@ -29,6 +30,7 @@ class LockGuard:
 
 
 def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
+    config["datetime"] = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
 
 
@@ -471,21 +473,32 @@ def register_callbacks(app):
                       "plugin1": plugin1, "plugin2": plugin2,
                       "model_inputs": all_input_values}
 
-            return False, config, no_update, no_update, no_update, no_update, no_update, no_update, [no_update] * len(all_input_values)
+            return False, config, no_update, no_update, no_update, no_update, no_update, no_update, [no_update] * len(
+                all_input_values)
 
     @app.callback(
         Output("notification-toast", "is_open"),
         Output("notification-toast", "children"),
         Input("save-outputs-button", "n_clicks"),
-        State("notification-toast", "is_open"),
+        State("config-store", "data"),
+        State("selected-node-id-store", "data"),
+        prevent_initial_call=True
     )
-    def toggle_toast(n, is_open):
+    def toggle_toast(n, config, node_id):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
 
-        folder_name = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        return True, folder_name
+        folder_name = f"outputs/{config["datetime"]}"
+        Path(f"{folder_name}").mkdir(parents=True, exist_ok=True)
+
+        result = result_cache[node_id]
+        layer_name = result["layer_name"].replace("/", "-")  # sanitize the layer name
+
+        result["main"].tofile(f"{folder_name}/{int(node_id):04d}_{layer_name}.bin")
+        result["ref"].tofile(f"{folder_name}/{int(node_id):04d}_{layer_name}_ref.bin")
+
+        return True, f"Results are saved in {Path.cwd()}/{folder_name}"
 
     @app.callback(
         Output("visualization-buttons", "children"),
