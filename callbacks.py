@@ -7,7 +7,7 @@ import bisect
 from datetime import datetime
 from pathlib import Path
 
-from dash import no_update, callback_context, exceptions, html, dcc
+from dash import no_update, callback_context, html, dcc
 from dash.dependencies import Input, Output, State, ALL
 from run_inference import get_available_plugins
 
