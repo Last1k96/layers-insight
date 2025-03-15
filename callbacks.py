@@ -7,6 +7,7 @@ import bisect
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 from dash import no_update, callback_context, html, dcc
 from dash.dependencies import Input, Output, State, ALL
 from run_inference import get_available_plugins
@@ -544,8 +545,11 @@ def register_callbacks(app):
             viz_name = button_id["index"]
 
         data = result_cache.get(node_id, {})
-        ref = data.get("ref")
-        main = data.get("main")
+        ref = reshape_to_3d(data.get("ref"))
+        main = reshape_to_3d(data.get("main"))
+
+        np.nan_to_num(ref, nan=0.0, posinf=0.0, neginf=0.0)
+        np.nan_to_num(main, nan=0.0, posinf=0.0, neginf=0.0)
 
         if viz_name == "viz1":
             if viz_name in store_figure:
@@ -609,8 +613,6 @@ def register_callbacks(app):
             if viz_name in store_figure:
                 viz = store_figure[viz_name]
             else:
-                ref = reshape_to_3d(ref)
-                main = reshape_to_3d(main)
                 viz = isosurface_diff(ref, main)
                 store_figure[viz_name] = viz
 
@@ -622,8 +624,6 @@ def register_callbacks(app):
             if viz_name in store_figure:
                 viz = store_figure[viz_name]
             else:
-                ref = reshape_to_3d(ref)
-                main = reshape_to_3d(main)
                 viz = interactive_tensor_diff_dashboard(ref, main)
                 store_figure[viz_name] = viz
 
@@ -655,8 +655,6 @@ def register_callbacks(app):
             if viz_name in store_figure:
                 viz = store_figure[viz_name]
             else:
-                ref = reshape_to_3d(ref)
-                main = reshape_to_3d(main)
                 viz = hierarchical_diff_visualization(ref, main)
                 store_figure[viz_name] = viz
 
@@ -688,8 +686,6 @@ def register_callbacks(app):
             if viz_name in store_figure:
                 viz = store_figure[viz_name]
             else:
-                ref = reshape_to_3d(ref)
-                main = reshape_to_3d(main)
                 viz = tensor_network_visualization(ref, main)
                 store_figure[viz_name] = viz
 
@@ -721,8 +717,6 @@ def register_callbacks(app):
             if viz_name in store_figure:
                 viz = store_figure[viz_name]
             else:
-                ref = reshape_to_3d(ref)
-                main = reshape_to_3d(main)
                 viz = channel_correlation_matrices(ref, main)
                 store_figure[viz_name] = viz
 

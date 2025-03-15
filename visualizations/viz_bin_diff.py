@@ -41,6 +41,9 @@ def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
     cpu = reshape_to_3d(cpu)
     xpu = reshape_to_3d(xpu)
 
+    np.nan_to_num(cpu, nan=0.0, posinf=0.0, neginf=0.0)
+    np.nan_to_num(xpu, nan=0.0, posinf=0.0, neginf=0.0)
+
     diff = cpu - xpu
     C, H, W = cpu.shape
 

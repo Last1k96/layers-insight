@@ -1,35 +1,6 @@
 import numpy as np
 import plotly.graph_objects as go
-from dash import html
-
-
-# For demonstration, we create a synthetic 3D difference tensor.
-# In practice, replace this with your actual difference tensor data.
-def convert_to_volume(tensor):
-    """
-    Convert an input tensor to a canonical 3D volume with shape (D, H, W).
-
-    Acceptable input shapes:
-      • HW   : (H, W)         → returns (1, H, W)
-      • CHW  : (C, H, W)      → returns (C, H, W)
-      • NCHW : (1, C, H, W)   → returns (C, H, W)
-
-    If the tensor has ndim == 3, it is assumed to be in CHW format.
-    """
-    if tensor.ndim == 2:
-        # Assume a single-slice volume; add a depth channel.
-        return tensor[np.newaxis, ...]
-    elif tensor.ndim == 3:
-        # Already in CHW format.
-        return tensor
-    elif tensor.ndim == 4:
-        N, C, H, W = tensor.shape
-        if N != 1:
-            raise ValueError("Only NCHW tensors with N==1 are supported for volumetric visualization.")
-        return tensor[0]  # Remove the batch dimension.
-    else:
-        raise ValueError(f"Unsupported tensor dimensions = {tensor.ndim}. Expected HW, CHW, or NCHW with N==1.")
-    # TODO disable visualization for 1D tensors
+from visualizations.viz_bin_diff import reshape_to_3d
 
 
 def pool_dimension(volume: np.ndarray, axis: int, max_size: int) -> np.ndarray:
@@ -86,7 +57,9 @@ def pool_each_dim_individually(volume: np.ndarray, max_size: int) -> np.ndarray:
 
 def plot_volume_tensor(tensor):
     # Convert the input tensor to a volume with shape (C, H, W)
-    volume = convert_to_volume(tensor)
+    volume = reshape_to_3d(tensor)
+    volume = np.nan_to_num(volume, nan=0.0, posinf=0.0, neginf=0.0)
+
     # Optionally you could reduce the number of points by "MaxPooling" the data.
     # volume = pool_each_dim_individually(volume, 40)
 
@@ -110,8 +83,14 @@ def plot_volume_tensor(tensor):
     vals_abs = np.abs(vals)
 
     val_min, val_max = vals_abs.min(), vals_abs.max()
+    range_val = val_max - val_min
+
+    if range_val == 0:
+        normalized = np.zeros_like(vals_abs)
+    else:
+        normalized = (vals_abs - val_min) / range_val
+
     threshold = 0.2  # Define your threshold
-    normalized = (vals_abs - val_min) / (val_max - val_min)
     clamped = np.where(normalized < threshold, 0, normalized)
     point_sizes = 30 * clamped ** 1.5
 

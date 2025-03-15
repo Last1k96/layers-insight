@@ -103,7 +103,7 @@ def configure_preprocessor(model, model_rt, img):
     inp = ppp.input()
 
     # cv2 reads images in channel-minor layout
-    inp.tensor().set_layout(Layout("NHWC"))
+    # inp.tensor().set_layout(Layout("NHWC"))
     inp.tensor().set_element_type(Type.u8)
     inp.tensor().set_shape(img.shape)
 
@@ -129,7 +129,7 @@ def configure_preprocessor(model, model_rt, img):
     return preprocessed_model
 
 
-def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs):
+def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs, seed):
     ov, core = get_ov_core(openvino_bin)
     model = core.read_model(model=model_xml)
 
@@ -144,17 +144,25 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
     # TODO support multiple inputs
     input_path = model_inputs[0]
 
+    model_input = model.inputs[0]
+    np.random.seed(hash(seed) % (2 ** 32))
+    shape = list(model_input.shape)
+    random_array = np.random.rand(*shape)
+
     # TODO figure out a way of differentiating between an image and a binary input to consider preprocessing
     img = cv2.imread(input_path, cv2.IMREAD_COLOR_RGB)
     if img is None:
+        print(f"Error: Failed to load image: {input_path=}")
         return "Error: Failed to load image"
 
     img = np.expand_dims(img, axis=0)
 
     # Use runtime info from the original model because cut model loses that information for some reason
-    model_rt = model.get_rt_info()
-    sub_model = configure_preprocessor(sub_model, model_rt, img)
-    inputs = [img]
+    # model_rt = model.get_rt_info()
+    # sub_model = configure_preprocessor(sub_model, model_rt, img)
+
+    inputs = [random_array]  # [img]
+
 
     # Define dimensions
     # batch_size = 1
@@ -166,10 +174,13 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
     # inputs = [input_ids, attention_mask, token_type_ids]
 
     results = []
-    for plugin in [main_plugin, ref_plugin]:
-        compiled_model = core.compile_model(sub_model, plugin)
-        inference_results = compiled_model(inputs)
-        results.append(inference_results)
+    try:
+        for plugin in [main_plugin, ref_plugin]:
+            compiled_model = core.compile_model(sub_model, plugin)
+            inference_results = compiled_model(inputs)
+            results.append(inference_results)
+    except Exception as e:
+        print(e)
 
     # TODO multiple outputs
     for main_key, ref_key in zip(results[0].keys(), results[1].keys()):

@@ -60,17 +60,16 @@ def animated_slices(tensor1, tensor2, axis=0, fps=10):
 
 
 # 2. Isosurface Rendering
-def isosurface_diff(tensor1, tensor2, thresholds=None):
+def isosurface_diff(tensor1, tensor2):
     diff = np.abs(tensor1 - tensor2)
     diff = diff.transpose(0, 2, 1)
 
     # Default thresholds based on percentiles of the difference
-    if thresholds is None:
-        thresholds = [
-            np.percentile(diff, 75),
-            np.percentile(diff, 85),
-            np.percentile(diff, 95)
-        ]
+    thresholds = [
+        np.percentile(diff, 75),
+        np.percentile(diff, 85),
+        np.percentile(diff, 95)
+    ]
 
     fig = go.Figure()
 
@@ -79,8 +78,12 @@ def isosurface_diff(tensor1, tensor2, thresholds=None):
     colors = [colors[int(i * (len(colors) - 1) / (len(thresholds) - 1))]
               for i in range(len(thresholds))]
 
+    data_min, data_max = diff.min(), diff.max()
+
     for i, threshold in enumerate(thresholds):
-        # Generate isosurface vertices and faces
+        if threshold <= data_min or threshold >= data_max:
+            continue
+
         verts, faces, _, _ = measure.marching_cubes(diff, threshold)
 
         # Create the isosurface mesh
@@ -497,10 +500,18 @@ def tensor_network_visualization(tensor1, tensor2):
         node_size.append(30)
         node_color.append('rgba(100, 100, 255, 0.8)')
 
+    max_diff = np.max(diff)
+    if max_diff == 0:
+        max_diff = 1  # Or handle it as needed, e.g., skip processing
+
     # Add slice nodes
     for i, slice_info in enumerate(slices):
         dim = slice_info['dim']
         idx = slice_info['index']
+
+        # Ensure that shape[dim] is not zero to avoid division by zero in the angle calculation
+        if shape[dim] == 0:
+            continue  # or handle appropriately
 
         # Position slice nodes in circles around dimension nodes
         radius = 0.3
@@ -512,11 +523,11 @@ def tensor_network_visualization(tensor1, tensor2):
         node_y.append(y)
         node_text.append(f"{dim_names[dim][0]}[{idx}]: {slice_info['mean_diff']:.4f}")
 
-        # Size node by max difference
-        node_size.append(10 + 40 * slice_info['max_diff'] / np.max(diff))
+        # Size node by max difference using safe max_diff value
+        node_size.append(10 + 40 * slice_info['max_diff'] / max_diff)
 
-        # Color node by mean difference
-        intensity = int(255 * slice_info['mean_diff'] / np.max(diff))
+        # Color node by mean difference using safe max_diff value
+        intensity = int(255 * slice_info['mean_diff'] / max_diff)
         node_color.append(f'rgba({255 - intensity}, {255 - intensity}, 255, 0.7)')
 
     # Create the figure

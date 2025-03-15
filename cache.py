@@ -26,21 +26,16 @@ def process_tasks():
         if task is None:
             break
         try:
-            node_id, layer_name, layer_type, config_data = task
-
-            openvino_bin = config_data.get("ov_bin_path")
-            model_xml = config_data.get("model_xml")
-            ref_plugin = config_data.get("plugin1")
-            main_plugin = config_data.get("plugin2")
-            model_inputs = config_data.get("model_inputs", [])
+            node_id, layer_name, layer_type, config = task
 
             result = run_partial_inference(
-                openvino_bin=openvino_bin,
-                model_xml=model_xml,
+                openvino_bin=config.get("ov_bin_path"),
+                model_xml=config.get("model_xml"),
                 layer_name=layer_name,
-                ref_plugin=ref_plugin,
-                main_plugin=main_plugin,
-                model_inputs=model_inputs
+                ref_plugin=config.get("plugin1"),
+                main_plugin=config.get("plugin2"),
+                model_inputs=config.get("model_inputs", []),
+                seed=config["datetime"]
             )
 
             result["node_id"] = node_id
