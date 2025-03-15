@@ -316,31 +316,45 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             id="keyboard",
             captureKeys=["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown", "Control"],
         ),
-        html.Ul(
-            id='layer-panel-list',
-            style={'padding': '2px', 'height': '100%', 'overflow': 'auto'},
-        ),
+        html.Div(
+            children=[
+                html.Ul(
+                    id='layer-panel-list',
+                    style={'padding': '2px'}
+                )
+            ],
+            style={
+                'maxHeight': '100vh',
+                'overflowY': 'auto'
+            }
+        )
     ])
 
     right_pane = html.Div([
         html.H3(id='right-panel-layer-name', children=["Layer's Status"]),
         html.Div(
-            id='right-panel',
-            style={'padding': '10px', 'height': '100%', 'overflow': 'auto'},
-        ),
-        dbc.Button(
-            "Visualization",
-            id="visualization-button",
-            color="secondary",
-            className="w-100",
-            style={'display': 'none'}  # will be updated by update_stats callback
-        ),
-        dbc.Button(
-            "Save outputs",
-            id="save-outputs-button",
-            color="secondary",
-            className="w-100",
-            style={'display': 'none'}  # will be updated by update_stats callback
+            children=[
+                html.Div(
+                    id='right-panel',
+                    style={'height': '100%', 'overflow': 'auto'},
+                ),
+                dbc.Button(
+                    "Visualization",
+                    id="visualization-button",
+                    color="secondary",
+                    style={'display': 'none'}  # will be updated by update_stats callback
+                ),
+                dbc.Button(
+                    "Save outputs",
+                    id="save-outputs-button",
+                    color="secondary",
+                    style={'display': 'none'}  # will be updated by update_stats callback
+                )
+            ],
+            style={
+                'maxHeight': '100vh',
+                'overflowY': 'auto'
+            }
         )
     ])
 
