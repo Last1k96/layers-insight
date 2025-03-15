@@ -9,6 +9,13 @@ result_cache = {}
 processing_layers = {}
 task_queue = Queue()
 
+# The problem with Dash dcc.Store elements is when you have Output and State having the same element
+# the State object could have stale data if the callback for reading the State is enqueued right after
+# the state was updated with Output. State captures the data as the callback was created, thus if it was
+# created while you were updating the State, you will lose the updated state in the next callback.
+# Use global variables for cases where we are both reading the State and Output-ing the same state in the same callback
+layers_store_data = []
+
 lock = threading.Lock()
 
 # Start background processing thread

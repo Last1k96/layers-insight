@@ -11,7 +11,7 @@ from dash import no_update, callback_context, exceptions, html, dcc
 from dash.dependencies import Input, Output, State, ALL
 from run_inference import get_available_plugins
 
-from cache import result_cache, task_queue, processing_layers, lock
+from cache import result_cache, task_queue, processing_layers, lock, layers_store_data
 from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, \
     interactive_tensor_diff_dashboard, \
     hierarchical_diff_visualization, tensor_network_visualization, channel_correlation_matrices
@@ -71,15 +71,14 @@ def register_callbacks(app):
         if not ctx.triggered:
             return no_update
 
-        with lock:
-            finished_nodes = [node for node in processing_layers if node in result_cache]
-            if not finished_nodes:
-                return no_update
+        finished_nodes = [node for node in processing_layers if node in result_cache]
+        if not finished_nodes:
+            return no_update
 
-            for node_id in finished_nodes:
-                processing_layers.pop(node_id)
+        for node_id in finished_nodes:
+            processing_layers.pop(node_id)
 
-            return finished_nodes
+        return finished_nodes
 
     @app.callback(
         Output('selected-node-id-store', 'data'),
@@ -131,40 +130,39 @@ def register_callbacks(app):
         new_elements = copy.deepcopy(elements)
 
         if any(trigger.startswith('first-load') for trigger in triggers):
-            with lock:
-                for element in new_elements:
-                    node_id = element['data'].get("id")
+            for element in new_elements:
+                node_id = element['data'].get("id")
 
-                    if node_id in result_cache:
-                        element['data']['border_color'] = 'green'
+                if node_id in result_cache:
+                    element['data']['border_color'] = 'green'
 
-                    if node_id in processing_layers:
-                        element['data']['border_color'] = 'yellow'
+                if node_id in processing_layers:
+                    element['data']['border_color'] = 'yellow'
+
+            return new_elements
 
         if any(trigger.startswith('ir-graph') for trigger in triggers):
-            with lock:
-                node_id = tap_node['data'].get('id')
+            node_id = tap_node['data'].get('id')
 
-                if node_id not in result_cache:
-                    layer_name = tap_node['data'].get('layer_name')
-                    layer_type = tap_node['data'].get('type')
+            if node_id not in result_cache and not any(task[0] == node_id for task in task_queue.queue):
+                layer_name = tap_node['data'].get('layer_name')
+                layer_type = tap_node['data'].get('type')
 
-                    processing_layers[node_id] = {
-                        "layer_name": layer_name,
-                        "layer_type": layer_type
-                    }
+                processing_layers[node_id] = {
+                    "layer_name": layer_name,
+                    "layer_type": layer_type
+                }
 
-                    task_queue.put((node_id, layer_name, layer_type, config_data))
-                    update_node_style(new_elements, node_id, 'orange')
+                task_queue.put((node_id, layer_name, layer_type, config_data))
+                update_node_style(new_elements, node_id, 'orange')
 
-                set_selected_node_style(new_elements, node_id)
+            set_selected_node_style(new_elements, node_id)
 
         if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers):
-            with lock:
-                # TODO do a proper error handling
-                for element in new_elements:
-                    if element['data'].get('id') in finished_nodes:
-                        element['data']['border_color'] = 'green'
+            # TODO do a proper error handling
+            for element in new_elements:
+                if element['data'].get('id') in finished_nodes:
+                    element['data']['border_color'] = 'green'
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
             selected_layer = layers_list[selected_layer_index]
@@ -180,66 +178,64 @@ def register_callbacks(app):
         Input('first-load', 'pathname'),
         Input('ir-graph', 'tapNode'),
         Input('just-finished-tasks-store', 'data'),
-        State('layers-store', 'data'),
         prevent_initial_call=True
     )
-    def update_layers_list(_, tap_node, finished_nodes, layers_list):
+    def update_layers_list(_, tap_node, finished_nodes):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
-
-        layer_list_out = no_update
-        clicked_graph_node_id = no_update
+        print(f"[{datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")}] {triggers}")
 
         if any(trigger.startswith('first-load') for trigger in triggers):
-            with lock:
-                layer_list_out = []
+            layer_list_out = []
 
-                for node_id, result in result_cache.items():
-                    layer_list_out.append({
-                        "node_id": node_id,
-                        "layer_name": result["layer_name"],
-                        "layer_type": result["layer_type"],
-                        "done": True
-                    })
+            for node_id, result in result_cache.items():
+                layer_list_out.append({
+                    "node_id": node_id,
+                    "layer_name": result["layer_name"],
+                    "layer_type": result["layer_type"],
+                    "done": True
+                })
 
-                for node_id, result in processing_layers.items():
-                    layer_list_out.append({
-                        "node_id": node_id,
-                        "layer_name": result["layer_name"],
-                        "layer_type": result["layer_type"],
-                        "done": False
-                    })
+            for node_id, result in processing_layers.items():
+                layer_list_out.append({
+                    "node_id": node_id,
+                    "layer_name": result["layer_name"],
+                    "layer_type": result["layer_type"],
+                    "done": False
+                })
 
-                layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
+            layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
+            return layer_list_out, no_update
+
+
+        layer_list_out = layers_store_data
+        clicked_graph_node_id = no_update
 
         if any(trigger.startswith('ir-graph') for trigger in triggers):
-            with lock:
-                layer_list_out = layers_list
+            node_id = tap_node['data'].get('id')
+            clicked_graph_node_id = node_id  # To trigger layer selection after new layer was added to the list
+            if node_id not in result_cache and not any(layer["node_id"] == node_id for layer in layer_list_out):
+                layer_name = tap_node['data'].get('layer_name')
+                layer_type = tap_node['data'].get('type')
 
-                node_id = tap_node['data'].get('id')
-                clicked_graph_node_id = node_id  # To trigger layer selection after new layer was added to the list
-                if node_id not in result_cache:
-                    layer_name = tap_node['data'].get('layer_name')
-                    layer_type = tap_node['data'].get('type')
-
-                    list_of_ids = [int(item["node_id"]) for item in layer_list_out]
-                    insertion_index = bisect.bisect_left(list_of_ids, int(node_id))
-                    layer_list_out.insert(insertion_index, {
-                        "node_id": node_id,
-                        "layer_name": layer_name,
-                        "layer_type": layer_type,
-                        "done": False
-                    })
+                list_of_ids = [int(item["node_id"]) for item in layer_list_out]
+                insertion_index = bisect.bisect_left(list_of_ids, int(node_id))
+                layer_list_out.insert(insertion_index, {
+                    "node_id": node_id,
+                    "layer_name": layer_name,
+                    "layer_type": layer_type,
+                    "done": False
+                })
 
         if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers) and finished_nodes:
-            layer_list_out = layers_list
-
+            print(f"\t {finished_nodes=}")
             for layer in layer_list_out:
                 if layer["node_id"] in finished_nodes:
                     layer["done"] = True
+            print(f"\t {layer_list_out=}")
 
         return layer_list_out, clicked_graph_node_id
 
