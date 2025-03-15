@@ -11,7 +11,7 @@ from dash import no_update, callback_context, exceptions, html, dcc
 from dash.dependencies import Input, Output, State, ALL
 from run_inference import get_available_plugins
 
-from cache import result_cache, task_queue, processing_layers, lock, layers_store_data
+from cache import result_cache, task_queue, processing_layers, layers_store_data
 from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, \
     interactive_tensor_diff_dashboard, \
     hierarchical_diff_visualization, tensor_network_visualization, channel_correlation_matrices
@@ -85,10 +85,9 @@ def register_callbacks(app):
         Output('selected-layer-name-store', 'data'),
         Input('ir-graph', 'tapNode'),
         Input('selected-layer-index-store', 'data'),
-        State('layers-store', 'data'),
         prevent_initial_call=True
     )
-    def update_selected_node_id(tap_node, selected_layer_index, layers_list):
+    def update_selected_node_id(tap_node, selected_layer_index):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -103,7 +102,7 @@ def register_callbacks(app):
             selected_layer_name = tap_node['data'].get('layer_name')
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
-            selected_layer = layers_list[selected_layer_index]
+            selected_layer = layers_store_data[selected_layer_index]
             selected_node_id = selected_layer["node_id"]
             selected_layer_name = selected_layer["layer_name"]
 
@@ -117,10 +116,9 @@ def register_callbacks(app):
         Input('selected-layer-index-store', 'data'),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
-        State('layers-store', 'data'),
         prevent_initial_call=True
     )
-    def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, elements, config_data, layers_list):
+    def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, elements, config_data):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -165,7 +163,7 @@ def register_callbacks(app):
                     element['data']['border_color'] = 'green'
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
-            selected_layer = layers_list[selected_layer_index]
+            selected_layer = layers_store_data[selected_layer_index]
             node_id = selected_layer["node_id"]
 
             set_selected_node_style(new_elements, node_id)
@@ -186,7 +184,6 @@ def register_callbacks(app):
             return no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
-        print(f"[{datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")}] {triggers}")
 
         if any(trigger.startswith('first-load') for trigger in triggers):
             layer_list_out = []
@@ -231,11 +228,9 @@ def register_callbacks(app):
                 })
 
         if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers) and finished_nodes:
-            print(f"\t {finished_nodes=}")
             for layer in layer_list_out:
                 if layer["node_id"] in finished_nodes:
                     layer["done"] = True
-            print(f"\t {layer_list_out=}")
 
         return layer_list_out, clicked_graph_node_id
 
@@ -300,14 +295,13 @@ def register_callbacks(app):
         Input("keyboard", "n_keydowns"),
         Input({'type': 'layer-li', 'index': ALL}, 'n_clicks'),
         Input('clicked-graph-node-id-store', 'data'),
-        State('layers-store', 'data'),
         State("keyboard", "keydown"),
         State('selected-layer-index-store', 'data'),
         State("inference-settings-modal", "is_open"),
         State("visualization-modal", "is_open"),
         prevent_initial_call=True
     )
-    def update_selected_layer(n_keydowns, li_n_clicks, clicked_graph_node_id, layers_list, keydown,
+    def update_selected_layer(n_keydowns, li_n_clicks, clicked_graph_node_id, keydown,
                               selected_layer_index, is_settings_opened, is_visualization_opened):
         ctx = callback_context
         if not ctx.triggered:
@@ -321,13 +315,13 @@ def register_callbacks(app):
         new_index = no_update
 
         if any(trigger.startswith('clicked-graph-node-id-store') for trigger in triggers):
-            for index, element in enumerate(layers_list):
+            for index, element in enumerate(layers_store_data):
                 if element["node_id"] == clicked_graph_node_id:
                     new_index = index
                     break
 
         if any(trigger.startswith('keyboard') for trigger in triggers):
-            num_layers = len(layers_list)
+            num_layers = len(layers_store_data)
             if num_layers > 0:
                 pressed_key = keydown.get('key')
                 PAGE_STEP = 5
@@ -367,11 +361,10 @@ def register_callbacks(app):
         Input('selected-node-id-store', 'data'),
         Input('selected-layer-index-store', 'data'),
         Input('just-finished-tasks-store', 'data'),
-        State('layers-store', 'data'),
         State('selected-layer-name-store', 'data'),
         prevent_initial_call=True
     )
-    def update_stats(selected_node_id, selected_layer_index, finished_nodes, layers_list, selected_layer_name):
+    def update_stats(selected_node_id, selected_layer_index, finished_nodes, selected_layer_name):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, {'display': 'none'}, {'display': 'none'}
@@ -383,7 +376,7 @@ def register_callbacks(app):
             node_id = selected_node_id
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
-            selected_layer = layers_list[selected_layer_index]
+            selected_layer = layers_store_data[selected_layer_index]
             node_id = selected_layer["node_id"]
 
         if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers) and finished_nodes:
