@@ -11,7 +11,8 @@ from dash import no_update, callback_context, html, dcc
 from dash.dependencies import Input, Output, State, ALL
 from run_inference import get_available_plugins
 
-from cache import result_cache, task_queue, processing_layers, layers_store_data
+from cache import result_cache, task_queue, processing_layers
+import cache
 from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, \
     interactive_tensor_diff_dashboard, \
     hierarchical_diff_visualization, tensor_network_visualization, channel_correlation_matrices
@@ -102,7 +103,7 @@ def register_callbacks(app):
             selected_layer_name = tap_node['data'].get('layer_name')
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
-            selected_layer = layers_store_data[selected_layer_index]
+            selected_layer = cache.layers_store_data[selected_layer_index]
             selected_node_id = selected_layer["node_id"]
             selected_layer_name = selected_layer["layer_name"]
 
@@ -125,10 +126,8 @@ def register_callbacks(app):
 
         triggers = [t['prop_id'] for t in ctx.triggered]
 
-        new_elements = copy.deepcopy(elements)
-
         if any(trigger.startswith('first-load') for trigger in triggers):
-            for element in new_elements:
+            for element in elements:
                 node_id = element['data'].get("id")
 
                 if node_id in result_cache:
@@ -137,7 +136,10 @@ def register_callbacks(app):
                 if node_id in processing_layers:
                     element['data']['border_color'] = 'yellow'
 
-            return new_elements
+            cache.ir_graph_elements = elements
+            return elements
+
+        new_elements = cache.ir_graph_elements
 
         if any(trigger.startswith('ir-graph') for trigger in triggers):
             node_id = tap_node['data'].get('id')
@@ -163,7 +165,7 @@ def register_callbacks(app):
                     element['data']['border_color'] = 'green'
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
-            selected_layer = layers_store_data[selected_layer_index]
+            selected_layer = cache.layers_store_data[selected_layer_index]
             node_id = selected_layer["node_id"]
 
             set_selected_node_style(new_elements, node_id)
@@ -207,8 +209,7 @@ def register_callbacks(app):
             layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
             return layer_list_out, no_update
 
-
-        layer_list_out = layers_store_data
+        layer_list_out = cache.layers_store_data
         clicked_graph_node_id = no_update
 
         if any(trigger.startswith('ir-graph') for trigger in triggers):
@@ -315,13 +316,13 @@ def register_callbacks(app):
         new_index = no_update
 
         if any(trigger.startswith('clicked-graph-node-id-store') for trigger in triggers):
-            for index, element in enumerate(layers_store_data):
+            for index, element in enumerate(cache.layers_store_data):
                 if element["node_id"] == clicked_graph_node_id:
                     new_index = index
                     break
 
         if any(trigger.startswith('keyboard') for trigger in triggers):
-            num_layers = len(layers_store_data)
+            num_layers = len(cache.layers_store_data)
             if num_layers > 0:
                 pressed_key = keydown.get('key')
                 PAGE_STEP = 5
@@ -376,7 +377,7 @@ def register_callbacks(app):
             node_id = selected_node_id
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
-            selected_layer = layers_store_data[selected_layer_index]
+            selected_layer = cache.layers_store_data[selected_layer_index]
             node_id = selected_layer["node_id"]
 
         if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers) and finished_nodes:

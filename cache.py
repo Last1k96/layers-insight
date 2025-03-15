@@ -15,6 +15,7 @@ task_queue = Queue()
 # created while you were updating the State, you will lose the updated state in the next callback.
 # Use global variables for cases where we are both reading the State and Output-ing the same state in the same callback
 layers_store_data = []
+ir_graph_elements = {}
 
 lock = threading.Lock()
 
