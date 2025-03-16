@@ -73,6 +73,10 @@ def isosurface_diff(tensor1, tensor2):
 
     fig = go.Figure()
 
+    shape = tensor1.shape
+    if shape[0] < 2 or shape[1] < 2 or shape[2] < 2:
+        return fig
+
     # Create a colormap for the thresholds
     colors = px.colors.sequential.Plasma
     colors = [colors[int(i * (len(colors) - 1) / (len(thresholds) - 1))]

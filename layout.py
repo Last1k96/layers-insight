@@ -111,12 +111,7 @@ def read_openvino_ir(model_xml_path):
     return inputs_info
 
 
-def build_model_input_fields(model_path, inputs_path):
-    model_inputs = read_openvino_ir(model_path)
-
-    if len(inputs_path) == 0 or len(inputs_path) != len(model_inputs):
-        inputs_path = [""] * len(model_inputs)
-
+def build_model_input_fields(model_inputs, inputs_path):
     components = []
     for index, (model_input, input_path) in enumerate(zip(model_inputs, inputs_path), start=1):
         name = model_input["name"]
@@ -139,8 +134,8 @@ def build_model_input_fields(model_path, inputs_path):
     return html.Div(components)
 
 
-def create_layout(openvino_path, ir_xml_path, inputs_path):
-    elements = parse_openvino_ir(ir_xml_path)
+def create_layout(openvino_path, model_path, inputs_path):
+    elements = parse_openvino_ir(model_path)
     dynamic_stylesheet = build_dynamic_stylesheet(elements)
 
     if openvino_path and os.path.exists(openvino_path):
@@ -156,10 +151,15 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
     non_cpu_plugins = [p for p in discovered_plugins if p != "CPU"]
     plugin2_value = non_cpu_plugins[0] if non_cpu_plugins else None
 
+    model_inputs = read_openvino_ir(model_path)
+
+    if len(inputs_path) == 0 or len(inputs_path) != len(model_inputs):
+        inputs_path = [""] * len(model_inputs)
+
     initial_config = {}
     update_config(
         initial_config,
-        ir_xml_path,
+        model_path,
         openvino_path,
         plugin1_value,
         plugin2_value,
@@ -177,11 +177,11 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
                     dbc.Label("Path to model.xml"),
                     dbc.Input(
                         id="model-xml-path",
-                        value=ir_xml_path,
+                        value=model_path,
                         placeholder="Enter path to model.xml"
                     ),
                     html.Br(),
-                    build_model_input_fields(ir_xml_path, inputs_path),
+                    build_model_input_fields(model_inputs, inputs_path),
                     dbc.Label("Path to OpenVINO bin folder"),
                     dbc.Input(
                         id="ov-bin-path",
