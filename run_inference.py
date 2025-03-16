@@ -86,47 +86,80 @@ def get_conversion_params(model_rt):
 
     return params
 
+IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
 
-def configure_preprocessor(model, model_rt, img):
-    # openvino dependencies should be available through developer's openvino binaries
+def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
     from openvino import Type, Layout
     from openvino.preprocess import PrePostProcessor, ResizeAlgorithm
 
-    conv_params = get_conversion_params(model_rt)
+    # Create a PrePostProcessor instance for the sub-model.
+    ppp = PrePostProcessor(sub_model)
+    inputs = []
 
-    layout = extract_layout(conv_params.get("layout", ""))
+    for i, input_path in enumerate(model_inputs):
+        model_input = sub_model.input(i)
+        input_shape = list(model_input.get_shape())
 
-    # TODO configure pre-post processor for multiple inputs
-    # or just not use ppp due to lack of multi-image input models?
-    ppp = PrePostProcessor(model)
+        if not input_path or input_path.strip() == "":
+            np.random.seed(hash(seed) % (2 ** 32))
+            random_array = np.random.rand(*input_shape).astype(np.float32)
+            inputs.append(random_array)
+            ppp.input(i).tensor().set_shape(random_array.shape)
+            ppp.input(i).tensor().set_element_type(Type.f16)
+            continue
 
-    inp = ppp.input()
+        if input_path.lower().endswith(IMAGE_EXTENSIONS):
+            img = cv2.imread(input_path, cv2.IMREAD_COLOR)
+            if img is None:
+                err = f"Error: Failed to load image: {input_path}"
+                print(err)
+                return None, err
 
-    # cv2 reads images in channel-minor layout
-    inp.tensor().set_layout(Layout("NHWC"))
-    inp.tensor().set_element_type(Type.u8)
-    inp.tensor().set_shape(img.shape)
+            img = np.expand_dims(img, axis=0)
+            inputs.append(img)
 
-    inp.preprocess().convert_element_type(Type.f16)  # Should there be fp16? should it be configurable?
+            inp = ppp.input(i)
+            inp.tensor().set_layout(Layout("NHWC"))
+            inp.tensor().set_element_type(Type.u8)
+            inp.tensor().set_shape(img.shape)
 
-    input_shape = parse_shape(conv_params.get("input_shape", ""))
-    height, width = (input_shape[1], input_shape[2]) if layout == "nhwc" else (input_shape[2], input_shape[3])
-    inp.preprocess().resize(ResizeAlgorithm.RESIZE_LINEAR, height, width)
+            inp.preprocess().convert_element_type(Type.f16)
 
-    reverse_channels = conv_params.get("reverse_input_channels", "false").lower() == "true"
-    if reverse_channels:
-        inp.preprocess().reverse_channels()
+            conv_params = get_conversion_params(model_rt)
+            layout = extract_layout(conv_params.get("layout", ""))
+            input_shape_str = conv_params.get("input_shape", "")
+            input_shape_parsed = parse_shape(input_shape_str)
+            if layout == "nhwc":
+                height, width = input_shape_parsed[1], input_shape_parsed[2]
+            else:
+                height, width = input_shape_parsed[2], input_shape_parsed[3]
+            inp.preprocess().resize(ResizeAlgorithm.RESIZE_LINEAR, height, width)
 
-    mean_vals = parse_values(conv_params.get("mean_values", ""))
-    if mean_vals:
-        inp.preprocess().mean(mean_vals)
+            reverse_channels = conv_params.get("reverse_input_channels", "false").lower() == "true"
+            if reverse_channels:
+                inp.preprocess().reverse_channels()
 
-    scale_vals = parse_values(conv_params.get("scale_values", ""))
-    if scale_vals:
-        inp.preprocess().scale(scale_vals)
+            mean_vals = parse_values(conv_params.get("mean_values", ""))
+            if mean_vals:
+                inp.preprocess().mean(mean_vals)
+            scale_vals = parse_values(conv_params.get("scale_values", ""))
+            if scale_vals:
+                inp.preprocess().scale(scale_vals)
+        else:
+            data = np.fromfile(input_path, dtype=np.float32)  # Adjust dtype if needed.
+            if data.size != np.prod(input_shape):
+                err = (f"Error: Binary file '{input_path}' size ({data.size}) "
+                       f"does not match expected shape {input_shape}")
+                print(err)
+                return None, err
+
+            data = data.reshape(input_shape)
+            inputs.append(data)
+            ppp.input(i).tensor().set_shape(data.shape)
+            ppp.input(i).tensor().set_element_type(Type.f16)
 
     preprocessed_model = ppp.build()
-    return preprocessed_model
+    return inputs, preprocessed_model
 
 
 def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs, seed):
@@ -141,58 +174,30 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
     parameters = [inp.get_node() for inp in model.inputs]
     sub_model = ov.Model([intermediate_nodes[0]], parameters, "sub_model")
 
-    # TODO support multiple inputs
-    input_path = model_inputs[0]
-
-    # model_input = model.inputs[0]
-    # np.random.seed(hash(seed) % (2 ** 32))
-    # shape = list(model_input.shape)
-    # random_array = np.random.rand(*shape)
-
-    # TODO figure out a way of differentiating between an image and a binary input to consider preprocessing
-    img = cv2.imread(input_path, cv2.IMREAD_COLOR_RGB)
-    if img is None:
-        print(f"Error: Failed to load image: {input_path=}")
-        return "Error: Failed to load image"
-
-    img = np.expand_dims(img, axis=0)
-
-    # Use runtime info from the original model because cut model loses that information for some reason
     model_rt = model.get_rt_info()
-    sub_model = configure_preprocessor(sub_model, model_rt, img)
 
-    inputs = [img]  # [img]
-
-
-    # Define dimensions
-    # batch_size = 1
-    # seq_length = 384
-    # vocab_size = 30522  # Typical BERT vocab size
-    # input_ids = np.random.randint(0, vocab_size, size=(batch_size, seq_length), dtype=np.int32)
-    # attention_mask = np.ones((batch_size, seq_length), dtype=np.int32)
-    # token_type_ids = np.zeros((batch_size, seq_length), dtype=np.int32)
-    # inputs = [input_ids, attention_mask, token_type_ids]
+    inputs, preprocessed_model_or_err = configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed)
+    if inputs is None:
+        return preprocessed_model_or_err  # Return error message if configuration failed.
 
     results = []
     try:
         for plugin in [main_plugin, ref_plugin]:
-            compiled_model = core.compile_model(sub_model, plugin)
+            compiled_model = core.compile_model(preprocessed_model_or_err, plugin)
             inference_results = compiled_model(inputs)
             results.append(inference_results)
     except Exception as e:
         print(e)
 
-    # TODO multiple outputs
+    # Process outputs (assuming a one-to-one correspondence between outputs).
     for main_key, ref_key in zip(results[0].keys(), results[1].keys()):
         main = results[0][main_key]
         ref = results[1][ref_key]
-
         right_panel_div = html.Div([
             dbc.CardGroup([
                 comparison_metrics_table(ref, main)
             ])
         ])
-
         return {"right-panel": right_panel_div,
                 "main": main,
                 "ref": ref}

@@ -128,9 +128,9 @@ def build_model_input_fields(model_path, inputs_path):
         # Use a *pattern-matching* dictionary for `id`
         components.append(
             dbc.Input(
-                id={"type": "model-input", "name": name},  # <--- Pattern-matching ID
+                id={"type": "model-input", "name": name},
                 type="text",
-                placeholder=f"Enter path for {name}",
+                placeholder=f"Enter input path (fill with random noize if empty)",
                 value=input_path,
             )
         )
