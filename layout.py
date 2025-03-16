@@ -314,7 +314,7 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
 
         Keyboard(
             id="keyboard",
-            captureKeys=["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown", "Control"],
+            captureKeys=["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"],
         ),
         html.Div(
             children=[
@@ -420,6 +420,8 @@ def create_layout(openvino_path, ir_xml_path, inputs_path):
             dcc.Store(id='selected-node-id-store', data=None),
 
             dcc.Store(id='clicked-graph-node-id-store'),  # to break circular dependency
+
+            dcc.Store('dummy-output', data=None),
 
             dcc.Interval(id='update-interval', interval=1000, n_intervals=0),
         ],

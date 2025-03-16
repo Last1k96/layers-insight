@@ -761,37 +761,62 @@ def register_clientside_callbacks(app):
     # Center on the node when Ctrl key is being held
     app.clientside_callback(
         """
-        function(nodeId, keysPressed, settingsOpened, visualizationOpened) {
+        function(nodeId, settingsOpened, visualizationOpened) {
+            if (window.ctrlPressed === undefined) {
+                window.ctrlPressed = false;
+                document.addEventListener("keydown", function(e) {
+                    if (e.key === "Control") {
+                        window.ctrlPressed = true;
+                    }
+                });
+                document.addEventListener("keyup", function(e) {
+                    if (e.key === "Control") {
+                        window.ctrlPressed = false;
+                    }
+                });
+            }
+        
             const isSettingsOpen = settingsOpened ?? false;
             const isVisualizationOpen = visualizationOpened ?? false;
-            console.log("isSettingsOpen:", isSettingsOpen);
-            console.log("isVisualizationOpen:", isVisualizationOpen);
             if (isSettingsOpen || isVisualizationOpen) {
                 return;
             }
             
-            if (!keysPressed || !("Control" in keysPressed) || nodeId == null) {
+            if (!window.ctrlPressed || nodeId == null) {
                 return;
             }
             
             if (window.cy) {
                 const element = window.cy.getElementById(nodeId);
                 if (element.length === 0) return; // Check if node exists
+
+                const currentPan = window.cy.pan();
+                
                 const zoom = window.cy.zoom();
                 const nodePos = element.position();
                 const viewportCenterX = window.cy.width() / 2;
                 const viewportCenterY = window.cy.height() / 2;
                 const newPanX = viewportCenterX - (nodePos.x * zoom);
                 const newPanY = viewportCenterY - (nodePos.y * zoom);
+                
+                const dx = newPanX - currentPan.x;
+                const dy = newPanY - currentPan.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const duration = Math.min(300, Math.max(100, distance));
+                
+                window.cy.stop();
                 window.cy.animate({
                     pan: { x: newPanX, y: newPanY }
-                }, { duration: 150, easing: 'ease-in-out' });
+                }, { 
+                    duration: duration,
+                    easing: 'ease-in-out',
+                    queue: false
+                });
             }
             return;
         }
         """,
         Input('selected-node-id-store', 'data'),
-        State('keyboard', 'keys_pressed'),
         State("inference-settings-modal", "is_open"),
         State("visualization-modal", "is_open"),
     )
