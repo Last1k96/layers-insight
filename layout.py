@@ -173,36 +173,48 @@ def create_layout(openvino_path, model_path, inputs_path):
                 dbc.ModalTitle("Inference Configuration"),
             ),
             dbc.ModalBody(
-                [
-                    dbc.Label("Path to model.xml"),
-                    dbc.Input(
-                        id="model-xml-path",
-                        value=model_path,
-                        placeholder="Enter path to model.xml"
+                dbc.Tabs([
+                    dbc.Tab(
+                        [
+                            dbc.Label("Path to OpenVINO bin folder"),
+                            dbc.Input(
+                                id="ov-bin-path",
+                                value=openvino_path,
+                                placeholder="Path to OpenVINO bin/ folder"
+                            ),
+                            html.Br(),
+                            dbc.Label("Reference Plugin"),
+                            dcc.Dropdown(
+                                id="reference-plugin-dropdown",
+                                options=discovered_plugins,
+                                clearable=False,
+                            ),
+                            html.Br(),
+                            dbc.Label("Main Plugin"),
+                            dcc.Dropdown(
+                                id="main-plugin-dropdown",
+                                options=discovered_plugins,
+                                clearable=False,
+                            ),
+                        ],
+                        label="OpenVINO",
+                        className="p-3"
                     ),
-                    html.Br(),
-                    build_model_input_fields(model_inputs, inputs_path),
-                    dbc.Label("Path to OpenVINO bin folder"),
-                    dbc.Input(
-                        id="ov-bin-path",
-                        value=openvino_path,
-                        placeholder="Path to OpenVINO bin/ folder"
+                    dbc.Tab(
+                        [
+                            dbc.Label("Path to model.xml"),
+                            dbc.Input(
+                                id="model-xml-path",
+                                value=model_path,
+                                placeholder="Enter path to model.xml"
+                            ),
+                            html.Br(),
+                            build_model_input_fields(model_inputs, inputs_path),
+                        ],
+                        label="Model",
+                        className="p-3"  # Adds padding for better spacing
                     ),
-                    html.Br(),
-                    dbc.Label("Reference Plugin"),
-                    dcc.Dropdown(
-                        id="reference-plugin-dropdown",
-                        options=discovered_plugins,
-                        clearable=False,
-                    ),
-                    html.Br(),
-                    dbc.Label("Main Plugin"),
-                    dcc.Dropdown(
-                        id="main-plugin-dropdown",
-                        options=discovered_plugins,
-                        clearable=False,
-                    ),
-                ],
+                ])
             ),
             dbc.ModalFooter(
                 dbc.Button("Save", id="save-inference-config-button", n_clicks=0),

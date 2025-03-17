@@ -1,6 +1,6 @@
-dash==3.0.0rc3
+dash==3.0.0rc4
 dash-cytoscape
-dash-bootstrap-components~=1.7.1
+dash-bootstrap-components
 dash-split-pane
 dash_bootstrap_components
 openvino
