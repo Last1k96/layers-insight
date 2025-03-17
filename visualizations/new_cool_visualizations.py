@@ -1,6 +1,8 @@
 from matplotlib.animation import FuncAnimation
 from skimage import measure
 import matplotlib.pyplot as plt
+from plotly.subplots import make_subplots
+
 
 from visualizations.viz_bin_diff import reshape_to_3d
 
@@ -122,67 +124,6 @@ def isosurface_diff(tensor1, tensor2):
 
     return fig
 
-
-# 6. Multiple-View Tensor Unfolding
-def tensor_unfolding_diff(tensor1, tensor2):
-    """
-    Visualize tensor differences by unfolding along each mode.
-
-    Args:
-        tensor1, tensor2: Input tensors of same shape
-
-    Returns:
-        Plotly figure
-    """
-    # Calculate difference tensor
-    diff = tensor1 - tensor2
-
-    # Get tensor shape
-    shape = tensor1.shape
-
-    # Create unfoldings for each mode
-    unfoldings = []
-    for mode in range(len(shape)):
-        # Rearrange axes to put the current mode first
-        axes = [mode] + [i for i in range(len(shape)) if i != mode]
-        unfolded = np.transpose(diff, axes).reshape(shape[mode], -1)
-        unfoldings.append(unfolded)
-
-    # Create subplots for each unfolding
-    fig = make_subplots(
-        rows=len(shape), cols=1,
-        subplot_titles=[f"Mode-{i + 1} Unfolding" for i in range(len(shape))]
-    )
-
-    # Get global min/max for consistent color scaling
-    vmin = min(np.min(u) for u in unfoldings)
-    vmax = max(np.max(u) for u in unfoldings)
-    abs_max = max(abs(vmin), abs(vmax))
-
-    # Add heatmaps for each unfolding
-    for i, unfolded in enumerate(unfoldings):
-        fig.add_trace(
-            go.Heatmap(
-                z=unfolded,
-                colorscale='RdBu_r',
-                zmid=0,
-                zmin=-abs_max,
-                zmax=abs_max
-            ),
-            row=i + 1, col=1
-        )
-
-    fig.update_layout(
-        title="Tensor Difference Unfoldings",
-        margin=dict(t=30, b=5, l=30, r=30),
-    )
-
-    return fig
-
-
-# 8. Interactive 3D Dashboard (Basic Version)
-from plotly.subplots import make_subplots
-import plotly.graph_objects as go
 
 
 def interactive_tensor_diff_dashboard(reference, target):

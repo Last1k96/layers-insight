@@ -594,15 +594,15 @@ def register_callbacks(app):
                 html.Iframe(
                     srcDoc=viz,
                     style={
-                        "width": "70%",
-                        "height": "calc(100vh - 150px)",
+                        "width": "100%",
+                        "height": "100vh",
                         "border": "none",
                         "minHeight": "600px"
                     }
                 ),
                 style={
                     "width": "100%",
-                    "height": "calc(100vh - 150px)",  # Added height for vertical centering
+                    "height": "calc(100vh - 200px)",  # Added height for vertical centering
                     "display": "flex",
                     "justifyContent": "center",  # Center horizontally
                     "alignItems": "center"  # Center vertically
