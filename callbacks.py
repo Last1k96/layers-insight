@@ -620,37 +620,6 @@ def register_callbacks(app):
                              style={'width': '100%',
                                     'height': 'calc(100vh - 150px)'}), viz_name, store_figure
 
-        elif viz_name == "viz8":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
-            else:
-                viz = interactive_tensor_diff_dashboard(ref, main)
-                store_figure[viz_name] = viz
-
-            return html.Div(
-                html.Div(
-                    dcc.Graph(
-                        id="vis-graph",
-                        figure=viz,
-                        config={'responsive': True},
-                        style={
-                            "width": "100%",
-                            "height": "100%"
-                        }
-                    ),
-                    style={
-                        "height": "100%",
-                        "aspectRatio": f"{12 / 9}",
-                    }
-                ),
-                style={
-                    "height": "calc(100vh - 150px)",
-                    "display": "flex",
-                    "justifyContent": "center",  # center horizontally
-                    "alignItems": "center"  # center vertically
-                }
-            ), viz_name, store_figure
-
         elif viz_name == "viz9":
             if viz_name in store_figure:
                 viz = store_figure[viz_name]

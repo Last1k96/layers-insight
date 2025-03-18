@@ -258,8 +258,6 @@ def create_layout(openvino_path, model_path, inputs_path):
                                            className="mb-1 w-100"),
                                 dbc.Button("Per-channel unrolled", id={"type": "visualization-btn", "index": "viz2"},
                                            className="mb-1 w-100"),
-                                dbc.Button("Interactive Slicing", id={"type": "visualization-btn", "index": "viz8"},
-                                           className="mb-1 w-100"),
                                 dbc.Button("Hierarchical View", id={"type": "visualization-btn", "index": "viz9"},
                                            className="mb-1 w-100"),
                                 dbc.Button("Bubble Rings", id={"type": "visualization-btn", "index": "viz10"},
