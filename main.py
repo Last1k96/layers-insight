@@ -15,8 +15,9 @@ def get_local_ip():
 
 
 def run_app():
-    ir_path = "/home/mkurin/models/age-gender-recognition-retail-0013/age-gender-recognition-retail-0013.xml"
+    # ir_path = "/home/mkurin/models/age-gender-recognition-retail-0013/age-gender-recognition-retail-0013.xml"
     # ir_path = "/home/mkurin/models/bert-large-uncased-whole-word-masking-squad-int8-0001/bert-large-uncased-whole-word-masking-squad-int8-0001.xml"
+    ir_path = "D:/code/models/yolo_v8n/onnx/onnx/FP16/INT8/1/ov/optimized"
     openvino_path = "/home/mkurin/code/openvino/bin/intel64/Release"
     inputs_path = ["/home/mkurin/images/220325case013.jpg"]
     # inputs_path = []

@@ -15,7 +15,6 @@ from run_inference import get_available_plugins
 from cache import result_cache, task_queue, processing_layers
 import cache
 from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, \
-    interactive_tensor_diff_dashboard, \
     hierarchical_diff_visualization, tensor_network_visualization, channel_correlation_matrices
 from visualizations.visualization import plot_volume_tensor
 from visualizations.viz_bin_diff import plot_diagnostics, reshape_to_3d
