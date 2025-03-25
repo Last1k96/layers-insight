@@ -24,10 +24,11 @@ ir_graph_elements = {}
 
 lock = threading.Lock()
 
+
 # Start background processing thread
 def process_tasks():
     while True:
-        task = task_queue.get() # blocking get()
+        task = task_queue.get()  # blocking get()
         if task is None:
             break
 
@@ -57,8 +58,9 @@ def process_tasks():
         else:
             right_panel_div = html.Div([
                 dbc.CardGroup([
-                    comparison_metrics_table(output["ref"], output["main"])
-                ], style={"marginLeft": "8px"}) for output in outputs
+                    comparison_metrics_table(output["ref"], output["main"], idx),
+                ], style={"marginLeft": "8px"})
+                for idx, output in enumerate(outputs)
             ])
             status_cache[node_id] = right_panel_div
 

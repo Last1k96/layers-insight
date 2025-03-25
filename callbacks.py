@@ -10,6 +10,8 @@ from pathlib import Path
 import numpy as np
 from dash import no_update, callback_context, html, dcc
 from dash.dependencies import Input, Output, State, ALL
+from dash.exceptions import PreventUpdate
+
 from run_inference import get_available_plugins
 
 from cache import result_cache, task_queue, processing_layers
@@ -120,7 +122,8 @@ def register_callbacks(app):
         State('config-store', 'data'),
         prevent_initial_call=True
     )
-    def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, restart_layer_btn, elements, config_data):
+    def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, restart_layer_btn, elements,
+                              config_data):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -407,7 +410,6 @@ def register_callbacks(app):
     @app.callback(
         Output('right-panel-layer-name', 'children'),
         Output('right-panel', 'children'),
-        Output('visualization-button', 'style'),
         Output('save-outputs-button', 'style'),
         Output('restart-layer-button', 'style'),
         Input('selected-node-id-store', 'data'),
@@ -420,7 +422,7 @@ def register_callbacks(app):
     def update_stats(selected_node_id, selected_layer_index, finished_nodes, restart_layer_btn, selected_layer_name):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update, no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
         node_id = None
@@ -443,7 +445,7 @@ def register_callbacks(app):
                 node_id = selected_node_id
 
         if node_id is None:
-            return no_update, no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update
 
         cached_result = result_cache.get(node_id)
         if cached_result:
@@ -451,9 +453,9 @@ def register_callbacks(app):
                 return selected_layer_name, cached_result["error"], hide, hide, show
             else:
                 right_panel = cache.status_cache[node_id]
-                return selected_layer_name, right_panel, show, show, hide
+                return selected_layer_name, right_panel, show, hide
         else:
-            return selected_layer_name, "Processing...", hide, hide, hide
+            return selected_layer_name, "Processing...", hide, hide
 
     #######################################################################################################################
 
@@ -572,9 +574,10 @@ def register_callbacks(app):
         State("last-selected-visualization", "data"),
         State("config-store", "data"),
         State("selected-node-id-store", "data"),
+        State("visualization-output-id", "data"),
         prevent_initial_call=True
     )
-    def select_visualization_type(is_open, btn_clicks, store_figure, last_selected_visualization, config, node_id):
+    def select_visualization_type(is_open, btn_clicks, store_figure, last_selected_visualization, config, node_id, output_id):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update
@@ -602,29 +605,32 @@ def register_callbacks(app):
             button_id = json.loads(triggered_id)
             viz_name = button_id["index"]
 
+        store_name = f"{output_id}{viz_name}"
+
         data = result_cache.get(node_id, {})
-        ref = reshape_to_3d(data.get("ref"))
-        main = reshape_to_3d(data.get("main"))
+        output = data["outputs"][output_id]
+        ref = reshape_to_3d(output["ref"])
+        main = reshape_to_3d(output["main"])
 
         np.nan_to_num(ref, nan=0.0, posinf=0.0, neginf=0.0)
         np.nan_to_num(main, nan=0.0, posinf=0.0, neginf=0.0)
 
         if viz_name == "viz1":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 diff = main - ref
                 viz = plot_volume_tensor(diff)
                 viz = dcc.Graph(id="vis-graph", figure=viz,
                                 style={'width': '100%',
                                        'height': 'calc(100vh - 150px)'})
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return viz, viz_name, store_figure
 
         elif viz_name == "viz2":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 ref_plugin_name = config["plugin1"]
                 main_plugin_name = config["plugin2"]
@@ -637,16 +643,16 @@ def register_callbacks(app):
                     src=f"data:image/png;base64,{encoded_diag}",
                     style={"width": "100%", "display": "block", "margin": "0 auto"}
                 )
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return viz, viz_name, store_figure
 
         elif viz_name == "viz3":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 viz = animated_slices(ref, main, axis=0, fps=2)
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return html.Div(
                 html.Iframe(
@@ -668,22 +674,22 @@ def register_callbacks(app):
             ), viz_name, store_figure
 
         elif viz_name == "viz4":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 viz = isosurface_diff(ref, main)
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return dcc.Graph(id="vis-graph", figure=viz,
                              style={'width': '100%',
                                     'height': 'calc(100vh - 150px)'}), viz_name, store_figure
 
         elif viz_name == "viz9":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 viz = hierarchical_diff_visualization(ref, main)
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return html.Div(
                 html.Div(
@@ -710,11 +716,11 @@ def register_callbacks(app):
             ), viz_name, store_figure
 
         elif viz_name == "viz10":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 viz = tensor_network_visualization(ref, main)
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return html.Div(
                 html.Div(
@@ -741,11 +747,11 @@ def register_callbacks(app):
             ), viz_name, store_figure
 
         elif viz_name == "viz12":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 viz = channel_correlation_matrices(ref, main)
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return html.Div(
                 html.Div(
@@ -773,15 +779,23 @@ def register_callbacks(app):
 
     @app.callback(
         Output("visualization-modal", "is_open"),
-        Input("visualization-button", "n_clicks"),
+        Output("visualization-output-id", "data"),
+        Input({"type": "visualization-button", "index": ALL}, "n_clicks"),
         prevent_initial_call=True
     )
-    def open_visualization_modal(n_open):
+    def open_visualization_modal(n_clicks_list):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update
+            return no_update, no_update
 
-        return True
+        if all(nc is None or nc == 0 for nc in n_clicks_list):
+            raise PreventUpdate
+
+        # Get the id of the button that triggered the callback
+        triggered_id = json.loads(ctx.triggered[0]["prop_id"].split(".")[0])
+        index = triggered_id["index"]
+
+        return True, index
 
 
 def register_clientside_callbacks(app):

@@ -168,13 +168,13 @@ def advanced_diff_metrics(diff, ref_data, main_data):
         striped=True,
         hover=True,
         size="sm",
-        style={"margin": "8px"}
+        style={"margin": "8px", "marginTop": "0px"}
     )
 
     return table
 
 
-def comparison_metrics_table(ref_data, main_data):
+def comparison_metrics_table(ref_data, main_data, idx):
     ref_metrics = compute_metrics(ref_data)
     main_metrics = compute_metrics(main_data)
     diff = ref_data - main_data
@@ -219,7 +219,7 @@ def comparison_metrics_table(ref_data, main_data):
         striped=True,
         hover=True,
         size="sm",
-        style={"margin": "8px"}
+        style={"margin": "8px", "marginTop": "0px"}
     )
 
     advanced_metrics = advanced_diff_metrics(diff, ref_data, main_data)
@@ -227,9 +227,14 @@ def comparison_metrics_table(ref_data, main_data):
     layout = dbc.Col(
         [
             dbc.Row(table),
-            dbc.Row(advanced_metrics)
+            dbc.Row(advanced_metrics),
+            dbc.Row(dbc.Button(
+                "Visualization",
+                id={"type": "visualization-button", "index": idx},
+                color="secondary",
+                style={'display': 'block', 'width': '100%', "margin": "8px", "marginTop": "0px"},
+            ))
         ],
-        className="w-100"
     )
 
-    return html.Div(layout)
+    return html.Div(layout, style={"marginRight": "26px", "width": "100%"})

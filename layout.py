@@ -349,12 +349,6 @@ def create_layout(openvino_path, model_path, inputs_path):
                     style={'height': '100%', 'overflow': 'auto'},
                 ),
                 dbc.Button(
-                    "Visualization",
-                    id="visualization-button",
-                    color="secondary",
-                    style={'display': 'none'}  # will be updated by update_stats callback
-                ),
-                dbc.Button(
                     "Save outputs",
                     id="save-outputs-button",
                     color="secondary",
@@ -424,6 +418,7 @@ def create_layout(openvino_path, model_path, inputs_path):
             dcc.Store(id='update-visualization-on-open'),
             dcc.Store(id='update-visualization-on-close'),
             dcc.Store(id='last-selected-visualization', data=None),
+            dcc.Store(id='visualization-output-id', data=None),
             visualization_modal,
 
             dcc.Location(id='first-load', refresh=False),
