@@ -115,11 +115,12 @@ def register_callbacks(app):
         Input('ir-graph', 'tapNode'),
         Input('just-finished-tasks-store', 'data'),
         Input('selected-layer-index-store', 'data'),
+        Input('restart-layer-button', 'n_clicks'),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
         prevent_initial_call=True
     )
-    def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, elements, config_data):
+    def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, restart_layer_btn, elements, config_data):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -172,6 +173,23 @@ def register_callbacks(app):
 
             set_selected_node_style(new_elements, node_id)
 
+        if any(trigger.startswith('restart-layer-button') for trigger in triggers):
+            selected_layer = cache.layers_store_data[selected_layer_index]
+            node_id = selected_layer["node_id"]
+
+            result = result_cache.pop(node_id)
+
+            layer_name = result["layer_name"]
+            layer_type = result["layer_type"]
+
+            processing_layers[node_id] = {
+                "layer_name": layer_name,
+                "layer_type": layer_type
+            }
+
+            task_queue.put((node_id, layer_name, layer_type, config_data))
+            update_node_style(new_elements, node_id, 'orange')
+
         return new_elements
 
     @app.callback(
@@ -180,9 +198,11 @@ def register_callbacks(app):
         Input('first-load', 'pathname'),
         Input('ir-graph', 'tapNode'),
         Input('just-finished-tasks-store', 'data'),
+        Input('restart-layer-button', 'n_clicks'),
+        State('selected-node-id-store', 'data'),
         prevent_initial_call=True
     )
-    def update_layers_list(_, tap_node, finished_nodes):
+    def update_layers_list(_, tap_node, finished_nodes, restart_layers_btn, selected_node_id):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update
@@ -245,6 +265,13 @@ def register_callbacks(app):
                     result = result_cache[node_id]
                     status = "error" if "error" in result else "done"
                     layer["status"] = status
+
+        if any(trigger.startswith('restart-layer-button') for trigger in triggers) and finished_nodes:
+            for layer in layer_list_out:
+                node_id = layer["node_id"]
+                if node_id == selected_node_id:
+                    print("Set status running")
+                    layer["status"] = "running"
 
         return layer_list_out, clicked_graph_node_id
 
@@ -382,16 +409,23 @@ def register_callbacks(app):
         Input('selected-node-id-store', 'data'),
         Input('selected-layer-index-store', 'data'),
         Input('just-finished-tasks-store', 'data'),
+        Input('restart-layer-button', 'n_clicks'),
         State('selected-layer-type-store', 'data'),
         prevent_initial_call=True
     )
-    def update_stats(selected_node_id, selected_layer_index, finished_nodes, selected_layer_name):
+    def update_stats(selected_node_id, selected_layer_index, finished_nodes, restart_layer_btn, selected_layer_name):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update, no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
         node_id = None
+
+        show = {'margin': '4px', 'display': 'block', 'width': 'calc(100% - 8px)'}
+        hide = {'display': 'none'}
+
+        if any(trigger.startswith('restart-layer-button') for trigger in triggers):
+            return selected_layer_name, "Processing...", hide, hide, hide
 
         if any(trigger.startswith('selected-node-id-store') for trigger in triggers):
             node_id = selected_node_id
@@ -408,8 +442,6 @@ def register_callbacks(app):
             return no_update, no_update, {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
 
         cached_result = result_cache.get(node_id)
-        show = {'margin': '4px', 'display': 'block', 'width': 'calc(100% - 8px)'}
-        hide = {'display': 'none'}
         if cached_result:
             if "error" in cached_result:
                 return selected_layer_name, cached_result["error"], hide, hide, show
