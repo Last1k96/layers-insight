@@ -5,11 +5,7 @@ import re
 import sys
 
 import cv2
-import dash_bootstrap_components as dbc
 import numpy as np
-from dash import html
-
-from metrics import comparison_metrics_table
 
 
 # TODO extract to some kind of callback to run when openvino path is provided
@@ -183,11 +179,5 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
     for main_key, ref_key in zip(results[0].keys(), results[1].keys()):
         main = results[0][main_key]
         ref = results[1][ref_key]
-        right_panel_div = html.Div([
-            dbc.CardGroup([
-                comparison_metrics_table(ref, main)
-            ])
-        ])
-        return {"right-panel": right_panel_div,
-                "main": main,
+        return {"main": main,
                 "ref": ref}

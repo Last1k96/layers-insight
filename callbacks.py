@@ -389,9 +389,14 @@ def register_callbacks(app):
 
         cached_result = result_cache.get(node_id)
         if cached_result:
-            # Show the button when a cached result exists.
             button_style = {'margin': '4px', 'display': 'block', 'width': 'calc(100% - 8px)'}
-            return selected_layer_name, cached_result["right-panel"], button_style, button_style
+            if not "error" in cached_result:
+                right_panel = cache.status_cache[node_id]
+                # Show the button when a cached result exists.
+                return selected_layer_name, right_panel, button_style, button_style
+            else:
+                return selected_layer_name, cached_result["error"], button_style, button_style
+
         else:
             # Hide the button while processing.
             button_style = {'display': 'none'}

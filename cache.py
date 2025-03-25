@@ -2,10 +2,15 @@ from queue import Queue
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+from dash import html
+import dash_bootstrap_components as dbc
+
+from metrics import comparison_metrics_table
 from run_inference import run_partial_inference
 
 # Shared resources
 result_cache = {}
+status_cache = {}
 processing_layers = {}
 task_queue = Queue()
 
@@ -47,6 +52,13 @@ def process_tasks():
 
         if exception_str:
             result = {"error": exception_str}
+        else:
+            right_panel_div = html.Div([
+                dbc.CardGroup([
+                    comparison_metrics_table(result["ref"], result["main"])
+                ])
+            ])
+            status_cache[node_id] = right_panel_div
 
         result["node_id"] = node_id
         result["layer_name"] = layer_name
