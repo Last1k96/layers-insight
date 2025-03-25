@@ -83,7 +83,7 @@ def register_callbacks(app):
 
     @app.callback(
         Output('selected-node-id-store', 'data'),
-        Output('selected-layer-name-store', 'data'),
+        Output('selected-layer-type-store', 'data'),
         Input('ir-graph', 'tapNode'),
         Input('selected-layer-index-store', 'data'),
         prevent_initial_call=True
@@ -96,18 +96,18 @@ def register_callbacks(app):
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         selected_node_id = no_update
-        selected_layer_name = no_update
+        selected_layer_type = no_update
 
         if any(trigger.startswith('ir-graph') for trigger in triggers):
             selected_node_id = tap_node['data'].get('id')
-            selected_layer_name = tap_node['data'].get('layer_name')
+            selected_layer_type = tap_node['data'].get('layer_type')
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
             selected_layer = cache.layers_store_data[selected_layer_index]
             selected_node_id = selected_layer["node_id"]
-            selected_layer_name = selected_layer["layer_name"]
+            selected_layer_type = selected_layer["layer_type"]
 
-        return selected_node_id, selected_layer_name
+        return selected_node_id, selected_layer_type
 
     @app.callback(
         Output('ir-graph', 'elements'),
@@ -381,7 +381,7 @@ def register_callbacks(app):
         Input('selected-node-id-store', 'data'),
         Input('selected-layer-index-store', 'data'),
         Input('just-finished-tasks-store', 'data'),
-        State('selected-layer-name-store', 'data'),
+        State('selected-layer-type-store', 'data'),
         prevent_initial_call=True
     )
     def update_stats(selected_node_id, selected_layer_index, finished_nodes, selected_layer_name):

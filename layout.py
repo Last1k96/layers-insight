@@ -426,7 +426,7 @@ def create_layout(openvino_path, model_path, inputs_path):
             dcc.Store(id='just-finished-tasks-store', data=[]),
 
             # To preserve selected layer info and update Layer Status on interval trigger
-            dcc.Store(id='selected-layer-name-store', data=""),
+            dcc.Store(id='selected-layer-type-store', data=""),
             dcc.Store(id='selected-node-id-store', data=None),
 
             dcc.Store(id='clicked-graph-node-id-store'),  # to break circular dependency
