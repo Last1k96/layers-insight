@@ -378,6 +378,7 @@ def register_callbacks(app):
         Output('right-panel', 'children'),
         Output('visualization-button', 'style'),
         Output('save-outputs-button', 'style'),
+        Output('restart-layer-button', 'style'),
         Input('selected-node-id-store', 'data'),
         Input('selected-layer-index-store', 'data'),
         Input('just-finished-tasks-store', 'data'),
@@ -387,7 +388,7 @@ def register_callbacks(app):
     def update_stats(selected_node_id, selected_layer_index, finished_nodes, selected_layer_name):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update, no_update, {'display': 'none'}, {'display': 'none'}
+            return no_update, no_update, no_update, no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
         node_id = None
@@ -404,22 +405,19 @@ def register_callbacks(app):
                 node_id = selected_node_id
 
         if node_id is None:
-            return no_update, no_update, {'display': 'none'}, {'display': 'none'}
+            return no_update, no_update, {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
 
         cached_result = result_cache.get(node_id)
-        button_style_show = {'margin': '4px', 'display': 'block', 'width': 'calc(100% - 8px)'}
-        button_style_hide = {'display': 'none'}
+        show = {'margin': '4px', 'display': 'block', 'width': 'calc(100% - 8px)'}
+        hide = {'display': 'none'}
         if cached_result:
-            if not "error" in cached_result:
-                right_panel = cache.status_cache[node_id]
-                # Show the button when a cached result exists.
-                return selected_layer_name, right_panel, button_style_show, button_style_show
+            if "error" in cached_result:
+                return selected_layer_name, cached_result["error"], hide, hide, show
             else:
-                return selected_layer_name, cached_result["error"], button_style_hide, button_style_hide
-
+                right_panel = cache.status_cache[node_id]
+                return selected_layer_name, right_panel, show, show, hide
         else:
-            # Hide the button while processing.
-            return selected_layer_name, "Processing...", button_style_hide, button_style_hide
+            return selected_layer_name, "Processing...", hide, hide, hide
 
     #######################################################################################################################
 
