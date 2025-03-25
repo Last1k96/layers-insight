@@ -159,10 +159,12 @@ def register_callbacks(app):
             set_selected_node_style(new_elements, node_id)
 
         if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers):
-            # TODO do a proper error handling
             for element in new_elements:
-                if element['data'].get('id') in finished_nodes:
-                    element['data']['border_color'] = 'green'
+                node_id = element['data'].get("id")
+                if node_id in finished_nodes:
+                    result = result_cache[node_id]
+                    color = 'red' if "error" in result else 'green'
+                    element['data']['border_color'] = color
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
             selected_layer = cache.layers_store_data[selected_layer_index]
@@ -388,19 +390,19 @@ def register_callbacks(app):
             return no_update, no_update, {'display': 'none'}, {'display': 'none'}
 
         cached_result = result_cache.get(node_id)
+        button_style_show = {'margin': '4px', 'display': 'block', 'width': 'calc(100% - 8px)'}
+        button_style_hide = {'display': 'none'}
         if cached_result:
-            button_style = {'margin': '4px', 'display': 'block', 'width': 'calc(100% - 8px)'}
             if not "error" in cached_result:
                 right_panel = cache.status_cache[node_id]
                 # Show the button when a cached result exists.
-                return selected_layer_name, right_panel, button_style, button_style
+                return selected_layer_name, right_panel, button_style_show, button_style_show
             else:
-                return selected_layer_name, cached_result["error"], button_style, button_style
+                return selected_layer_name, cached_result["error"], button_style_hide, button_style_hide
 
         else:
             # Hide the button while processing.
-            button_style = {'display': 'none'}
-            return selected_layer_name, "Processing...", button_style, button_style
+            return selected_layer_name, "Processing...", button_style_hide, button_style_hide
 
     #######################################################################################################################
 
