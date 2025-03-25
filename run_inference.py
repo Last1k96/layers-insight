@@ -127,12 +127,10 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
 
             conv_params = get_conversion_params(model_rt)
             layout = extract_layout(conv_params.get("layout", ""))
-            input_shape_str = conv_params.get("input_shape", "")
-            input_shape_parsed = parse_shape(input_shape_str)
             if layout == "nhwc":
-                height, width = input_shape_parsed[1], input_shape_parsed[2]
+                height, width = input_shape[1], input_shape[2]
             else:
-                height, width = input_shape_parsed[2], input_shape_parsed[3]
+                height, width = input_shape[2], input_shape[3]
             inp.preprocess().resize(ResizeAlgorithm.RESIZE_LINEAR, height, width)
 
             reverse_channels = conv_params.get("reverse_input_channels", "false").lower() == "true"
