@@ -443,7 +443,7 @@ def register_callbacks(app):
                 node_id = selected_node_id
 
         if node_id is None:
-            return no_update, no_update, {'display': 'none'}, {'display': 'none'}, {'display': 'none'}
+            return no_update, no_update, no_update, no_update, no_update
 
         cached_result = result_cache.get(node_id)
         if cached_result:
