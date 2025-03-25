@@ -45,7 +45,7 @@ def process_tasks():
                 ref_plugin=config.get("plugin1"),
                 main_plugin=config.get("plugin2"),
                 model_inputs=config.get("model_inputs", []),
-                seed=config["datetime"]
+                seed=config["output_folder"]
             )
         except Exception as e:
             exception_str = str(e)

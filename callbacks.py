@@ -33,7 +33,7 @@ class LockGuard:
 
 
 def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
-    config["datetime"] = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    config["output_folder"] = f"outputs/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}"
     config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
 
 
@@ -514,14 +514,17 @@ def register_callbacks(app):
                 "plugin2"], config["model_inputs"]
 
         if any(trigger.startswith('save-inference-config-button') for trigger in triggers):
-            date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
             plugin1 = ref_plugin if ref_plugin is not None else config["plugin1"]
             plugin2 = other_plugin if other_plugin is not None else config["plugin2"]
 
-            config = {"datetime": date_time, "model_xml": model_xml, "ov_bin_path": bin_path,
-                      "plugin1": plugin1, "plugin2": plugin2,
-                      "model_inputs": all_input_values}
+            update_config(
+                config,
+                model_xml,
+                bin_path,
+                plugin1,
+                plugin2,
+                all_input_values
+            )
 
             return False, config, no_update, no_update, no_update, no_update, no_update, no_update, [no_update] * len(
                 all_input_values)
@@ -539,7 +542,7 @@ def register_callbacks(app):
         if not ctx.triggered:
             return no_update
 
-        folder_name = f"outputs/{config["datetime"]}"
+        folder_name = config["output_folder"]
         Path(f"{folder_name}").mkdir(parents=True, exist_ok=True)
 
         result = result_cache[node_id]
