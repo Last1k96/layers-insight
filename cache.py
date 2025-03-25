@@ -25,9 +25,13 @@ def process_tasks():
         task = task_queue.get() # blocking get()
         if task is None:
             break
-        try:
-            node_id, layer_name, layer_type, config = task
 
+        node_id, layer_name, layer_type, config = task
+
+        exception_str = ""
+        result = {}
+
+        try:
             result = run_partial_inference(
                 openvino_bin=config.get("ov_bin_path"),
                 model_xml=config.get("model_xml"),
@@ -37,16 +41,18 @@ def process_tasks():
                 model_inputs=config.get("model_inputs", []),
                 seed=config["datetime"]
             )
-
-            result["node_id"] = node_id
-            result["layer_name"] = layer_name
-            result["layer_type"] = layer_type
-
-            with lock:
-                result_cache[node_id] = result
-
         except Exception as e:
-            with lock:
-                result_cache[node_id] = f"Error: {str(e)}" # TODO better errors, replace the cache on re-run
-        finally:
-            task_queue.task_done()
+            exception_str = str(e)
+            print(e)
+
+        if exception_str:
+            result = {"error": exception_str}
+
+        result["node_id"] = node_id
+        result["layer_name"] = layer_name
+        result["layer_type"] = layer_type
+
+        with lock:
+            result_cache[node_id] = result
+
+        task_queue.task_done()

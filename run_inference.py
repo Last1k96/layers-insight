@@ -5,8 +5,8 @@ import re
 import sys
 
 import cv2
-import numpy as np
 import dash_bootstrap_components as dbc
+import numpy as np
 from dash import html
 
 from metrics import comparison_metrics_table
@@ -86,7 +86,9 @@ def get_conversion_params(model_rt):
 
     return params
 
+
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
+
 
 def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
     from openvino import Type, Layout
@@ -111,9 +113,7 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
         if input_path.lower().endswith(IMAGE_EXTENSIONS):
             img = cv2.imread(input_path, cv2.IMREAD_COLOR)
             if img is None:
-                err = f"Error: Failed to load image: {input_path}"
-                print(err)
-                return None, err
+                raise ValueError(f"Error: Failed to load image: {input_path}")
 
             img = np.expand_dims(img, axis=0)
             inputs.append(img)
@@ -146,10 +146,8 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
         else:
             data = np.fromfile(input_path, dtype=np.float32)  # Adjust dtype if needed.
             if data.size != np.prod(input_shape):
-                err = (f"Error: Binary file '{input_path}' size ({data.size}) "
-                       f"does not match expected shape {input_shape}")
-                print(err)
-                return None, err
+                raise ValueError(
+                    f"Error: Binary file '{input_path}' size ({data.size}) does not match expected shape {input_shape}")
 
             data = data.reshape(input_shape)
             inputs.append(data)
@@ -166,26 +164,20 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
 
     intermediate_nodes = [op for op in model.get_ops() if op.get_friendly_name() == layer_name]
     if len(intermediate_nodes) != 1:
-        print(f"Failed to find one node '{layer_name}'")
-        return
+        raise ValueError(f"Failed to find one node '{layer_name}'")
 
     parameters = [inp.get_node() for inp in model.inputs]
     sub_model = ov.Model([intermediate_nodes[0]], parameters, "sub_model")
 
     model_rt = model.get_rt_info()
 
-    inputs, preprocessed_model_or_err = configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed)
-    if inputs is None:
-        return preprocessed_model_or_err  # Return error message if configuration failed.
+    inputs, preprocessed_model = configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed)
 
     results = []
-    try:
-        for plugin in [main_plugin, ref_plugin]:
-            compiled_model = core.compile_model(preprocessed_model_or_err, plugin)
-            inference_results = compiled_model(inputs)
-            results.append(inference_results)
-    except Exception as e:
-        print(e)
+    for plugin in [main_plugin, ref_plugin]:
+        compiled_model = core.compile_model(preprocessed_model, plugin)
+        inference_results = compiled_model(inputs)
+        results.append(inference_results)
 
     # Process outputs (assuming a one-to-one correspondence between outputs).
     for main_key, ref_key in zip(results[0].keys(), results[1].keys()):
