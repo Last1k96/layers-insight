@@ -132,7 +132,11 @@ def register_callbacks(app):
                 node_id = element['data'].get("id")
 
                 if node_id in result_cache:
-                    element['data']['border_color'] = 'green'
+                    result = result_cache[node_id]
+                    if "error" in result:
+                        element['data']['border_color'] = 'red'
+                    else:
+                        element['data']['border_color'] = 'green'
 
                 if node_id in processing_layers:
                     element['data']['border_color'] = 'yellow'
@@ -218,14 +222,14 @@ def register_callbacks(app):
                         "node_id": node_id,
                         "layer_name": result["layer_name"],
                         "layer_type": result["layer_type"],
-                        "status": "done"
+                        "status": "error"
                     })
                 else:
                     layer_list_out.append({
                         "node_id": node_id,
                         "layer_name": result["layer_name"],
                         "layer_type": result["layer_type"],
-                        "status": "error"
+                        "status": "done"
                     })
 
             for node_id, result in processing_layers.items():
