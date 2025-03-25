@@ -193,19 +193,27 @@ def register_callbacks(app):
             layer_list_out = []
 
             for node_id, result in result_cache.items():
-                layer_list_out.append({
-                    "node_id": node_id,
-                    "layer_name": result["layer_name"],
-                    "layer_type": result["layer_type"],
-                    "done": True
-                })
+                if "error" in result:
+                    layer_list_out.append({
+                        "node_id": node_id,
+                        "layer_name": result["layer_name"],
+                        "layer_type": result["layer_type"],
+                        "status": "done"
+                    })
+                else:
+                    layer_list_out.append({
+                        "node_id": node_id,
+                        "layer_name": result["layer_name"],
+                        "layer_type": result["layer_type"],
+                        "status": "error"
+                    })
 
             for node_id, result in processing_layers.items():
                 layer_list_out.append({
                     "node_id": node_id,
                     "layer_name": result["layer_name"],
                     "layer_type": result["layer_type"],
-                    "done": False
+                    "status": "running"
                 })
 
             layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
@@ -227,13 +235,16 @@ def register_callbacks(app):
                     "node_id": node_id,
                     "layer_name": layer_name,
                     "layer_type": layer_type,
-                    "done": False
+                    "status": "running"
                 })
 
         if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers) and finished_nodes:
             for layer in layer_list_out:
-                if layer["node_id"] in finished_nodes:
-                    layer["done"] = True
+                node_id = layer["node_id"]
+                if node_id in finished_nodes:
+                    result = result_cache[node_id]
+                    status = "error" if "error" in result else "done"
+                    layer["status"] = status
 
         return layer_list_out, clicked_graph_node_id
 
@@ -265,7 +276,13 @@ def register_callbacks(app):
         li_elements = []
 
         for i, layer in enumerate(layers_list):
-            color = '#4CAF50' if layer["done"] else '#BA8E23'
+            if layer["status"] == "done":
+                color = '#4CAF50'
+            elif layer["status"] == "error":
+                color = '#F05050'
+            else:
+                color = '#BA8E23'
+
             style = {
                 'color': color,
                 'padding': '4px',
