@@ -37,10 +37,6 @@ def get_available_plugins(openvino_bin):
     return core.available_devices
 
 
-def get_input_names_from_model(model_path):
-    pass
-
-
 def do_image_preprocessing(img, input_shape, layout, mean_vals, scale_vals, reverse_channels):
     if layout and layout == "nhwc":
         target_h, target_w = input_shape[1], input_shape[2]
@@ -160,10 +156,10 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
 
     intermediate_nodes = [op for op in model.get_ops() if op.get_friendly_name() == layer_name]
     if len(intermediate_nodes) != 1:
-        raise ValueError(f"Failed to find one node '{layer_name}'")
+        raise ValueError(f"Failed to find node '{layer_name}'")
 
     parameters = [inp.get_node() for inp in model.inputs]
-    sub_model = ov.Model([intermediate_nodes[0]], parameters, "sub_model")
+    sub_model = ov.Model(intermediate_nodes[0].outputs(), parameters, "sub_model")
 
     model_rt = model.get_rt_info()
 
