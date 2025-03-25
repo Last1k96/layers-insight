@@ -165,15 +165,17 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
 
     inputs, preprocessed_model = configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed)
 
-    results = []
+    plugins_results = []
     for plugin in [main_plugin, ref_plugin]:
         compiled_model = core.compile_model(preprocessed_model, plugin)
         inference_results = compiled_model(inputs)
-        results.append(inference_results)
+        plugins_results.append(inference_results)
 
-    # Process outputs (assuming a one-to-one correspondence between outputs).
-    for main_key, ref_key in zip(results[0].keys(), results[1].keys()):
-        main = results[0][main_key]
-        ref = results[1][ref_key]
-        return {"main": main,
-                "ref": ref}
+    results = []
+    for main_key, ref_key in zip(plugins_results[0].keys(), plugins_results[1].keys()):
+        main = plugins_results[0][main_key]
+        ref = plugins_results[1][ref_key]
+        results.append({"main": main,
+                        "ref": ref})
+
+    return results

@@ -34,10 +34,10 @@ def process_tasks():
         node_id, layer_name, layer_type, config = task
 
         exception_str = ""
-        result = {}
+        outputs = []
 
         try:
-            result = run_partial_inference(
+            outputs = run_partial_inference(
                 openvino_bin=config.get("ov_bin_path"),
                 model_xml=config.get("model_xml"),
                 layer_name=layer_name,
@@ -50,19 +50,22 @@ def process_tasks():
             exception_str = str(e)
             print(e)
 
+        result = {}
+
         if exception_str:
             result = {"error": exception_str}
         else:
             right_panel_div = html.Div([
                 dbc.CardGroup([
-                    comparison_metrics_table(result["ref"], result["main"])
-                ])
+                    comparison_metrics_table(output["ref"], output["main"])
+                ], style={"marginLeft": "8px"}) for output in outputs
             ])
             status_cache[node_id] = right_panel_div
 
         result["node_id"] = node_id
         result["layer_name"] = layer_name
         result["layer_type"] = layer_type
+        result["outputs"] = outputs
 
         with lock:
             result_cache[node_id] = result

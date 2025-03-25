@@ -543,8 +543,9 @@ def register_callbacks(app):
         result = result_cache[node_id]
         layer_name = result["layer_name"].replace("/", "-")  # sanitize the layer name
 
-        result["main"].tofile(f"{folder_name}/{int(node_id):04d}_{layer_name}.bin")
-        result["ref"].tofile(f"{folder_name}/{int(node_id):04d}_{layer_name}_ref.bin")
+        for index, output in enumerate(result["outputs"]):
+            output["main"].tofile(f"{folder_name}/{int(node_id):04d}_{layer_name}_{index}.bin")
+            output["ref"].tofile(f"{folder_name}/{int(node_id):04d}_{layer_name}_{index}_ref.bin")
 
         return True, f"Results are saved in {Path.cwd()}/{folder_name}"
 
