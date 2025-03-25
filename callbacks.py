@@ -12,7 +12,7 @@ from dash import no_update, callback_context, html, dcc
 from dash.dependencies import Input, Output, State, ALL
 from dash.exceptions import PreventUpdate
 
-from run_inference import get_available_plugins
+from run_inference import get_available_plugins, prepare_submodel_and_inputs
 
 from cache import result_cache, task_queue, processing_layers
 import cache
@@ -411,6 +411,7 @@ def register_callbacks(app):
         Output('right-panel-layer-name', 'children'),
         Output('right-panel', 'children'),
         Output('save-outputs-button', 'style'),
+        Output('save-reproducer-button', 'style'),
         Output('restart-layer-button', 'style'),
         Input('selected-node-id-store', 'data'),
         Input('selected-layer-index-store', 'data'),
@@ -422,7 +423,7 @@ def register_callbacks(app):
     def update_stats(selected_node_id, selected_layer_index, finished_nodes, restart_layer_btn, selected_layer_name):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
         node_id = None
@@ -445,7 +446,7 @@ def register_callbacks(app):
                 node_id = selected_node_id
 
         if node_id is None:
-            return no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update, no_update
 
         cached_result = result_cache.get(node_id)
         if cached_result:
@@ -453,9 +454,9 @@ def register_callbacks(app):
                 return selected_layer_name, cached_result["error"], hide, hide, show
             else:
                 right_panel = cache.status_cache[node_id]
-                return selected_layer_name, right_panel, show, hide
+                return selected_layer_name, right_panel, show, show, hide
         else:
-            return selected_layer_name, "Processing...", hide, hide
+            return selected_layer_name, "Processing...", hide, hide, hide
 
     #######################################################################################################################
 
@@ -533,26 +534,54 @@ def register_callbacks(app):
         Output("notification-toast", "is_open"),
         Output("notification-toast", "children"),
         Input("save-outputs-button", "n_clicks"),
+        Input('save-reproducer-button', 'n_clicks'),
         State("config-store", "data"),
         State("selected-node-id-store", "data"),
         prevent_initial_call=True
     )
-    def toggle_toast(n, config, node_id):
+    def toggle_toast(save_outputs_btn, save_reproducer_btn, config, node_id):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
 
-        folder_name = config["output_folder"]
-        Path(f"{folder_name}").mkdir(parents=True, exist_ok=True)
+        triggers = [t['prop_id'] for t in ctx.triggered]
+
 
         result = result_cache[node_id]
-        layer_name = result["layer_name"].replace("/", "-")  # sanitize the layer name
+        layer_name = result["layer_name"]
+        sanitized_layer_name = layer_name.replace("/", "-")  # sanitize the layer name
 
-        for index, output in enumerate(result["outputs"]):
-            output["main"].tofile(f"{folder_name}/{int(node_id):04d}_{layer_name}_{index}.bin")
-            output["ref"].tofile(f"{folder_name}/{int(node_id):04d}_{layer_name}_{index}_ref.bin")
+        if any(trigger.startswith('save-outputs-button') for trigger in triggers):
+            outputs_folder = config["output_folder"]
+            Path(outputs_folder).mkdir(parents=True, exist_ok=True)
 
-        return True, f"Results are saved in {Path.cwd()}/{folder_name}"
+            for index, output in enumerate(result["outputs"]):
+                output["main"].tofile(f"{outputs_folder}/{int(node_id):04d}_{sanitized_layer_name}_{index}.bin")
+                output["ref"].tofile(f"{outputs_folder}/{int(node_id):04d}_{sanitized_layer_name}_{index}_ref.bin")
+
+            return True, f"Results are saved in {Path.cwd()}/{outputs_folder}"
+
+        if any(trigger.startswith('save-reproducer-button') for trigger in triggers):
+            ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, config["model_inputs"],
+                                                                               config["model_xml"],
+                                                                               config["ov_bin_path"],
+                                                                               config["output_folder"])
+
+            reproducer_folder = Path(config["output_folder"]) / "reproducers" / sanitized_layer_name
+            Path(reproducer_folder).mkdir(parents=True, exist_ok=True)
+
+            xml_path = reproducer_folder / "model.xml"
+            bin_path = reproducer_folder / "model.bin"
+            ov.serialize(preprocessed_model, xml_path, bin_path)
+
+            for index, input_data in enumerate(inputs):
+                input_data.tofile(f"{reproducer_folder}/input_{index}.bin")
+
+            for index, output in enumerate(result["outputs"]):
+                output["main"].tofile(f"{reproducer_folder}/output_{index}.bin")
+                output["ref"].tofile(f"{reproducer_folder}/output_{index}_ref.bin")
+
+            return True, f"Reproducer is saved in {Path.cwd()}/{reproducer_folder}"
 
     @app.callback(
         Output("visualization-buttons", "children"),
@@ -580,7 +609,8 @@ def register_callbacks(app):
         State("visualization-output-id", "data"),
         prevent_initial_call=True
     )
-    def select_visualization_type(is_open, btn_clicks, store_figure, last_selected_visualization, config, node_id, output_id):
+    def select_visualization_type(is_open, btn_clicks, store_figure, last_selected_visualization, config, node_id,
+                                  output_id):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update

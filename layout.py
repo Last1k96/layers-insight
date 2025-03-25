@@ -355,6 +355,12 @@ def create_layout(openvino_path, model_path, inputs_path):
                     style={'display': 'none'}  # will be updated by update_stats callback
                 ),
                 dbc.Button(
+                    "Save reproducer",
+                    id="save-reproducer-button",
+                    color="secondary",
+                    style={'display': 'none'}  # will be updated by update_stats callback
+                ),
+                dbc.Button(
                     "Restart layer",
                     id="restart-layer-button",
                     color="secondary",

@@ -151,19 +151,8 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
 
 
 def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs, seed):
-    ov, core = get_ov_core(openvino_bin)
-    model = core.read_model(model=model_xml)
-
-    intermediate_nodes = [op for op in model.get_ops() if op.get_friendly_name() == layer_name]
-    if len(intermediate_nodes) != 1:
-        raise ValueError(f"Failed to find node '{layer_name}'")
-
-    parameters = [inp.get_node() for inp in model.inputs]
-    sub_model = ov.Model(intermediate_nodes[0].outputs(), parameters, "sub_model")
-
-    model_rt = model.get_rt_info()
-
-    inputs, preprocessed_model = configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed)
+    ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, model_inputs, model_xml, openvino_bin,
+                                                                   seed)
 
     plugins_results = []
     for plugin in [main_plugin, ref_plugin]:
@@ -179,3 +168,16 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
                         "ref": ref})
 
     return results
+
+
+def prepare_submodel_and_inputs(layer_name, model_inputs, model_xml, openvino_bin, seed):
+    ov, core = get_ov_core(openvino_bin)
+    model = core.read_model(model=model_xml)
+    intermediate_nodes = [op for op in model.get_ops() if op.get_friendly_name() == layer_name]
+    if len(intermediate_nodes) != 1:
+        raise ValueError(f"Failed to find node '{layer_name}'")
+    parameters = [inp.get_node() for inp in model.inputs]
+    sub_model = ov.Model(intermediate_nodes[0].outputs(), parameters, "sub_model")
+    model_rt = model.get_rt_info()
+    inputs, preprocessed_model = configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed)
+    return ov, core, inputs, preprocessed_model
