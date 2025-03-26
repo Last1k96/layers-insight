@@ -188,7 +188,6 @@ def register_callbacks(app):
 
     @app.callback(
         Output('ir-graph', 'elements', allow_duplicate=True),
-        Output('ir-graph', 'stylesheet'),
         Input('model-path-after-cut', 'data'),
         prevent_initial_call=True
     )
@@ -200,10 +199,9 @@ def register_callbacks(app):
             cache.layers_store_data.clear()
 
         elements = parse_openvino_ir(model_after_cut)
-        dynamic_stylesheet = build_dynamic_stylesheet(elements)
 
         cache.ir_graph_elements = elements
-        return elements, dynamic_stylesheet
+        return elements
 
 
     @app.callback(

@@ -13,9 +13,11 @@ from dash_split_pane import DashSplitPane
 
 from run_inference import get_available_plugins
 
+
 def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
     config["output_folder"] = f"outputs/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}"
     config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
+
 
 def build_dynamic_stylesheet(elements):
     # Base node/edge styles
@@ -135,7 +137,7 @@ def build_model_input_fields(model_inputs, inputs_path):
         )
         components.append(html.Br())
 
-    return html.Div(components)
+    return components
 
 
 def create_layout(openvino_path, model_path, inputs_path):
@@ -213,7 +215,10 @@ def create_layout(openvino_path, model_path, inputs_path):
                                 placeholder="Enter path to model.xml"
                             ),
                             html.Br(),
-                            build_model_input_fields(model_inputs, inputs_path),
+                            html.Div(
+                                id="model-input-paths",
+                                children=build_model_input_fields(model_inputs, inputs_path)
+                            ),
                         ],
                         label="Model",
                         className="p-3"  # Adds padding for better spacing
@@ -326,7 +331,6 @@ def create_layout(openvino_path, model_path, inputs_path):
 
     left_pane = html.Div([
         open_button,
-
         Keyboard(
             id="keyboard",
             captureKeys=["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"],
