@@ -111,99 +111,79 @@ def register_callbacks(app):
 
         return selected_node_id, selected_layer_type
 
-    def cut_model_at_node_and_remove_unused(ov, core, model_xml, original_inputs, node_to_cut, node_outputs):
-        # Read the original model.
-        original_model = core.read_model(model=model_xml)
+    def cut_model_at_node_and_remove_unused(ov, core, model_xml, original_input_paths, node_to_cut, node_output_paths):
+        model = core.read_model(model=model_xml)
 
-        # Locate the target node by friendly name.
         target_node = None
-        for op in original_model.get_ordered_ops():
+        for op in model.get_ordered_ops():
             if op.get_friendly_name() == node_to_cut:
                 target_node = op
                 break
         if target_node is None:
             raise RuntimeError("Could not find the target node in the model.")
 
-        # Traverse backward from each output to collect the used Parameter nodes.
-        used_params = set()
-        visited = set()
+        import openvino.opset14 as ops
 
-        def traverse(node):
-            if node in visited:
-                return
-            visited.add(node)
-            if node.get_type_name() == "Parameter":
-                used_params.add(node)
-            for input_port in node.inputs():
-                parent = input_port.get_source_output().get_node()
-                traverse(parent)
-
-        for out in original_model.outputs:
-            traverse(out.get_node())
-
-        # Filter the original model's inputs (which are ov.Output objects) based on the underlying node's friendly name.
-        used_original_inputs = [
-            inp for inp in original_model.inputs if
-            inp.get_node().get_friendly_name() in {p.get_friendly_name() for p in used_params}
-        ]
-
-        # Import Model and the opset's parameter.
-        from openvino import Model
-        import openvino.runtime.opset14 as ops
-
-        # Start with the used original inputs...
-        new_params = list(used_original_inputs)
-        # ...and for each output of the target node, create a new Parameter.
+        new_params = []
         for idx, output in enumerate(target_node.outputs()):
-            param = ops.parameter(
+            new_param = ops.parameter(
                 output.get_partial_shape(),
                 output.get_element_type(),
                 target_node.get_friendly_name() + f"_input_{idx}"
             )
-            new_params.append(param)
-            # Replace all consumers of the original output with the new parameter's output.
+            new_params.append(new_param)
             for target_input in list(output.get_target_inputs()):
-                target_input.replace_source_output(param.output(0))
+                target_input.replace_source_output(new_param.output(0))
 
-        # Before constructing the new model, convert all new_params elements into Parameter nodes.
-        fixed_params = []
-        for x in new_params:
-            try:
-                # If x is an ov.Output, extract its node.
-                node = x.get_node()
-            except Exception:
-                node = x
-            # If the node is a Parameter, add it.
-            if node.get_type_name() == "Parameter":
-                fixed_params.append(node)
-            else:
-                fixed_params.append(x)
+        original_params = [inp.get_node() for inp in model.inputs]
+        all_params = original_params + new_params
 
-        # Create the new sub-model using original outputs and the fixed parameter list.
-        new_model = Model(original_model.outputs, fixed_params, "sub_model")
-        new_model.validate_nodes_and_infer_types()
+        from openvino import Model
+        model = Model(model.outputs, all_params, "sub_model")
+        model.validate_nodes_and_infer_types()
 
-        # --- Build the new input file paths list ---
-        # Get friendly names of the original inputs (using get_node()).
-        original_input_names = {inp.get_node().get_friendly_name() for inp in original_model.inputs}
+        def get_used_parameters(model):
+            used_params = set()
+            visited = set()
 
-        # From fixed_params, collect those that come from the original model.
-        used_original_names = set()
-        for p in fixed_params:
-            friendly = p.get_friendly_name()
-            if friendly in original_input_names:
-                used_original_names.add(friendly)
+            stack = [out.get_node() for out in model.outputs]
+            while stack:
+                node = stack.pop()
+                if node in visited:
+                    continue
+                visited.add(node)
+                if node.get_type_name() == "Parameter":
+                    used_params.add(node)
+                for inp in node.inputs():
+                    source_node = inp.get_source_output().get_node()
+                    if source_node not in visited:
+                        stack.append(source_node)
+            return used_params
 
-        # Filter the original input paths based on these friendly names, preserving order.
-        filtered_original_paths = []
-        for orig_inp, orig_path in zip(original_model.inputs, original_inputs):
-            if orig_inp.get_node().get_friendly_name() in used_original_names:
-                filtered_original_paths.append(orig_path)
+        used_params = get_used_parameters(model)
+        connected_params = [inp.get_node() for inp in model.inputs if inp.get_node() in used_params]
 
-        # Append the new node output file paths.
-        new_input_paths = filtered_original_paths + node_outputs
+        model = Model(model.outputs, connected_params, "sub_model")
+        model.validate_nodes_and_infer_types()
 
-        return new_model, new_input_paths
+        orig_mapping = {}
+        for orig_inp, orig_path in zip(original_params, original_input_paths):
+            name = orig_inp.get_friendly_name()
+            orig_mapping[name] = orig_path
+
+        new_mapping = {}
+        for new_inp, new_path in zip(new_params, node_output_paths):
+            name = new_inp.get_friendly_name()
+            orig_mapping[name] = new_path
+
+        mapping = {**orig_mapping, **new_mapping}
+
+        new_input_paths = []
+        for param in connected_params:
+            name = param.get_friendly_name()
+            new_input_paths.append(mapping.get(name, ""))
+
+        return model, new_input_paths
 
     @app.callback(
         Input('transform-to-input-button', 'n_clicks'),
@@ -221,10 +201,7 @@ def register_callbacks(app):
         input_paths = config["model_inputs"]
         model_xml = config["model_xml"]
         openvino_bin = config["ov_bin_path"]
-        output_folder = config["output_folder"]
-        seed = output_folder
 
-        print(f"{openvino_bin=}")
         ov, core = get_ov_core(openvino_bin)
         new_model, new_input_paths = cut_model_at_node_and_remove_unused(ov, core, model_xml, input_paths, node_to_cut, node_outputs)
 
