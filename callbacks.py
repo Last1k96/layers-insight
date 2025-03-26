@@ -118,12 +118,13 @@ def register_callbacks(app):
         Input('just-finished-tasks-store', 'data'),
         Input('selected-layer-index-store', 'data'),
         Input('restart-layer-button', 'n_clicks'),
+        Input('transform-to-input-button', 'n_clicks'),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
         prevent_initial_call=True
     )
-    def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, restart_layer_btn, elements,
-                              config_data):
+    def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, restart_layer_btn,
+                              transform_to_input_btn, elements, config_data):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -196,6 +197,9 @@ def register_callbacks(app):
 
             task_queue.put((node_id, layer_name, layer_type, config_data))
             update_node_style(new_elements, node_id, 'orange')
+
+        if any(trigger.startswith('transform-to-input-button') for trigger in triggers):
+            pass
 
         return new_elements
 
@@ -412,6 +416,7 @@ def register_callbacks(app):
         Output('right-panel', 'children'),
         Output('save-outputs-button', 'style'),
         Output('save-reproducer-button', 'style'),
+        Output('transform-to-input-button', 'style'),
         Output('restart-layer-button', 'style'),
         Input('selected-node-id-store', 'data'),
         Input('selected-layer-index-store', 'data'),
@@ -423,7 +428,7 @@ def register_callbacks(app):
     def update_stats(selected_node_id, selected_layer_index, finished_nodes, restart_layer_btn, selected_layer_name):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update, no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update, no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
         node_id = None
@@ -432,7 +437,7 @@ def register_callbacks(app):
         hide = {'display': 'none'}
 
         if any(trigger.startswith('restart-layer-button') for trigger in triggers):
-            return selected_layer_name, "Processing...", hide, hide, hide
+            return selected_layer_name, "Processing...", hide, hide, hide, hide
 
         if any(trigger.startswith('selected-node-id-store') for trigger in triggers):
             node_id = selected_node_id
@@ -446,17 +451,17 @@ def register_callbacks(app):
                 node_id = selected_node_id
 
         if node_id is None:
-            return no_update, no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update, no_update, no_update
 
         cached_result = result_cache.get(node_id)
         if cached_result:
             if "error" in cached_result:
-                return selected_layer_name, cached_result["error"], hide, hide, show
+                return selected_layer_name, cached_result["error"], hide, hide, hide, show
             else:
                 right_panel = cache.status_cache[node_id]
-                return selected_layer_name, right_panel, show, show, hide
+                return selected_layer_name, right_panel, show, show, show, hide
         else:
-            return selected_layer_name, "Processing...", hide, hide, hide
+            return selected_layer_name, "Processing...", hide, hide, hide, hide
 
     #######################################################################################################################
 
@@ -545,7 +550,6 @@ def register_callbacks(app):
             return no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
-
 
         result = result_cache[node_id]
         layer_name = result["layer_name"]

@@ -81,6 +81,7 @@ def get_conversion_params(model_rt):
 
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
 
+
 def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
     from openvino import Type, Layout
     from openvino.preprocess import PrePostProcessor, ResizeAlgorithm
@@ -164,8 +165,9 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
 
 
 def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs, seed):
-    ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, model_inputs, model_xml, openvino_bin,
-                                                                   seed)
+    ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, model_inputs, model_xml,
+                                                                       openvino_bin,
+                                                                       seed)
 
     plugins_results = []
     for plugin in [main_plugin, ref_plugin]:

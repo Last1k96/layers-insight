@@ -361,6 +361,12 @@ def create_layout(openvino_path, model_path, inputs_path):
                     style={'display': 'none'}  # will be updated by update_stats callback
                 ),
                 dbc.Button(
+                    "Transform this layer into model input",
+                    id="transform-to-input-button",
+                    color="secondary",
+                    style={'display': 'none'}  # will be updated by update_stats callback
+                ),
+                dbc.Button(
                     "Restart layer",
                     id="restart-layer-button",
                     color="secondary",
