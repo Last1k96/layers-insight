@@ -442,6 +442,10 @@ def create_layout(openvino_path, model_path, inputs_path):
             dcc.Store(id='selected-layer-type-store', data=""),
             dcc.Store(id='selected-node-id-store', data=None),
 
+            # To signal updates after the network was cut
+            dcc.Store(id='config-store-after-cut', data={}),
+            dcc.Store(id='model-path-after-cut', data=""),
+
             dcc.Store(id='clicked-graph-node-id-store'),  # to break circular dependency
 
             dcc.Store('dummy-output', data=None),

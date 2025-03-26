@@ -12,6 +12,7 @@ from dash import no_update, callback_context, html, dcc
 from dash.dependencies import Input, Output, State, ALL
 from dash.exceptions import PreventUpdate
 
+from openvino_graph import parse_openvino_ir
 from run_inference import get_available_plugins, prepare_submodel_and_inputs, get_ov_core
 
 from cache import result_cache, task_queue, processing_layers
@@ -186,33 +187,50 @@ def register_callbacks(app):
         return model, new_input_paths
 
     @app.callback(
+        Output('config-store-after-cut', 'data'),
+        Output('model-path-after-cut', 'data'),
         Input('transform-to-input-button', 'n_clicks'),
         State('config-store', 'data'),
         State('selected-node-id-store', 'data'),
+        prevent_initial_call=True
     )
     def transform_layer_to_model_input(transform_to_input_btn, config, selected_node_id):
         # Save outputs of current node in a subgraph folder
         layer = cache.result_cache[selected_node_id]
         node_to_cut = layer["layer_name"]
 
-        # Save outputs to file
-        node_outputs = ["path"]
-
         input_paths = config["model_inputs"]
         model_xml = config["model_xml"]
         openvino_bin = config["ov_bin_path"]
 
-        ov, core = get_ov_core(openvino_bin)
-        new_model, new_input_paths = cut_model_at_node_and_remove_unused(ov, core, model_xml, input_paths, node_to_cut, node_outputs)
-
         reproducer_folder = Path(config["output_folder"]) / "sub_networks" / "network0"
         Path(reproducer_folder).mkdir(parents=True, exist_ok=True)
+
+        node_outputs = []
+
+        # Save layer outputs to make them new model inputs
+        for index, output in enumerate(layer["outputs"]):
+            node_output = reproducer_folder / f"input_{index}.bin"
+            output["main"].tofile(node_output)
+            node_outputs.append(node_output)
+
+            # Use only main plugin outputs to do inference for both plugins
+            # output["ref"].tofile(f"{reproducer_folder}/input_{index}_ref.bin")
+
+        ov, core = get_ov_core(openvino_bin)
+        new_model, new_input_paths = cut_model_at_node_and_remove_unused(ov, core, model_xml, input_paths, node_to_cut, node_outputs)
 
         xml_path = reproducer_folder / "model.xml"
         bin_path = reproducer_folder / "model.bin"
         ov.serialize(new_model, xml_path, bin_path)
 
-        return
+        update_config(
+            config=config,
+            model_xml=str(xml_path),
+            model_inputs=[str(path) for path in new_input_paths]
+        )
+
+        return config, str(xml_path.resolve())
 
     @app.callback(
         Output('ir-graph', 'elements'),
@@ -221,12 +239,13 @@ def register_callbacks(app):
         Input('just-finished-tasks-store', 'data'),
         Input('selected-layer-index-store', 'data'),
         Input('restart-layer-button', 'n_clicks'),
+        Input('model-path-after-cut', 'data'),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
         prevent_initial_call=True
     )
     def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, restart_layer_btn,
-                              elements, config_data):
+                              new_model_path, elements, config_data):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -249,6 +268,10 @@ def register_callbacks(app):
 
             cache.ir_graph_elements = elements
             return elements
+
+        if any(trigger.startswith('model-path-after-cut') for trigger in triggers):
+            cache.ir_graph_elements = parse_openvino_ir(new_model_path)
+            return cache.ir_graph_elements
 
         new_elements = cache.ir_graph_elements
 
@@ -299,6 +322,8 @@ def register_callbacks(app):
 
             task_queue.put((node_id, layer_name, layer_type, config_data))
             update_node_style(new_elements, node_id, 'orange')
+
+
 
         return new_elements
 
