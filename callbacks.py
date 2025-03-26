@@ -205,6 +205,7 @@ def register_callbacks(app):
         cache.ir_graph_elements = elements
         return elements, dynamic_stylesheet
 
+
     @app.callback(
         Output('config-store-after-cut', 'data'),
         Output('model-path-after-cut', 'data'),

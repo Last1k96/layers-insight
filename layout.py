@@ -307,9 +307,10 @@ def create_layout(openvino_path, model_path, inputs_path):
             'rankDir': 'TB',
             'nodeSep': 25,
             'rankSep': 50,
+            'fit': False,
         },
         autoungrabify=True,
-        autoRefreshLayout=True,  # Required True for JavaScript access (or is it)
+        autoRefreshLayout=True,
         wheelSensitivity=0.2,
         stylesheet=dynamic_stylesheet
     )
