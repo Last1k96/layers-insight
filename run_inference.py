@@ -81,12 +81,10 @@ def get_conversion_params(model_rt):
 
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
 
-
 def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
     from openvino import Type, Layout
     from openvino.preprocess import PrePostProcessor, ResizeAlgorithm
 
-    # Create a PrePostProcessor instance for the sub-model.
     ppp = PrePostProcessor(sub_model)
     inputs = []
 
@@ -94,6 +92,7 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
         model_input = sub_model.input(i)
         input_shape = list(model_input.get_shape())
 
+        # If input_path is empty, generate random input.
         if not input_path or input_path.strip() == "":
             np.random.seed(hash(seed) % (2 ** 32))
             random_array = np.random.rand(*input_shape).astype(np.float32)
@@ -102,28 +101,40 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
             ppp.input(i).tensor().set_element_type(Type.f16)
             continue
 
+        # Handle image inputs.
         if input_path.lower().endswith(IMAGE_EXTENSIONS):
+            # Read image using OpenCV (resulting in an image with shape [H, W, C]).
             img = cv2.imread(input_path, cv2.IMREAD_COLOR)
             if img is None:
                 raise ValueError(f"Error: Failed to load image: {input_path}")
 
-            img = np.expand_dims(img, axis=0)
-            inputs.append(img)
-
-            inp = ppp.input(i)
-            inp.tensor().set_layout(Layout("NHWC"))
-            inp.tensor().set_element_type(Type.u8)
-            inp.tensor().set_shape(img.shape)
-
-            inp.preprocess().convert_element_type(Type.f16)
-
+            # Get conversion parameters and expected layout from model metadata.
             conv_params = get_conversion_params(model_rt)
-            layout = extract_layout(conv_params.get("layout", ""))
-            if layout == "nhwc":
-                height, width = input_shape[1], input_shape[2]
+
+            input_rt = model_input.get_rt_info()
+            expected_layout = input_rt["layout_0"].astype(str) if "layout_0" in input_rt else "[N,C,H,W]"
+
+            # Determine target dimensions and prepare the image based on expected layout.
+            if expected_layout and expected_layout.lower() == "[N,H,W,C]":
+                target_height = input_shape[1]
+                target_width = input_shape[2]
+                resized_img = cv2.resize(img, (target_width, target_height))
+                # Add a batch dimension.
+                processed_img = np.expand_dims(resized_img, axis=0)
             else:
-                height, width = input_shape[2], input_shape[3]
-            inp.preprocess().resize(ResizeAlgorithm.RESIZE_LINEAR, height, width)
+                target_height = input_shape[2]
+                target_width = input_shape[3]
+                resized_img = cv2.resize(img, (target_width, target_height))
+                processed_img = np.expand_dims(resized_img, axis=0)
+                processed_img = np.transpose(processed_img, (0, 3, 1, 2))
+
+            inputs.append(processed_img)
+
+            # Configure the input tensor using the expected layout.
+            inp = ppp.input(i)
+            inp.tensor().set_shape(processed_img.shape)
+            inp.tensor().set_element_type(Type.u8)
+            inp.tensor().set_layout(Layout(expected_layout))
 
             reverse_channels = conv_params.get("reverse_input_channels", "false").lower() == "true"
             if reverse_channels:
@@ -136,16 +147,18 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
             if scale_vals:
                 inp.preprocess().scale(scale_vals)
         else:
+            # For binary file inputs.
             data = np.fromfile(input_path, dtype=np.float32)  # Adjust dtype if needed.
             if data.size != np.prod(input_shape):
                 raise ValueError(
-                    f"Error: Binary file '{input_path}' size ({data.size}) does not match expected shape {input_shape}")
-
+                    f"Error: Binary file '{input_path}' size ({data.size}) does not match expected shape {input_shape}"
+                )
             data = data.reshape(input_shape)
             inputs.append(data)
             ppp.input(i).tensor().set_shape(data.shape)
             ppp.input(i).tensor().set_element_type(Type.f16)
 
+    # Build the preprocessed model.
     preprocessed_model = ppp.build()
     return inputs, preprocessed_model
 
