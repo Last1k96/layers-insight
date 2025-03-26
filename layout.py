@@ -1,5 +1,7 @@
 import os
 import random
+from datetime import datetime
+
 from dash import dcc, html, Input, Output, State
 from dash_extensions import Keyboard
 import dash_cytoscape as cyto
@@ -10,8 +12,10 @@ import dash_bootstrap_components as dbc
 from dash_split_pane import DashSplitPane
 
 from run_inference import get_available_plugins
-from callbacks import update_config
 
+def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
+    config["output_folder"] = f"outputs/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}"
+    config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
 
 def build_dynamic_stylesheet(elements):
     # Base node/edge styles
@@ -305,7 +309,7 @@ def create_layout(openvino_path, model_path, inputs_path):
             'rankSep': 50,
         },
         autoungrabify=True,
-        autoRefreshLayout=True,  # Required for JavaScript access
+        autoRefreshLayout=True,  # Required True for JavaScript access (or is it)
         wheelSensitivity=0.2,
         stylesheet=dynamic_stylesheet
     )

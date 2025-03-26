@@ -6,12 +6,14 @@ import os
 import bisect
 from datetime import datetime
 from pathlib import Path
+from queue import Queue
 
 import numpy as np
 from dash import no_update, callback_context, html, dcc
 from dash.dependencies import Input, Output, State, ALL
 from dash.exceptions import PreventUpdate
 
+from layout import build_dynamic_stylesheet, update_config
 from openvino_graph import parse_openvino_ir
 from run_inference import get_available_plugins, prepare_submodel_and_inputs, get_ov_core
 
@@ -31,11 +33,6 @@ class LockGuard:
     def __del__(self):
         # Called when the object is garbage-collected
         self._lock.release()
-
-
-def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
-    config["output_folder"] = f"outputs/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}"
-    config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
 
 
 def update_node_style(elements, node_id, color):
@@ -106,6 +103,9 @@ def register_callbacks(app):
             selected_layer_type = tap_node['data'].get('layer_type')
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
+            if selected_layer_index is None:
+                return None, None
+
             selected_layer = cache.layers_store_data[selected_layer_index]
             selected_node_id = selected_layer["node_id"]
             selected_layer_type = selected_layer["layer_type"]
@@ -170,12 +170,12 @@ def register_callbacks(app):
         orig_mapping = {}
         for orig_inp, orig_path in zip(original_params, original_input_paths):
             name = orig_inp.get_friendly_name()
-            orig_mapping[name] = orig_path
+            orig_mapping[name] = str(orig_path)
 
         new_mapping = {}
         for new_inp, new_path in zip(new_params, node_output_paths):
             name = new_inp.get_friendly_name()
-            orig_mapping[name] = new_path
+            orig_mapping[name] = str(new_path)
 
         mapping = {**orig_mapping, **new_mapping}
 
@@ -185,6 +185,25 @@ def register_callbacks(app):
             new_input_paths.append(mapping.get(name, ""))
 
         return model, new_input_paths
+
+    @app.callback(
+        Output('ir-graph', 'elements', allow_duplicate=True),
+        Output('ir-graph', 'stylesheet'),
+        Input('model-path-after-cut', 'data'),
+        prevent_initial_call=True
+    )
+    def clear_cache(model_after_cut):
+        with cache.lock:
+            cache.result_cache.clear()
+            cache.status_cache.clear()
+            cache.processing_layers.clear()
+            cache.layers_store_data.clear()
+
+        elements = parse_openvino_ir(model_after_cut)
+        dynamic_stylesheet = build_dynamic_stylesheet(elements)
+
+        cache.ir_graph_elements = elements
+        return elements, dynamic_stylesheet
 
     @app.callback(
         Output('config-store-after-cut', 'data'),
@@ -218,7 +237,8 @@ def register_callbacks(app):
             # output["ref"].tofile(f"{reproducer_folder}/input_{index}_ref.bin")
 
         ov, core = get_ov_core(openvino_bin)
-        new_model, new_input_paths = cut_model_at_node_and_remove_unused(ov, core, model_xml, input_paths, node_to_cut, node_outputs)
+        new_model, new_input_paths = cut_model_at_node_and_remove_unused(ov, core, model_xml, input_paths, node_to_cut,
+                                                                         node_outputs)
 
         xml_path = reproducer_folder / "model.xml"
         bin_path = reproducer_folder / "model.bin"
@@ -226,11 +246,11 @@ def register_callbacks(app):
 
         update_config(
             config=config,
-            model_xml=str(xml_path),
-            model_inputs=[str(path) for path in new_input_paths]
+            model_xml=str(xml_path.resolve()),
+            model_inputs=[path for path in new_input_paths]
         )
 
-        return config, str(xml_path.resolve())
+        return config, config["model_xml"]
 
     @app.callback(
         Output('ir-graph', 'elements'),
@@ -269,10 +289,6 @@ def register_callbacks(app):
             cache.ir_graph_elements = elements
             return elements
 
-        if any(trigger.startswith('model-path-after-cut') for trigger in triggers):
-            cache.ir_graph_elements = parse_openvino_ir(new_model_path)
-            return cache.ir_graph_elements
-
         new_elements = cache.ir_graph_elements
 
         if any(trigger.startswith('ir-graph') for trigger in triggers):
@@ -301,8 +317,11 @@ def register_callbacks(app):
                     element['data']['border_color'] = color
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
-            selected_layer = cache.layers_store_data[selected_layer_index]
-            node_id = selected_layer["node_id"]
+            if selected_layer_index is None:
+                node_id = None
+            else:
+                selected_layer = cache.layers_store_data[selected_layer_index]
+                node_id = selected_layer["node_id"]
 
             set_selected_node_style(new_elements, node_id)
 
@@ -323,8 +342,6 @@ def register_callbacks(app):
             task_queue.put((node_id, layer_name, layer_type, config_data))
             update_node_style(new_elements, node_id, 'orange')
 
-
-
         return new_elements
 
     @app.callback(
@@ -334,15 +351,19 @@ def register_callbacks(app):
         Input('ir-graph', 'tapNode'),
         Input('just-finished-tasks-store', 'data'),
         Input('restart-layer-button', 'n_clicks'),
+        Input('model-path-after-cut', 'data'),
         State('selected-node-id-store', 'data'),
         prevent_initial_call=True
     )
-    def update_layers_list(_, tap_node, finished_nodes, restart_layers_btn, selected_node_id):
+    def update_layers_list(_, tap_node, finished_nodes, restart_layers_btn, model_after_cut, selected_node_id):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
+
+        if any(trigger.startswith('model-path-after-cut') for trigger in triggers):
+            return [], None
 
         if any(trigger.startswith('first-load') for trigger in triggers):
             layer_list_out = []
@@ -477,13 +498,14 @@ def register_callbacks(app):
         Input("keyboard", "n_keydowns"),
         Input({'type': 'layer-li', 'index': ALL}, 'n_clicks'),
         Input('clicked-graph-node-id-store', 'data'),
+        Input('model-path-after-cut', 'data'),
         State("keyboard", "keydown"),
         State('selected-layer-index-store', 'data'),
         State("inference-settings-modal", "is_open"),
         State("visualization-modal", "is_open"),
         prevent_initial_call=True
     )
-    def update_selected_layer(n_keydowns, li_n_clicks, clicked_graph_node_id, keydown,
+    def update_selected_layer(n_keydowns, li_n_clicks, clicked_graph_node_id, model_after_cut, keydown,
                               selected_layer_index, is_settings_opened, is_visualization_opened):
         ctx = callback_context
         if not ctx.triggered:
@@ -495,6 +517,8 @@ def register_callbacks(app):
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         new_index = no_update
+        if any(trigger.startswith('model-path-after-cut') for trigger in triggers):
+            return None
 
         if any(trigger.startswith('clicked-graph-node-id-store') for trigger in triggers):
             for index, element in enumerate(cache.layers_store_data):
@@ -567,6 +591,8 @@ def register_callbacks(app):
             node_id = selected_node_id
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
+            if selected_layer_index is None:
+                return "Layer's name", "", hide, hide, hide, hide
             selected_layer = cache.layers_store_data[selected_layer_index]
             node_id = selected_layer["node_id"]
 
@@ -623,6 +649,7 @@ def register_callbacks(app):
         Output({"type": "model-input", "name": ALL}, "value"),
         Input("save-inference-config-button", "n_clicks"),
         Input("inference-settings-btn", "n_clicks"),
+        Input('config-store-after-cut', 'data'),
         State("config-store", "data"),
         State("model-xml-path", "value"),
         State("ov-bin-path", "value"),
@@ -631,11 +658,12 @@ def register_callbacks(app):
         State({"type": "model-input", "name": ALL}, "value"),
         prevent_initial_call=True
     )
-    def save_config(save_btn_clicks, open_settings_btn_clicks, config, model_xml, bin_path, ref_plugin,
+    def save_config(save_btn_clicks, open_settings_btn_clicks, config_after_cut, config, model_xml, bin_path,
+                    ref_plugin,
                     other_plugin, all_input_values):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
 
@@ -658,6 +686,10 @@ def register_callbacks(app):
 
             return False, config, no_update, no_update, no_update, no_update, no_update, no_update, [no_update] * len(
                 all_input_values)
+
+        if any(trigger.startswith('config-store-after-cut') for trigger in triggers):
+            c = config_after_cut
+            return False, c, c["model_xml"], no_update, no_update, no_update, no_update, no_update, c["model_inputs"]
 
     @app.callback(
         Output("notification-toast", "is_open"),
