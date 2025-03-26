@@ -13,7 +13,7 @@ from dash import no_update, callback_context, html, dcc
 from dash.dependencies import Input, Output, State, ALL
 from dash.exceptions import PreventUpdate
 
-from layout import build_dynamic_stylesheet, update_config
+from layout import build_dynamic_stylesheet, update_config, read_openvino_ir, build_model_input_fields
 from openvino_graph import parse_openvino_ir
 from run_inference import get_available_plugins, prepare_submodel_and_inputs, get_ov_core
 
@@ -170,12 +170,12 @@ def register_callbacks(app):
         orig_mapping = {}
         for orig_inp, orig_path in zip(original_params, original_input_paths):
             name = orig_inp.get_friendly_name()
-            orig_mapping[name] = str(orig_path)
+            orig_mapping[name] = Path(orig_path).resolve()
 
         new_mapping = {}
         for new_inp, new_path in zip(new_params, node_output_paths):
             name = new_inp.get_friendly_name()
-            orig_mapping[name] = str(new_path)
+            orig_mapping[name] = Path(new_path).resolve()
 
         mapping = {**orig_mapping, **new_mapping}
 
@@ -246,7 +246,7 @@ def register_callbacks(app):
         update_config(
             config=config,
             model_xml=str(xml_path.resolve()),
-            model_inputs=[path for path in new_input_paths]
+            model_inputs=[str(path) for path in new_input_paths]
         )
 
         return config, config["model_xml"]
@@ -645,7 +645,7 @@ def register_callbacks(app):
         Output("main-plugin-dropdown", "value"),
         Output("reference-plugin-dropdown", "placeholder"),
         Output("main-plugin-dropdown", "placeholder"),
-        Output({"type": "model-input", "name": ALL}, "value"),
+        Output("model-input-paths", "children"),
         Input("save-inference-config-button", "n_clicks"),
         Input("inference-settings-btn", "n_clicks"),
         Input('config-store-after-cut', 'data'),
@@ -667,8 +667,10 @@ def register_callbacks(app):
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         if any(trigger.startswith('inference-settings-btn') for trigger in triggers):
+            model_inputs = read_openvino_ir(config["model_xml"])
+            inputs_layout_div = build_model_input_fields(model_inputs, config["model_inputs"])
             return True, no_update, config["model_xml"], config["ov_bin_path"], None, None, config["plugin1"], config[
-                "plugin2"], config["model_inputs"]
+                "plugin2"], inputs_layout_div
 
         if any(trigger.startswith('save-inference-config-button') for trigger in triggers):
             plugin1 = ref_plugin if ref_plugin is not None else config["plugin1"]
@@ -683,12 +685,16 @@ def register_callbacks(app):
                 all_input_values
             )
 
-            return False, config, no_update, no_update, no_update, no_update, no_update, no_update, [no_update] * len(
-                all_input_values)
+            model_inputs = read_openvino_ir(config["model_xml"])
+            inputs_layout_div = build_model_input_fields(model_inputs, config["model_inputs"])
+
+            return False, config, no_update, no_update, no_update, no_update, no_update, no_update, inputs_layout_div
 
         if any(trigger.startswith('config-store-after-cut') for trigger in triggers):
             c = config_after_cut
-            return False, c, c["model_xml"], no_update, no_update, no_update, no_update, no_update, c["model_inputs"]
+            model_inputs = read_openvino_ir(c["model_xml"])
+            inputs_layout_div = build_model_input_fields(model_inputs, c["model_inputs"])
+            return False, c, c["model_xml"], no_update, no_update, no_update, no_update, no_update, inputs_layout_div
 
     @app.callback(
         Output("notification-toast", "is_open"),
