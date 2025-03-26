@@ -12,7 +12,7 @@ from dash import no_update, callback_context, html, dcc
 from dash.dependencies import Input, Output, State, ALL
 from dash.exceptions import PreventUpdate
 
-from run_inference import get_available_plugins, prepare_submodel_and_inputs
+from run_inference import get_available_plugins, prepare_submodel_and_inputs, get_ov_core
 
 from cache import result_cache, task_queue, processing_layers
 import cache
@@ -111,6 +111,132 @@ def register_callbacks(app):
 
         return selected_node_id, selected_layer_type
 
+    def cut_model_at_node_and_remove_unused(ov, core, model_xml, original_inputs, node_to_cut, node_outputs):
+        # Read the original model.
+        original_model = core.read_model(model=model_xml)
+
+        # Locate the target node by friendly name.
+        target_node = None
+        for op in original_model.get_ordered_ops():
+            if op.get_friendly_name() == node_to_cut:
+                target_node = op
+                break
+        if target_node is None:
+            raise RuntimeError("Could not find the target node in the model.")
+
+        # Traverse backward from each output to collect the used Parameter nodes.
+        used_params = set()
+        visited = set()
+
+        def traverse(node):
+            if node in visited:
+                return
+            visited.add(node)
+            if node.get_type_name() == "Parameter":
+                used_params.add(node)
+            for input_port in node.inputs():
+                parent = input_port.get_source_output().get_node()
+                traverse(parent)
+
+        for out in original_model.outputs:
+            traverse(out.get_node())
+
+        # Filter the original model's inputs (which are ov.Output objects) based on the underlying node's friendly name.
+        used_original_inputs = [
+            inp for inp in original_model.inputs if
+            inp.get_node().get_friendly_name() in {p.get_friendly_name() for p in used_params}
+        ]
+
+        # Import Model and the opset's parameter.
+        from openvino import Model
+        import openvino.runtime.opset14 as ops
+
+        # Start with the used original inputs...
+        new_params = list(used_original_inputs)
+        # ...and for each output of the target node, create a new Parameter.
+        for idx, output in enumerate(target_node.outputs()):
+            param = ops.parameter(
+                output.get_partial_shape(),
+                output.get_element_type(),
+                target_node.get_friendly_name() + f"_input_{idx}"
+            )
+            new_params.append(param)
+            # Replace all consumers of the original output with the new parameter's output.
+            for target_input in list(output.get_target_inputs()):
+                target_input.replace_source_output(param.output(0))
+
+        # Before constructing the new model, convert all new_params elements into Parameter nodes.
+        fixed_params = []
+        for x in new_params:
+            try:
+                # If x is an ov.Output, extract its node.
+                node = x.get_node()
+            except Exception:
+                node = x
+            # If the node is a Parameter, add it.
+            if node.get_type_name() == "Parameter":
+                fixed_params.append(node)
+            else:
+                fixed_params.append(x)
+
+        # Create the new sub-model using original outputs and the fixed parameter list.
+        new_model = Model(original_model.outputs, fixed_params, "sub_model")
+        new_model.validate_nodes_and_infer_types()
+
+        # --- Build the new input file paths list ---
+        # Get friendly names of the original inputs (using get_node()).
+        original_input_names = {inp.get_node().get_friendly_name() for inp in original_model.inputs}
+
+        # From fixed_params, collect those that come from the original model.
+        used_original_names = set()
+        for p in fixed_params:
+            friendly = p.get_friendly_name()
+            if friendly in original_input_names:
+                used_original_names.add(friendly)
+
+        # Filter the original input paths based on these friendly names, preserving order.
+        filtered_original_paths = []
+        for orig_inp, orig_path in zip(original_model.inputs, original_inputs):
+            if orig_inp.get_node().get_friendly_name() in used_original_names:
+                filtered_original_paths.append(orig_path)
+
+        # Append the new node output file paths.
+        new_input_paths = filtered_original_paths + node_outputs
+
+        return new_model, new_input_paths
+
+    @app.callback(
+        Input('transform-to-input-button', 'n_clicks'),
+        State('config-store', 'data'),
+        State('selected-node-id-store', 'data'),
+    )
+    def transform_layer_to_model_input(transform_to_input_btn, config, selected_node_id):
+        # Save outputs of current node in a subgraph folder
+        layer = cache.result_cache[selected_node_id]
+        node_to_cut = layer["layer_name"]
+
+        # Save outputs to file
+        node_outputs = ["path"]
+
+        input_paths = config["model_inputs"]
+        model_xml = config["model_xml"]
+        openvino_bin = config["ov_bin_path"]
+        output_folder = config["output_folder"]
+        seed = output_folder
+
+        print(f"{openvino_bin=}")
+        ov, core = get_ov_core(openvino_bin)
+        new_model, new_input_paths = cut_model_at_node_and_remove_unused(ov, core, model_xml, input_paths, node_to_cut, node_outputs)
+
+        reproducer_folder = Path(config["output_folder"]) / "sub_networks" / "network0"
+        Path(reproducer_folder).mkdir(parents=True, exist_ok=True)
+
+        xml_path = reproducer_folder / "model.xml"
+        bin_path = reproducer_folder / "model.bin"
+        ov.serialize(new_model, xml_path, bin_path)
+
+        return
+
     @app.callback(
         Output('ir-graph', 'elements'),
         Input('first-load', 'pathname'),
@@ -118,13 +244,12 @@ def register_callbacks(app):
         Input('just-finished-tasks-store', 'data'),
         Input('selected-layer-index-store', 'data'),
         Input('restart-layer-button', 'n_clicks'),
-        Input('transform-to-input-button', 'n_clicks'),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
         prevent_initial_call=True
     )
     def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, restart_layer_btn,
-                              transform_to_input_btn, elements, config_data):
+                              elements, config_data):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -197,9 +322,6 @@ def register_callbacks(app):
 
             task_queue.put((node_id, layer_name, layer_type, config_data))
             update_node_style(new_elements, node_id, 'orange')
-
-        if any(trigger.startswith('transform-to-input-button') for trigger in triggers):
-            pass
 
         return new_elements
 
