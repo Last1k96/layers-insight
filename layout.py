@@ -19,7 +19,7 @@ def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, 
     config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
     p = Path(config["model_xml"])
     model_name = p.stem
-    output_path = Path(f"outputs/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{model_name}")
+    output_path = Path(f"dump/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{model_name}")
     config["output_folder"] = str(output_path.resolve())
 
 
@@ -267,13 +267,13 @@ def create_layout(openvino_path, model_path, inputs_path):
                                            className="mb-1 w-100"),
                                 dbc.Button("Isosurfaces", id={"type": "visualization-btn", "index": "viz4"},
                                            className="mb-1 w-100"),
+                                dbc.Button("Bubble Rings", id={"type": "visualization-btn", "index": "viz10"},
+                                           className="mb-1 w-100"),
                                 dbc.Button("Per-channel slider", id={"type": "visualization-btn", "index": "viz3"},
                                            className="mb-1 w-100"),
                                 dbc.Button("Per-channel unrolled", id={"type": "visualization-btn", "index": "viz2"},
                                            className="mb-1 w-100"),
                                 dbc.Button("Hierarchical View", id={"type": "visualization-btn", "index": "viz9"},
-                                           className="mb-1 w-100"),
-                                dbc.Button("Bubble Rings", id={"type": "visualization-btn", "index": "viz10"},
                                            className="mb-1 w-100"),
                                 dbc.Button("Correlation", id={"type": "visualization-btn", "index": "viz12"},
                                            className="mb-1 w-100"),

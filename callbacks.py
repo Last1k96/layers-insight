@@ -717,7 +717,7 @@ def register_callbacks(app):
         sanitized_layer_name = layer_name.replace("/", "-")  # sanitize the layer name
 
         if any(trigger.startswith('save-outputs-button') for trigger in triggers):
-            outputs_folder = config["output_folder"]
+            outputs_folder = Path(config["output_folder"]) / "outputs"
             Path(outputs_folder).mkdir(parents=True, exist_ok=True)
 
             for index, output in enumerate(result["outputs"]):
