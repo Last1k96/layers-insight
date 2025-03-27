@@ -1,6 +1,7 @@
 import os
 import random
 from datetime import datetime
+from pathlib import Path
 
 from dash import dcc, html, Input, Output, State
 from dash_extensions import Keyboard
@@ -15,8 +16,11 @@ from run_inference import get_available_plugins
 
 
 def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
-    config["output_folder"] = f"outputs/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}"
     config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
+    p = Path(config["model_xml"])
+    model_name = p.stem
+    output_path = Path(f"outputs/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{model_name}")
+    config["output_folder"] = str(output_path.resolve())
 
 
 def build_dynamic_stylesheet(elements):
