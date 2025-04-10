@@ -15,10 +15,10 @@ def get_local_ip():
 
 
 def run_app():
-    # ir_path = "/home/mkurin/models/age-gender-recognition-retail-0013/age-gender-recognition-retail-0013.xml"
-    ir_path = "D:/code/models/yolo_v8n/onnx/onnx/FP16/INT8/1/ov/optimized"
-    openvino_path = "/home/mkurin/code/openvino/bin/intel64/Release"
-    inputs_path = ["/home/mkurin/images/220325case013.jpg"]
+    # ir_path = "/home/last1k/code/models/age-gender-recognition-retail-0013/age-gender-recognition-retail-0013.xml"
+    ir_path = "/home/last1k/code/models/yolo_v8n/onnx/onnx/FP16/INT8/1/ov/optimized/yolo_v8n.xml"
+    openvino_path = "/home/last1k/code/openvino/bin/intel64/Release"
+    inputs_path = ["/home/last1k/images/220325case013.jpg"]
     # inputs_path = []
 
     app = create_app(openvino_path=openvino_path, ir_xml_path=ir_path, inputs_path=inputs_path)
