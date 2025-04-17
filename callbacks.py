@@ -6,11 +6,16 @@ import os
 import bisect
 from datetime import datetime
 from pathlib import Path
+from queue import Queue
 
 import numpy as np
 from dash import no_update, callback_context, html, dcc
 from dash.dependencies import Input, Output, State, ALL
-from run_inference import get_available_plugins
+from dash.exceptions import PreventUpdate
+
+from layout import build_dynamic_stylesheet, update_config, read_openvino_ir, build_model_input_fields
+from openvino_graph import parse_openvino_ir
+from run_inference import get_available_plugins, prepare_submodel_and_inputs, get_ov_core
 
 from cache import result_cache, task_queue, processing_layers
 import cache
@@ -28,11 +33,6 @@ class LockGuard:
     def __del__(self):
         # Called when the object is garbage-collected
         self._lock.release()
-
-
-def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
-    config["datetime"] = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
 
 
 def update_node_style(elements, node_id, color):
@@ -83,7 +83,7 @@ def register_callbacks(app):
 
     @app.callback(
         Output('selected-node-id-store', 'data'),
-        Output('selected-layer-name-store', 'data'),
+        Output('selected-layer-type-store', 'data'),
         Input('ir-graph', 'tapNode'),
         Input('selected-layer-index-store', 'data'),
         prevent_initial_call=True
@@ -96,18 +96,160 @@ def register_callbacks(app):
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         selected_node_id = no_update
-        selected_layer_name = no_update
+        selected_layer_type = no_update
 
         if any(trigger.startswith('ir-graph') for trigger in triggers):
             selected_node_id = tap_node['data'].get('id')
-            selected_layer_name = tap_node['data'].get('layer_name')
+            selected_layer_type = tap_node['data'].get('layer_type')
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
+            if selected_layer_index is None:
+                return None, None
+
             selected_layer = cache.layers_store_data[selected_layer_index]
             selected_node_id = selected_layer["node_id"]
-            selected_layer_name = selected_layer["layer_name"]
+            selected_layer_type = selected_layer["layer_type"]
 
-        return selected_node_id, selected_layer_name
+        return selected_node_id, selected_layer_type
+
+    def cut_model_at_node_and_remove_unused(ov, core, model_xml, original_input_paths, node_to_cut, node_output_paths):
+        model = core.read_model(model=model_xml)
+
+        target_node = None
+        for op in model.get_ordered_ops():
+            if op.get_friendly_name() == node_to_cut:
+                target_node = op
+                break
+        if target_node is None:
+            raise RuntimeError("Could not find the target node in the model.")
+
+        import openvino.opset14 as ops
+
+        new_params = []
+        for idx, output in enumerate(target_node.outputs()):
+            new_param = ops.parameter(
+                output.get_partial_shape(),
+                output.get_element_type(),
+                target_node.get_friendly_name() + f"_input_{idx}"
+            )
+            new_params.append(new_param)
+            for target_input in list(output.get_target_inputs()):
+                target_input.replace_source_output(new_param.output(0))
+
+        original_params = [inp.get_node() for inp in model.inputs]
+        all_params = original_params + new_params
+
+        from openvino import Model
+        model = Model(model.outputs, all_params, "sub_model")
+        model.validate_nodes_and_infer_types()
+
+        def get_used_parameters(model):
+            used_params = set()
+            visited = set()
+
+            stack = [out.get_node() for out in model.outputs]
+            while stack:
+                node = stack.pop()
+                if node in visited:
+                    continue
+                visited.add(node)
+                if node.get_type_name() == "Parameter":
+                    used_params.add(node)
+                for inp in node.inputs():
+                    source_node = inp.get_source_output().get_node()
+                    if source_node not in visited:
+                        stack.append(source_node)
+            return used_params
+
+        used_params = get_used_parameters(model)
+        connected_params = [inp.get_node() for inp in model.inputs if inp.get_node() in used_params]
+
+        model = Model(model.outputs, connected_params, "sub_model")
+        model.validate_nodes_and_infer_types()
+
+        orig_mapping = {}
+        for orig_inp, orig_path in zip(original_params, original_input_paths):
+            name = orig_inp.get_friendly_name()
+            orig_mapping[name] = Path(orig_path).resolve()
+
+        new_mapping = {}
+        for new_inp, new_path in zip(new_params, node_output_paths):
+            name = new_inp.get_friendly_name()
+            orig_mapping[name] = Path(new_path).resolve()
+
+        mapping = {**orig_mapping, **new_mapping}
+
+        new_input_paths = []
+        for param in connected_params:
+            name = param.get_friendly_name()
+            new_input_paths.append(mapping.get(name, ""))
+
+        return model, new_input_paths
+
+    @app.callback(
+        Output('ir-graph', 'elements', allow_duplicate=True),
+        Input('model-path-after-cut', 'data'),
+        prevent_initial_call=True
+    )
+    def clear_cache(model_after_cut):
+        with cache.lock:
+            cache.result_cache.clear()
+            cache.status_cache.clear()
+            cache.processing_layers.clear()
+            cache.layers_store_data.clear()
+
+        elements = parse_openvino_ir(model_after_cut)
+
+        cache.ir_graph_elements = elements
+        return elements
+
+
+    @app.callback(
+        Output('config-store-after-cut', 'data'),
+        Output('model-path-after-cut', 'data'),
+        Input('transform-to-input-button', 'n_clicks'),
+        State('config-store', 'data'),
+        State('selected-node-id-store', 'data'),
+        prevent_initial_call=True
+    )
+    def transform_layer_to_model_input(transform_to_input_btn, config, selected_node_id):
+        # Save outputs of current node in a subgraph folder
+        layer = cache.result_cache[selected_node_id]
+        node_to_cut = layer["layer_name"]
+
+        input_paths = config["model_inputs"]
+        model_xml = config["model_xml"]
+        openvino_bin = config["ov_bin_path"]
+
+        reproducer_folder = Path(config["output_folder"]) / "sub_networks" / "network0"
+        Path(reproducer_folder).mkdir(parents=True, exist_ok=True)
+
+        node_outputs = []
+
+        # Save layer outputs to make them new model inputs
+        for index, output in enumerate(layer["outputs"]):
+            node_output = reproducer_folder / f"input_{index}.bin"
+            output["main"].tofile(node_output)
+            node_outputs.append(node_output)
+
+            # Use only main plugin outputs to do inference for both plugins
+            # output["ref"].tofile(f"{reproducer_folder}/input_{index}_ref.bin")
+
+        ov, core = get_ov_core(openvino_bin)
+        new_model, new_input_paths = cut_model_at_node_and_remove_unused(ov, core, model_xml, input_paths, node_to_cut,
+                                                                         node_outputs)
+
+        xml_path = reproducer_folder / "model.xml"
+        bin_path = reproducer_folder / "model.bin"
+        ov.serialize(new_model, xml_path, bin_path)
+
+        update_config(
+            config=config,
+            model_xml=str(xml_path.resolve()),
+            model_inputs=[str(path) for path in new_input_paths]
+        )
+
+        return config, config["model_xml"]
 
     @app.callback(
         Output('ir-graph', 'elements'),
@@ -115,11 +257,14 @@ def register_callbacks(app):
         Input('ir-graph', 'tapNode'),
         Input('just-finished-tasks-store', 'data'),
         Input('selected-layer-index-store', 'data'),
+        Input('restart-layer-button', 'n_clicks'),
+        Input('model-path-after-cut', 'data'),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
         prevent_initial_call=True
     )
-    def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, elements, config_data):
+    def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, restart_layer_btn,
+                              new_model_path, elements, config_data):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -131,7 +276,11 @@ def register_callbacks(app):
                 node_id = element['data'].get("id")
 
                 if node_id in result_cache:
-                    element['data']['border_color'] = 'green'
+                    result = result_cache[node_id]
+                    if "error" in result:
+                        element['data']['border_color'] = 'red'
+                    else:
+                        element['data']['border_color'] = 'green'
 
                 if node_id in processing_layers:
                     element['data']['border_color'] = 'yellow'
@@ -159,16 +308,38 @@ def register_callbacks(app):
             set_selected_node_style(new_elements, node_id)
 
         if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers):
-            # TODO do a proper error handling
             for element in new_elements:
-                if element['data'].get('id') in finished_nodes:
-                    element['data']['border_color'] = 'green'
+                node_id = element['data'].get("id")
+                if node_id in finished_nodes:
+                    result = result_cache[node_id]
+                    color = 'red' if "error" in result else 'green'
+                    element['data']['border_color'] = color
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
+            if selected_layer_index is None:
+                node_id = None
+            else:
+                selected_layer = cache.layers_store_data[selected_layer_index]
+                node_id = selected_layer["node_id"]
+
+            set_selected_node_style(new_elements, node_id)
+
+        if any(trigger.startswith('restart-layer-button') for trigger in triggers):
             selected_layer = cache.layers_store_data[selected_layer_index]
             node_id = selected_layer["node_id"]
 
-            set_selected_node_style(new_elements, node_id)
+            result = result_cache.pop(node_id)
+
+            layer_name = result["layer_name"]
+            layer_type = result["layer_type"]
+
+            processing_layers[node_id] = {
+                "layer_name": layer_name,
+                "layer_type": layer_type
+            }
+
+            task_queue.put((node_id, layer_name, layer_type, config_data))
+            update_node_style(new_elements, node_id, 'orange')
 
         return new_elements
 
@@ -178,32 +349,46 @@ def register_callbacks(app):
         Input('first-load', 'pathname'),
         Input('ir-graph', 'tapNode'),
         Input('just-finished-tasks-store', 'data'),
+        Input('restart-layer-button', 'n_clicks'),
+        Input('model-path-after-cut', 'data'),
+        State('selected-node-id-store', 'data'),
         prevent_initial_call=True
     )
-    def update_layers_list(_, tap_node, finished_nodes):
+    def update_layers_list(_, tap_node, finished_nodes, restart_layers_btn, model_after_cut, selected_node_id):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
 
+        if any(trigger.startswith('model-path-after-cut') for trigger in triggers):
+            return [], None
+
         if any(trigger.startswith('first-load') for trigger in triggers):
             layer_list_out = []
 
             for node_id, result in result_cache.items():
-                layer_list_out.append({
-                    "node_id": node_id,
-                    "layer_name": result["layer_name"],
-                    "layer_type": result["layer_type"],
-                    "done": True
-                })
+                if "error" in result:
+                    layer_list_out.append({
+                        "node_id": node_id,
+                        "layer_name": result["layer_name"],
+                        "layer_type": result["layer_type"],
+                        "status": "error"
+                    })
+                else:
+                    layer_list_out.append({
+                        "node_id": node_id,
+                        "layer_name": result["layer_name"],
+                        "layer_type": result["layer_type"],
+                        "status": "done"
+                    })
 
             for node_id, result in processing_layers.items():
                 layer_list_out.append({
                     "node_id": node_id,
                     "layer_name": result["layer_name"],
                     "layer_type": result["layer_type"],
-                    "done": False
+                    "status": "running"
                 })
 
             layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
@@ -225,13 +410,23 @@ def register_callbacks(app):
                     "node_id": node_id,
                     "layer_name": layer_name,
                     "layer_type": layer_type,
-                    "done": False
+                    "status": "running"
                 })
 
         if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers) and finished_nodes:
             for layer in layer_list_out:
-                if layer["node_id"] in finished_nodes:
-                    layer["done"] = True
+                node_id = layer["node_id"]
+                if node_id in finished_nodes:
+                    result = result_cache[node_id]
+                    status = "error" if "error" in result else "done"
+                    layer["status"] = status
+
+        if any(trigger.startswith('restart-layer-button') for trigger in triggers) and finished_nodes:
+            for layer in layer_list_out:
+                node_id = layer["node_id"]
+                if node_id == selected_node_id:
+                    print("Set status running")
+                    layer["status"] = "running"
 
         return layer_list_out, clicked_graph_node_id
 
@@ -263,7 +458,13 @@ def register_callbacks(app):
         li_elements = []
 
         for i, layer in enumerate(layers_list):
-            color = '#4CAF50' if layer["done"] else '#BA8E23'
+            if layer["status"] == "done":
+                color = '#4CAF50'
+            elif layer["status"] == "error":
+                color = '#F05050'
+            else:
+                color = '#BA8E23'
+
             style = {
                 'color': color,
                 'padding': '4px',
@@ -296,13 +497,14 @@ def register_callbacks(app):
         Input("keyboard", "n_keydowns"),
         Input({'type': 'layer-li', 'index': ALL}, 'n_clicks'),
         Input('clicked-graph-node-id-store', 'data'),
+        Input('model-path-after-cut', 'data'),
         State("keyboard", "keydown"),
         State('selected-layer-index-store', 'data'),
         State("inference-settings-modal", "is_open"),
         State("visualization-modal", "is_open"),
         prevent_initial_call=True
     )
-    def update_selected_layer(n_keydowns, li_n_clicks, clicked_graph_node_id, keydown,
+    def update_selected_layer(n_keydowns, li_n_clicks, clicked_graph_node_id, model_after_cut, keydown,
                               selected_layer_index, is_settings_opened, is_visualization_opened):
         ctx = callback_context
         if not ctx.triggered:
@@ -314,6 +516,8 @@ def register_callbacks(app):
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         new_index = no_update
+        if any(trigger.startswith('model-path-after-cut') for trigger in triggers):
+            return None
 
         if any(trigger.startswith('clicked-graph-node-id-store') for trigger in triggers):
             for index, element in enumerate(cache.layers_store_data):
@@ -357,26 +561,37 @@ def register_callbacks(app):
     @app.callback(
         Output('right-panel-layer-name', 'children'),
         Output('right-panel', 'children'),
-        Output('visualization-button', 'style'),
         Output('save-outputs-button', 'style'),
+        Output('save-reproducer-button', 'style'),
+        Output('transform-to-input-button', 'style'),
+        Output('restart-layer-button', 'style'),
         Input('selected-node-id-store', 'data'),
         Input('selected-layer-index-store', 'data'),
         Input('just-finished-tasks-store', 'data'),
-        State('selected-layer-name-store', 'data'),
+        Input('restart-layer-button', 'n_clicks'),
+        State('selected-layer-type-store', 'data'),
         prevent_initial_call=True
     )
-    def update_stats(selected_node_id, selected_layer_index, finished_nodes, selected_layer_name):
+    def update_stats(selected_node_id, selected_layer_index, finished_nodes, restart_layer_btn, selected_layer_name):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update, no_update, {'display': 'none'}, {'display': 'none'}
+            return no_update, no_update, no_update, no_update, no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
         node_id = None
+
+        show = {'margin': '4px', 'display': 'block', 'width': 'calc(100% - 8px)'}
+        hide = {'display': 'none'}
+
+        if any(trigger.startswith('restart-layer-button') for trigger in triggers):
+            return selected_layer_name, "Processing...", hide, hide, hide, hide
 
         if any(trigger.startswith('selected-node-id-store') for trigger in triggers):
             node_id = selected_node_id
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
+            if selected_layer_index is None:
+                return "Layer's name", "", hide, hide, hide, hide
             selected_layer = cache.layers_store_data[selected_layer_index]
             node_id = selected_layer["node_id"]
 
@@ -385,17 +600,17 @@ def register_callbacks(app):
                 node_id = selected_node_id
 
         if node_id is None:
-            return no_update, no_update, {'display': 'none'}, {'display': 'none'}
+            return no_update, no_update, no_update, no_update, no_update, no_update
 
         cached_result = result_cache.get(node_id)
         if cached_result:
-            # Show the button when a cached result exists.
-            button_style = {'margin': '4px', 'display': 'block', 'width': 'calc(100% - 8px)'}
-            return selected_layer_name, cached_result["right-panel"], button_style, button_style
+            if "error" in cached_result:
+                return selected_layer_name, cached_result["error"], hide, hide, hide, show
+            else:
+                right_panel = cache.status_cache[node_id]
+                return selected_layer_name, right_panel, show, show, show, hide
         else:
-            # Hide the button while processing.
-            button_style = {'display': 'none'}
-            return selected_layer_name, "Processing...", button_style, button_style
+            return selected_layer_name, "Processing...", hide, hide, hide, hide
 
     #######################################################################################################################
 
@@ -430,9 +645,10 @@ def register_callbacks(app):
         Output("main-plugin-dropdown", "value"),
         Output("reference-plugin-dropdown", "placeholder"),
         Output("main-plugin-dropdown", "placeholder"),
-        Output({"type": "model-input", "name": ALL}, "value"),
+        Output("model-input-paths", "children"),
         Input("save-inference-config-button", "n_clicks"),
         Input("inference-settings-btn", "n_clicks"),
+        Input('config-store-after-cut', 'data'),
         State("config-store", "data"),
         State("model-xml-path", "value"),
         State("ov-bin-path", "value"),
@@ -441,54 +657,96 @@ def register_callbacks(app):
         State({"type": "model-input", "name": ALL}, "value"),
         prevent_initial_call=True
     )
-    def save_config(save_btn_clicks, open_settings_btn_clicks, config, model_xml, bin_path, ref_plugin,
+    def save_config(save_btn_clicks, open_settings_btn_clicks, config_after_cut, config, model_xml, bin_path,
+                    ref_plugin,
                     other_plugin, all_input_values):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+        triggers = [t['prop_id'] for t in ctx.triggered]
+
+        if any(trigger.startswith('inference-settings-btn') for trigger in triggers):
+            model_inputs = read_openvino_ir(config["model_xml"])
+            inputs_layout_div = build_model_input_fields(model_inputs, config["model_inputs"])
+            return True, no_update, config["model_xml"], config["ov_bin_path"], None, None, config["plugin1"], config[
+                "plugin2"], inputs_layout_div
+
+        if any(trigger.startswith('save-inference-config-button') for trigger in triggers):
+            plugin1 = ref_plugin if ref_plugin is not None else config["plugin1"]
+            plugin2 = other_plugin if other_plugin is not None else config["plugin2"]
+
+            update_config(
+                config,
+                model_xml,
+                bin_path,
+                plugin1,
+                plugin2,
+                all_input_values
+            )
+
+            model_inputs = read_openvino_ir(config["model_xml"])
+            inputs_layout_div = build_model_input_fields(model_inputs, config["model_inputs"])
+
+            return False, config, no_update, no_update, no_update, no_update, no_update, no_update, inputs_layout_div
+
+        if any(trigger.startswith('config-store-after-cut') for trigger in triggers):
+            c = config_after_cut
+            model_inputs = read_openvino_ir(c["model_xml"])
+            inputs_layout_div = build_model_input_fields(model_inputs, c["model_inputs"])
+            return False, c, c["model_xml"], no_update, no_update, no_update, no_update, no_update, inputs_layout_div
+
+    @app.callback(
+        Output("notification-toast", "is_open"),
+        Output("notification-toast", "children"),
+        Input("save-outputs-button", "n_clicks"),
+        Input('save-reproducer-button', 'n_clicks'),
+        State("config-store", "data"),
+        State("selected-node-id-store", "data"),
+        prevent_initial_call=True
+    )
+    def toggle_toast(save_outputs_btn, save_reproducer_btn, config, node_id):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
 
-        if any(trigger.startswith('inference-settings-btn') for trigger in triggers):
-            return True, no_update, config["model_xml"], config["ov_bin_path"], None, None, config["plugin1"], config[
-                "plugin2"], config["model_inputs"]
-
-        if any(trigger.startswith('save-inference-config-button') for trigger in triggers):
-            date_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-
-            plugin1 = ref_plugin if ref_plugin is not None else config["plugin1"]
-            plugin2 = other_plugin if other_plugin is not None else config["plugin2"]
-
-            config = {"datetime": date_time, "model_xml": model_xml, "ov_bin_path": bin_path,
-                      "plugin1": plugin1, "plugin2": plugin2,
-                      "model_inputs": all_input_values}
-
-            return False, config, no_update, no_update, no_update, no_update, no_update, no_update, [no_update] * len(
-                all_input_values)
-
-    @app.callback(
-        Output("notification-toast", "is_open"),
-        Output("notification-toast", "children"),
-        Input("save-outputs-button", "n_clicks"),
-        State("config-store", "data"),
-        State("selected-node-id-store", "data"),
-        prevent_initial_call=True
-    )
-    def toggle_toast(n, config, node_id):
-        ctx = callback_context
-        if not ctx.triggered:
-            return no_update
-
-        folder_name = f"outputs/{config["datetime"]}"
-        Path(f"{folder_name}").mkdir(parents=True, exist_ok=True)
-
         result = result_cache[node_id]
-        layer_name = result["layer_name"].replace("/", "-")  # sanitize the layer name
+        layer_name = result["layer_name"]
+        sanitized_layer_name = layer_name.replace("/", "-")  # sanitize the layer name
 
-        result["main"].tofile(f"{folder_name}/{int(node_id):04d}_{layer_name}.bin")
-        result["ref"].tofile(f"{folder_name}/{int(node_id):04d}_{layer_name}_ref.bin")
+        if any(trigger.startswith('save-outputs-button') for trigger in triggers):
+            outputs_folder = Path(config["output_folder"]) / "outputs"
+            Path(outputs_folder).mkdir(parents=True, exist_ok=True)
 
-        return True, f"Results are saved in {Path.cwd()}/{folder_name}"
+            for index, output in enumerate(result["outputs"]):
+                output["main"].tofile(f"{outputs_folder}/{int(node_id):04d}_{sanitized_layer_name}_{index}.bin")
+                output["ref"].tofile(f"{outputs_folder}/{int(node_id):04d}_{sanitized_layer_name}_{index}_ref.bin")
+
+            return True, f"Results are saved in {Path.cwd()}/{outputs_folder}"
+
+        if any(trigger.startswith('save-reproducer-button') for trigger in triggers):
+            ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, config["model_inputs"],
+                                                                               config["model_xml"],
+                                                                               config["ov_bin_path"],
+                                                                               config["output_folder"])
+
+            reproducer_folder = Path(config["output_folder"]) / "reproducers" / sanitized_layer_name
+            Path(reproducer_folder).mkdir(parents=True, exist_ok=True)
+
+            xml_path = reproducer_folder / "model.xml"
+            bin_path = reproducer_folder / "model.bin"
+            ov.serialize(preprocessed_model, xml_path, bin_path)
+
+            for index, input_data in enumerate(inputs):
+                input_data.tofile(f"{reproducer_folder}/input_{index}.bin")
+
+            for index, output in enumerate(result["outputs"]):
+                output["main"].tofile(f"{reproducer_folder}/output_{index}.bin")
+                output["ref"].tofile(f"{reproducer_folder}/output_{index}_ref.bin")
+
+            return True, f"Reproducer is saved in {Path.cwd()}/{reproducer_folder}"
 
     @app.callback(
         Output("visualization-buttons", "children"),
@@ -513,9 +771,11 @@ def register_callbacks(app):
         State("last-selected-visualization", "data"),
         State("config-store", "data"),
         State("selected-node-id-store", "data"),
+        State("visualization-output-id", "data"),
         prevent_initial_call=True
     )
-    def select_visualization_type(is_open, btn_clicks, store_figure, last_selected_visualization, config, node_id):
+    def select_visualization_type(is_open, btn_clicks, store_figure, last_selected_visualization, config, node_id,
+                                  output_id):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update
@@ -543,29 +803,32 @@ def register_callbacks(app):
             button_id = json.loads(triggered_id)
             viz_name = button_id["index"]
 
+        store_name = f"{output_id}{viz_name}"
+
         data = result_cache.get(node_id, {})
-        ref = reshape_to_3d(data.get("ref"))
-        main = reshape_to_3d(data.get("main"))
+        output = data["outputs"][output_id]
+        ref = reshape_to_3d(output["ref"])
+        main = reshape_to_3d(output["main"])
 
         np.nan_to_num(ref, nan=0.0, posinf=0.0, neginf=0.0)
         np.nan_to_num(main, nan=0.0, posinf=0.0, neginf=0.0)
 
         if viz_name == "viz1":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 diff = main - ref
                 viz = plot_volume_tensor(diff)
                 viz = dcc.Graph(id="vis-graph", figure=viz,
                                 style={'width': '100%',
                                        'height': 'calc(100vh - 150px)'})
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return viz, viz_name, store_figure
 
         elif viz_name == "viz2":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 ref_plugin_name = config["plugin1"]
                 main_plugin_name = config["plugin2"]
@@ -578,16 +841,16 @@ def register_callbacks(app):
                     src=f"data:image/png;base64,{encoded_diag}",
                     style={"width": "100%", "display": "block", "margin": "0 auto"}
                 )
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return viz, viz_name, store_figure
 
         elif viz_name == "viz3":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 viz = animated_slices(ref, main, axis=0, fps=2)
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return html.Div(
                 html.Iframe(
@@ -609,22 +872,22 @@ def register_callbacks(app):
             ), viz_name, store_figure
 
         elif viz_name == "viz4":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 viz = isosurface_diff(ref, main)
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return dcc.Graph(id="vis-graph", figure=viz,
                              style={'width': '100%',
                                     'height': 'calc(100vh - 150px)'}), viz_name, store_figure
 
         elif viz_name == "viz9":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 viz = hierarchical_diff_visualization(ref, main)
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return html.Div(
                 html.Div(
@@ -651,11 +914,11 @@ def register_callbacks(app):
             ), viz_name, store_figure
 
         elif viz_name == "viz10":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 viz = tensor_network_visualization(ref, main)
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return html.Div(
                 html.Div(
@@ -682,11 +945,11 @@ def register_callbacks(app):
             ), viz_name, store_figure
 
         elif viz_name == "viz12":
-            if viz_name in store_figure:
-                viz = store_figure[viz_name]
+            if store_name in store_figure:
+                viz = store_figure[store_name]
             else:
                 viz = channel_correlation_matrices(ref, main)
-                store_figure[viz_name] = viz
+                store_figure[store_name] = viz
 
             return html.Div(
                 html.Div(
@@ -714,15 +977,23 @@ def register_callbacks(app):
 
     @app.callback(
         Output("visualization-modal", "is_open"),
-        Input("visualization-button", "n_clicks"),
+        Output("visualization-output-id", "data"),
+        Input({"type": "visualization-button", "index": ALL}, "n_clicks"),
         prevent_initial_call=True
     )
-    def open_visualization_modal(n_open):
+    def open_visualization_modal(n_clicks_list):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update
+            return no_update, no_update
 
-        return True
+        if all(nc is None or nc == 0 for nc in n_clicks_list):
+            raise PreventUpdate
+
+        # Get the id of the button that triggered the callback
+        triggered_id = json.loads(ctx.triggered[0]["prop_id"].split(".")[0])
+        index = triggered_id["index"]
+
+        return True, index
 
 
 def register_clientside_callbacks(app):

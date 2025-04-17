@@ -1,5 +1,8 @@
 import os
 import random
+from datetime import datetime
+from pathlib import Path
+
 from dash import dcc, html, Input, Output, State
 from dash_extensions import Keyboard
 import dash_cytoscape as cyto
@@ -10,7 +13,14 @@ import dash_bootstrap_components as dbc
 from dash_split_pane import DashSplitPane
 
 from run_inference import get_available_plugins
-from callbacks import update_config
+
+
+def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
+    config.update({k: v for k, v in locals().items() if k != "config" and v is not None})
+    p = Path(config["model_xml"])
+    model_name = p.stem
+    output_path = Path(f"dump/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{model_name}")
+    config["output_folder"] = str(output_path.resolve())
 
 
 def build_dynamic_stylesheet(elements):
@@ -131,7 +141,7 @@ def build_model_input_fields(model_inputs, inputs_path):
         )
         components.append(html.Br())
 
-    return html.Div(components)
+    return components
 
 
 def create_layout(openvino_path, model_path, inputs_path):
@@ -209,7 +219,10 @@ def create_layout(openvino_path, model_path, inputs_path):
                                 placeholder="Enter path to model.xml"
                             ),
                             html.Br(),
-                            build_model_input_fields(model_inputs, inputs_path),
+                            html.Div(
+                                id="model-input-paths",
+                                children=build_model_input_fields(model_inputs, inputs_path)
+                            ),
                         ],
                         label="Model",
                         className="p-3"  # Adds padding for better spacing
@@ -254,13 +267,13 @@ def create_layout(openvino_path, model_path, inputs_path):
                                            className="mb-1 w-100"),
                                 dbc.Button("Isosurfaces", id={"type": "visualization-btn", "index": "viz4"},
                                            className="mb-1 w-100"),
+                                dbc.Button("Bubble Rings", id={"type": "visualization-btn", "index": "viz10"},
+                                           className="mb-1 w-100"),
                                 dbc.Button("Per-channel slider", id={"type": "visualization-btn", "index": "viz3"},
                                            className="mb-1 w-100"),
                                 dbc.Button("Per-channel unrolled", id={"type": "visualization-btn", "index": "viz2"},
                                            className="mb-1 w-100"),
                                 dbc.Button("Hierarchical View", id={"type": "visualization-btn", "index": "viz9"},
-                                           className="mb-1 w-100"),
-                                dbc.Button("Bubble Rings", id={"type": "visualization-btn", "index": "viz10"},
                                            className="mb-1 w-100"),
                                 dbc.Button("Correlation", id={"type": "visualization-btn", "index": "viz12"},
                                            className="mb-1 w-100"),
@@ -303,9 +316,10 @@ def create_layout(openvino_path, model_path, inputs_path):
             'rankDir': 'TB',
             'nodeSep': 25,
             'rankSep': 50,
+            'fit': False,
         },
         autoungrabify=True,
-        autoRefreshLayout=True,  # Required for JavaScript access
+        autoRefreshLayout=True,
         wheelSensitivity=0.2,
         stylesheet=dynamic_stylesheet
     )
@@ -321,7 +335,6 @@ def create_layout(openvino_path, model_path, inputs_path):
 
     left_pane = html.Div([
         open_button,
-
         Keyboard(
             id="keyboard",
             captureKeys=["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"],
@@ -341,7 +354,7 @@ def create_layout(openvino_path, model_path, inputs_path):
     ])
 
     right_pane = html.Div([
-        html.H3(id='right-panel-layer-name', children=["Layer's Status"]),
+        html.H5(id='right-panel-layer-name', children=["Layer's Status"]),
         html.Div(
             children=[
                 html.Div(
@@ -349,14 +362,26 @@ def create_layout(openvino_path, model_path, inputs_path):
                     style={'height': '100%', 'overflow': 'auto'},
                 ),
                 dbc.Button(
-                    "Visualization",
-                    id="visualization-button",
+                    "Save outputs",
+                    id="save-outputs-button",
                     color="secondary",
                     style={'display': 'none'}  # will be updated by update_stats callback
                 ),
                 dbc.Button(
-                    "Save outputs",
-                    id="save-outputs-button",
+                    "Save reproducer",
+                    id="save-reproducer-button",
+                    color="secondary",
+                    style={'display': 'none'}  # will be updated by update_stats callback
+                ),
+                dbc.Button(
+                    "Transform this layer into model input",
+                    id="transform-to-input-button",
+                    color="secondary",
+                    style={'display': 'none'}  # will be updated by update_stats callback
+                ),
+                dbc.Button(
+                    "Restart layer",
+                    id="restart-layer-button",
                     color="secondary",
                     style={'display': 'none'}  # will be updated by update_stats callback
                 )
@@ -418,6 +443,7 @@ def create_layout(openvino_path, model_path, inputs_path):
             dcc.Store(id='update-visualization-on-open'),
             dcc.Store(id='update-visualization-on-close'),
             dcc.Store(id='last-selected-visualization', data=None),
+            dcc.Store(id='visualization-output-id', data=None),
             visualization_modal,
 
             dcc.Location(id='first-load', refresh=False),
@@ -426,8 +452,12 @@ def create_layout(openvino_path, model_path, inputs_path):
             dcc.Store(id='just-finished-tasks-store', data=[]),
 
             # To preserve selected layer info and update Layer Status on interval trigger
-            dcc.Store(id='selected-layer-name-store', data=""),
+            dcc.Store(id='selected-layer-type-store', data=""),
             dcc.Store(id='selected-node-id-store', data=None),
+
+            # To signal updates after the network was cut
+            dcc.Store(id='config-store-after-cut', data={}),
+            dcc.Store(id='model-path-after-cut', data=""),
 
             dcc.Store(id='clicked-graph-node-id-store'),  # to break circular dependency
 

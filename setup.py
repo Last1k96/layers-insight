@@ -5,7 +5,7 @@ setup(
     version="0.1.0",           # Replace with your project's version
     packages=find_packages(),
     install_requires=[
-        "dash==3.0.0",
+        "dash==3.0.1",
         "dash-cytoscape",
         "dash-bootstrap-components",
         "dash-extensions",

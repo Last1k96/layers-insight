@@ -6,10 +6,6 @@ import sys
 
 import cv2
 import numpy as np
-import dash_bootstrap_components as dbc
-from dash import html
-
-from metrics import comparison_metrics_table
 
 
 # TODO extract to some kind of callback to run when openvino path is provided
@@ -39,10 +35,6 @@ def get_available_plugins(openvino_bin):
     ov, core = get_ov_core(openvino_bin)
 
     return core.available_devices
-
-
-def get_input_names_from_model(model_path):
-    pass
 
 
 def do_image_preprocessing(img, input_shape, layout, mean_vals, scale_vals, reverse_channels):
@@ -86,13 +78,14 @@ def get_conversion_params(model_rt):
 
     return params
 
+
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
+
 
 def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
     from openvino import Type, Layout
     from openvino.preprocess import PrePostProcessor, ResizeAlgorithm
 
-    # Create a PrePostProcessor instance for the sub-model.
     ppp = PrePostProcessor(sub_model)
     inputs = []
 
@@ -100,6 +93,7 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
         model_input = sub_model.input(i)
         input_shape = list(model_input.get_shape())
 
+        # If input_path is empty, generate random input.
         if not input_path or input_path.strip() == "":
             np.random.seed(hash(seed) % (2 ** 32))
             random_array = np.random.rand(*input_shape).astype(np.float32)
@@ -108,32 +102,40 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
             ppp.input(i).tensor().set_element_type(Type.f16)
             continue
 
+        # Handle image inputs.
         if input_path.lower().endswith(IMAGE_EXTENSIONS):
+            # Read image using OpenCV (resulting in an image with shape [H, W, C]).
             img = cv2.imread(input_path, cv2.IMREAD_COLOR)
             if img is None:
-                err = f"Error: Failed to load image: {input_path}"
-                print(err)
-                return None, err
+                raise ValueError(f"Error: Failed to load image: {input_path}")
 
-            img = np.expand_dims(img, axis=0)
-            inputs.append(img)
-
-            inp = ppp.input(i)
-            inp.tensor().set_layout(Layout("NHWC"))
-            inp.tensor().set_element_type(Type.u8)
-            inp.tensor().set_shape(img.shape)
-
-            inp.preprocess().convert_element_type(Type.f16)
-
+            # Get conversion parameters and expected layout from model metadata.
             conv_params = get_conversion_params(model_rt)
-            layout = extract_layout(conv_params.get("layout", ""))
-            input_shape_str = conv_params.get("input_shape", "")
-            input_shape_parsed = parse_shape(input_shape_str)
-            if layout == "nhwc":
-                height, width = input_shape_parsed[1], input_shape_parsed[2]
+
+            input_rt = model_input.get_rt_info()
+            expected_layout = input_rt["layout_0"].astype(str) if "layout_0" in input_rt else "[N,C,H,W]"
+
+            # Determine target dimensions and prepare the image based on expected layout.
+            if expected_layout and expected_layout.lower() == "[N,H,W,C]":
+                target_height = input_shape[1]
+                target_width = input_shape[2]
+                resized_img = cv2.resize(img, (target_width, target_height))
+                # Add a batch dimension.
+                processed_img = np.expand_dims(resized_img, axis=0)
             else:
-                height, width = input_shape_parsed[2], input_shape_parsed[3]
-            inp.preprocess().resize(ResizeAlgorithm.RESIZE_LINEAR, height, width)
+                target_height = input_shape[2]
+                target_width = input_shape[3]
+                resized_img = cv2.resize(img, (target_width, target_height))
+                processed_img = np.expand_dims(resized_img, axis=0)
+                processed_img = np.transpose(processed_img, (0, 3, 1, 2))
+
+            inputs.append(processed_img)
+
+            # Configure the input tensor using the expected layout.
+            inp = ppp.input(i)
+            inp.tensor().set_shape(processed_img.shape)
+            inp.tensor().set_element_type(Type.u8)
+            inp.tensor().set_layout(Layout(expected_layout))
 
             reverse_channels = conv_params.get("reverse_input_channels", "false").lower() == "true"
             if reverse_channels:
@@ -146,58 +148,51 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
             if scale_vals:
                 inp.preprocess().scale(scale_vals)
         else:
+            # For binary file inputs.
             data = np.fromfile(input_path, dtype=np.float32)  # Adjust dtype if needed.
             if data.size != np.prod(input_shape):
-                err = (f"Error: Binary file '{input_path}' size ({data.size}) "
-                       f"does not match expected shape {input_shape}")
-                print(err)
-                return None, err
-
+                raise ValueError(
+                    f"Error: Binary file '{input_path}' size ({data.size}) does not match expected shape {input_shape}"
+                )
             data = data.reshape(input_shape)
             inputs.append(data)
             ppp.input(i).tensor().set_shape(data.shape)
             ppp.input(i).tensor().set_element_type(Type.f16)
 
+    # Build the preprocessed model.
     preprocessed_model = ppp.build()
     return inputs, preprocessed_model
 
 
 def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs, seed):
-    ov, core = get_ov_core(openvino_bin)
-    model = core.read_model(model=model_xml)
+    ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, model_inputs, model_xml,
+                                                                       openvino_bin,
+                                                                       seed)
 
-    intermediate_nodes = [op for op in model.get_ops() if op.get_friendly_name() == layer_name]
-    if len(intermediate_nodes) != 1:
-        print(f"Failed to find one node '{layer_name}'")
-        return
-
-    parameters = [inp.get_node() for inp in model.inputs]
-    sub_model = ov.Model([intermediate_nodes[0]], parameters, "sub_model")
-
-    model_rt = model.get_rt_info()
-
-    inputs, preprocessed_model_or_err = configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed)
-    if inputs is None:
-        return preprocessed_model_or_err  # Return error message if configuration failed.
+    plugins_results = []
+    for plugin in [main_plugin, ref_plugin]:
+        compiled_model = core.compile_model(preprocessed_model, plugin)
+        inference_results = compiled_model(inputs)
+        plugins_results.append(inference_results)
 
     results = []
-    try:
-        for plugin in [main_plugin, ref_plugin]:
-            compiled_model = core.compile_model(preprocessed_model_or_err, plugin)
-            inference_results = compiled_model(inputs)
-            results.append(inference_results)
-    except Exception as e:
-        print(e)
+    for main_key, ref_key in zip(plugins_results[0].keys(), plugins_results[1].keys()):
+        main = plugins_results[0][main_key]
+        ref = plugins_results[1][ref_key]
+        results.append({"main": main,
+                        "ref": ref})
 
-    # Process outputs (assuming a one-to-one correspondence between outputs).
-    for main_key, ref_key in zip(results[0].keys(), results[1].keys()):
-        main = results[0][main_key]
-        ref = results[1][ref_key]
-        right_panel_div = html.Div([
-            dbc.CardGroup([
-                comparison_metrics_table(ref, main)
-            ])
-        ])
-        return {"right-panel": right_panel_div,
-                "main": main,
-                "ref": ref}
+    return results
+
+
+def prepare_submodel_and_inputs(layer_name, model_inputs, model_xml, openvino_bin, seed):
+    ov, core = get_ov_core(openvino_bin)
+    model = core.read_model(model=model_xml)
+    intermediate_nodes = [op for op in model.get_ops() if op.get_friendly_name() == layer_name]
+    if len(intermediate_nodes) != 1:
+        raise ValueError(f"Failed to find node '{layer_name}'")
+    parameters = [inp.get_node() for inp in model.inputs]
+    sub_model = ov.Model(intermediate_nodes[0].outputs(), parameters, "sub_model")
+    model_rt = model.get_rt_info()
+    inputs, preprocessed_model = configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed)
+    return ov, core, inputs, preprocessed_model

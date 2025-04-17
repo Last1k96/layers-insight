@@ -2,10 +2,15 @@ from queue import Queue
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
+from dash import html
+import dash_bootstrap_components as dbc
+
+from metrics import comparison_metrics_table
 from run_inference import run_partial_inference
 
 # Shared resources
 result_cache = {}
+status_cache = {}
 processing_layers = {}
 task_queue = Queue()
 
@@ -19,34 +24,52 @@ ir_graph_elements = {}
 
 lock = threading.Lock()
 
+
 # Start background processing thread
 def process_tasks():
     while True:
-        task = task_queue.get() # blocking get()
+        task = task_queue.get()  # blocking get()
         if task is None:
             break
-        try:
-            node_id, layer_name, layer_type, config = task
 
-            result = run_partial_inference(
+        node_id, layer_name, layer_type, config = task
+
+        exception_str = ""
+        outputs = []
+
+        try:
+            outputs = run_partial_inference(
                 openvino_bin=config.get("ov_bin_path"),
                 model_xml=config.get("model_xml"),
                 layer_name=layer_name,
                 ref_plugin=config.get("plugin1"),
                 main_plugin=config.get("plugin2"),
                 model_inputs=config.get("model_inputs", []),
-                seed=config["datetime"]
+                seed=config["output_folder"]
             )
-
-            result["node_id"] = node_id
-            result["layer_name"] = layer_name
-            result["layer_type"] = layer_type
-
-            with lock:
-                result_cache[node_id] = result
-
         except Exception as e:
-            with lock:
-                result_cache[node_id] = f"Error: {str(e)}" # TODO better errors, replace the cache on re-run
-        finally:
-            task_queue.task_done()
+            exception_str = str(e)
+            print(e)
+
+        result = {}
+
+        if exception_str:
+            result = {"error": exception_str}
+        else:
+            right_panel_div = html.Div([
+                dbc.CardGroup([
+                    comparison_metrics_table(output["ref"], output["main"], idx),
+                ], style={"marginLeft": "8px"})
+                for idx, output in enumerate(outputs)
+            ])
+            status_cache[node_id] = right_panel_div
+
+        result["node_id"] = node_id
+        result["layer_name"] = layer_name
+        result["layer_type"] = layer_type
+        result["outputs"] = outputs
+
+        with lock:
+            result_cache[node_id] = result
+
+        task_queue.task_done()

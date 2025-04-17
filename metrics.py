@@ -21,16 +21,6 @@ METRIC_INFO = {
         "Normalized Root Mean Squared Error (NRMSE) scales the RMSE by the range of the reference data, allowing for relative error comparisons across layers with different value ranges. "
         "It is particularly useful in heterogeneous contexts, such as in Convolution, Pooling, or MatMul layers."
     ),
-    "Median": (
-        "Median",
-        "Median Error identifies the middle value in the error distribution, providing robustness against outliers. "
-        "This metric is beneficial when extreme values should not skew the overall error assessment—as seen in layers like ReLU or AvgPool."
-    ),
-    "IQR": (
-        "IQR",
-        "Interquartile Range (IQR) measures the spread of the middle 50% of errors (75th percentile minus 25th percentile), which is useful for assessing consistency in skewed or non-Gaussian distributions. "
-        "It is well-suited for layers such as BatchNormInference or GroupNormalization."
-    ),
     "PSNR": (
         "PSNR",
         "Peak Signal-to-Noise Ratio (PSNR) evaluates the ratio between the maximum possible signal power and the power of the noise. "
@@ -51,16 +41,6 @@ METRIC_INFO = {
         "Structural Similarity Index (SSIM) evaluates the perceptual similarity between two images by comparing structural information, luminance, and contrast. "
         "It is beneficial in image processing tasks, such as in Convolution or ROI-based layers (e.g., ROIAlign) where visual fidelity matters."
     ),
-    "JSD": (
-        "JSD",
-        "Jensen–Shannon Divergence (JSD) is a symmetric measure of the similarity between two probability distributions, derived from the Kullback–Leibler divergence. "
-        "It is applicable when comparing distributions—commonly used in layers such as SoftMax."
-    ),
-    "EMD": (
-        "EMD",
-        "Earth Mover's Distance (EMD), also known as the Wasserstein distance, measures the minimum cost required to transform one distribution into another. "
-        "This metric is useful for comparing the overall shape of distribution-based outputs, for example in SoftMax layers."
-    )
 }
 
 
@@ -150,8 +130,6 @@ def advanced_diff_metrics(diff, ref_data, main_data):
     rmse_value = np.sqrt(mse_value)
     ref_range = np.max(ref_data) - np.min(ref_data)
     nrmse_value = rmse_value / ref_range if ref_range != 0 else 0
-    median_value = np.median(diff)
-    iqr_value = np.percentile(diff, 75) - np.percentile(diff, 25)
 
     max_val = np.max(np.abs(ref_data))
     psnr_value = float('inf') if mse_value == 0 else 20 * np.log10(max_val) - 10 * np.log10(mse_value)
@@ -164,22 +142,12 @@ def advanced_diff_metrics(diff, ref_data, main_data):
     # Additional sophisticated metrics.
     r2_value = compute_r2(ref_data, main_data)
     ssim_value = compute_ssim(ref_data, main_data)
-    jsd_value = compute_jsd(ref_data, main_data)
-    emd_value = compute_emd(ref_data, main_data)
 
     error_metrics_rows = [
         # Element-wise / simple arithmetic metrics
         metric_table_row("MAE", format_value(mae)),
         metric_table_row("MSE", format_value(mse_value)),
         metric_table_row("NRMSE", format_value(nrmse_value)),
-
-        # Robust metrics (insensitive to outliers)
-        metric_table_row("Median", format_value(median_value)),
-        metric_table_row("IQR", format_value(iqr_value)),
-
-        # Distribution similarity metrics
-        metric_table_row("JSD", format_value(jsd_value)),
-        metric_table_row("EMD", format_value(emd_value)),
 
         # Image quality metrics
         metric_table_row("PSNR", format_value(psnr_value)),
@@ -200,13 +168,13 @@ def advanced_diff_metrics(diff, ref_data, main_data):
         striped=True,
         hover=True,
         size="sm",
-        style={"margin": "8px"}
+        style={"margin": "8px", "marginTop": "0px"}
     )
 
     return table
 
 
-def comparison_metrics_table(ref_data, main_data):
+def comparison_metrics_table(ref_data, main_data, idx):
     ref_metrics = compute_metrics(ref_data)
     main_metrics = compute_metrics(main_data)
     diff = ref_data - main_data
@@ -251,7 +219,7 @@ def comparison_metrics_table(ref_data, main_data):
         striped=True,
         hover=True,
         size="sm",
-        style={"margin": "8px"}
+        style={"margin": "8px", "marginTop": "0px"}
     )
 
     advanced_metrics = advanced_diff_metrics(diff, ref_data, main_data)
@@ -259,9 +227,14 @@ def comparison_metrics_table(ref_data, main_data):
     layout = dbc.Col(
         [
             dbc.Row(table),
-            dbc.Row(advanced_metrics)
+            dbc.Row(advanced_metrics),
+            dbc.Row(dbc.Button(
+                "Visualization",
+                id={"type": "visualization-button", "index": idx},
+                color="secondary",
+                style={'display': 'block', 'width': '100%', "margin": "8px", "marginTop": "0px"},
+            ))
         ],
-        className="w-100"
     )
 
-    return html.Div(layout)
+    return html.Div(layout, style={"marginRight": "26px", "width": "100%"})
