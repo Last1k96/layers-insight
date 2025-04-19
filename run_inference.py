@@ -93,7 +93,7 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
         model_input = sub_model.input(i)
         input_shape = list(model_input.get_shape())
 
-        # If input_path is empty, generate random input.
+        # If input_path is empty, generate a random input.
         if not input_path or input_path.strip() == "":
             np.random.seed(hash(seed) % (2 ** 32))
             random_array = np.random.rand(*input_shape).astype(np.float32)
@@ -104,7 +104,7 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
 
         # Handle image inputs.
         if input_path.lower().endswith(IMAGE_EXTENSIONS):
-            # Read image using OpenCV (resulting in an image with shape [H, W, C]).
+            # Read the image using OpenCV (resulting in an image with shape [H, W, C]).
             img = cv2.imread(input_path, cv2.IMREAD_COLOR)
             if img is None:
                 raise ValueError(f"Error: Failed to load image: {input_path}")
