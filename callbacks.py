@@ -12,6 +12,7 @@ import numpy as np
 from dash import no_update, callback_context, html, dcc
 from dash.dependencies import Input, Output, State, ALL
 from dash.exceptions import PreventUpdate
+import dash_bootstrap_components as dbc
 
 from layout import build_dynamic_stylesheet, update_config, read_openvino_ir, build_model_input_fields
 from openvino_graph import parse_openvino_ir
@@ -468,7 +469,7 @@ def register_callbacks(app):
             style = {
                 'color': color,
                 'padding': '4px',
-                'marginBottom': '2px',
+                'marginBottom': '0px',
             }
             if i == layer_index:
                 style.update({
@@ -696,6 +697,73 @@ def register_callbacks(app):
             inputs_layout_div = build_model_input_fields(model_inputs, c["model_inputs"])
             return False, c, c["model_xml"], no_update, no_update, no_update, no_update, no_update, inputs_layout_div
 
+        return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
+
+    @app.callback(
+        Output("plugins-config-store", "data"),
+        Input({'type': 'plugin-config', 'plugin': ALL, 'param': ALL}, 'value'),
+        State("config-plugin-dropdown", "value"),
+        State("plugins-config-store", "data"),
+        State({'type': 'plugin-config', 'plugin': ALL, 'param': ALL}, 'id')
+    )
+    def auto_save_plugin_config(values, selected_plugin, store_data, ids):
+        # If there's no selected plugin or no input ids, do not update.
+        if not selected_plugin or not ids:
+            return store_data if store_data is not None else {}
+        if store_data is None:
+            store_data = {}
+        # Save only the inputs that belong to the currently selected plugin.
+        current_config = {
+            comp_id["param"]: value
+            for value, comp_id in zip(values, ids)
+            if comp_id.get("plugin") == selected_plugin
+        }
+        store_data[selected_plugin] = current_config
+        return store_data
+
+    @app.callback(
+        Output("plugin-config-table", "children"),
+        Input("config-plugin-dropdown", "value"),
+        State("ov-bin-path", "value"),
+        State("plugins-config-store", "data")
+    )
+    def update_plugin_config_table(selected_plugin, openvino_bin, store_data):
+        if not selected_plugin or not openvino_bin:
+            return html.Div("Please select a plugin and ensure the OpenVINO bin folder is set.")
+        try:
+            ov, core = get_ov_core(openvino_bin)
+            config_keys = core.get_property(selected_plugin, "SUPPORTED_PROPERTIES")
+            if not config_keys:
+                return html.Div("No configurable parameters available for this plugin.")
+            current_values = {}
+            if store_data is not None and selected_plugin in store_data:
+                current_values = store_data[selected_plugin]
+            rows = []
+            for key in config_keys:
+                default_value = current_values.get(key, "")
+                rows.append(
+                    html.Tr([
+                        html.Td(key),
+                        html.Td(
+                            dbc.Input(
+                                id={"type": "plugin-config", "plugin": selected_plugin, "param": key},
+                                type="text",
+                                value=default_value,
+                                debounce=False
+                            )
+                        )
+                    ])
+                )
+            return dbc.Table(
+                html.Tbody(rows),
+                bordered=True,
+                striped=True,
+                hover=True,
+                size="sm"
+            )
+        except Exception as e:
+            return html.Div(f"Error: {str(e)}")
+
     @app.callback(
         Output("notification-toast", "is_open"),
         Output("notification-toast", "children"),
@@ -746,7 +814,9 @@ def register_callbacks(app):
                 output["main"].tofile(f"{reproducer_folder}/output_{index}.bin")
                 output["ref"].tofile(f"{reproducer_folder}/output_{index}_ref.bin")
 
-            return True, f"Reproducer is saved in {Path.cwd()}/{reproducer_folder}"
+            return True, f"Reproducer is saved in {reproducer_folder}"
+
+        return no_update, no_update
 
     @app.callback(
         Output("visualization-buttons", "children"),
@@ -974,6 +1044,8 @@ def register_callbacks(app):
                     "alignItems": "center"  # center vertically
                 }
             ), viz_name, store_figure
+
+        return no_update, no_update, no_update
 
     @app.callback(
         Output("visualization-modal", "is_open"),

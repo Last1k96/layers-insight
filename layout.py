@@ -227,6 +227,21 @@ def create_layout(openvino_path, model_path, inputs_path):
                         label="Model",
                         className="p-3"  # Adds padding for better spacing
                     ),
+                    dbc.Tab(
+                        [
+                            dbc.Label("Plugin"),
+                            dcc.Dropdown(
+                                id="config-plugin-dropdown",
+                                options=discovered_plugins,
+                                clearable=False,
+                            ),
+                            html.Br(),
+                            html.Div(id="plugin-config-table"),  # Table gets built dynamically
+                            dcc.Store(id="plugins-config-store", data={})
+                        ],
+                        label="Plugin Config",
+                        className="p-3"
+                    )
                 ])
             ),
             dbc.ModalFooter(
@@ -235,6 +250,7 @@ def create_layout(openvino_path, model_path, inputs_path):
         ],
         id="inference-settings-modal",
         is_open=False,
+        size="xl",
     )
 
     # Visualization modal with inline light background styles.
@@ -340,18 +356,20 @@ def create_layout(openvino_path, model_path, inputs_path):
             captureKeys=["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"],
         ),
         html.Div(
-            children=[
-                html.Ul(
-                    id='layer-panel-list',
-                    style={'padding': '2px'}
-                )
-            ],
+            html.Ul(
+                id='layer-panel-list',
+                style={'padding': '2px'}
+            ),
             style={
-                'maxHeight': '100vh',
-                'overflowY': 'auto'
+                'overflowY': 'auto',
+                'flex': '1'
             }
-        )
-    ])
+        ),
+    ], style={
+        'display': 'flex',
+        'flexDirection': 'column',
+        'height': '100vh'
+    })
 
     right_pane = html.Div([
         html.H5(id='right-panel-layer-name', children=["Layer's Status"]),

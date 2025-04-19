@@ -168,7 +168,7 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
     ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, model_inputs, model_xml,
                                                                        openvino_bin,
                                                                        seed)
-
+    # TODO Use plugin config
     plugins_results = []
     for plugin in [main_plugin, ref_plugin]:
         compiled_model = core.compile_model(preprocessed_model, plugin)
