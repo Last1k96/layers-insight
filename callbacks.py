@@ -1069,10 +1069,27 @@ def register_callbacks(app):
         return True, index
 
     @app.callback(
+        Output("clear-queue-dummy-output", "children"),
         Input("clear-queue-btn", "n_clicks"),
+        prevent_initial_call=True,
     )
-    def clear_queue(clear_queue_btn):
-        pass
+    def clear_queue(_):
+        # 1. cancel the process that is currently running
+        proc = cache.current_proc
+        if proc is not None and proc.is_alive():
+            proc.terminate()
+            proc.join()
+            cache.current_proc = None  # update the shared variable
+
+        # 2. flush any tasks still waiting
+        while True:
+            try:
+                cache.task_queue.get_nowait()
+                cache.task_queue.task_done()
+            except cache.queue.Empty:
+                break
+
+        return ""
 
 
 def register_clientside_callbacks(app):
