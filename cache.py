@@ -33,7 +33,6 @@ def process_tasks():
             break
 
         node_id, layer_name, layer_type, config, plugins_config = task
-        print(f"{plugins_config=}")
 
         exception_str = ""
         outputs = []

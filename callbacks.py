@@ -740,7 +740,7 @@ def register_callbacks(app):
             if store_data is not None and selected_plugin in store_data:
                 current_values = store_data[selected_plugin]
             rows = []
-            for key in config_keys:
+            for key in sorted(config_keys):
                 default_value = current_values.get(key, "")
                 rows.append(
                     html.Tr([
