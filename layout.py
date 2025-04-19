@@ -340,17 +340,15 @@ def create_layout(openvino_path, model_path, inputs_path):
         stylesheet=dynamic_stylesheet
     )
 
-    open_button = dbc.Button(
-        "Inference settings",
-        id="inference-settings-btn",
-        color="dark",
-        n_clicks=0,
-        className="w-100",
-        style={'margin-bottom': '10px'}
-    )
-
     left_pane = html.Div([
-        open_button,
+        dbc.Button(
+            "Inference settings",
+            id="inference-settings-btn",
+            color="dark",
+            n_clicks=0,
+            className="w-100",
+            style={'margin-bottom': '10px'}
+        ),
         Keyboard(
             id="keyboard",
             captureKeys=["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"],
@@ -364,6 +362,13 @@ def create_layout(openvino_path, model_path, inputs_path):
                 'overflowY': 'auto',
                 'flex': '1'
             }
+        ),
+        dbc.Button(
+            "Clear Queue",
+            id="clear-queue-btn",
+            color="dark",
+            n_clicks=0,
+            className="w-100",
         ),
     ], style={
         'display': 'flex',

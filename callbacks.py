@@ -1068,6 +1068,12 @@ def register_callbacks(app):
 
         return True, index
 
+    @app.callback(
+        Input("clear-queue-btn", "n_clicks"),
+    )
+    def clear_queue(clear_queue_btn):
+        pass
+
 
 def register_clientside_callbacks(app):
     # Center on the node when Ctrl key is being held
