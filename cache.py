@@ -32,7 +32,8 @@ def process_tasks():
         if task is None:
             break
 
-        node_id, layer_name, layer_type, config = task
+        node_id, layer_name, layer_type, config, plugins_config = task
+        print(f"{plugins_config=}")
 
         exception_str = ""
         outputs = []
@@ -45,7 +46,8 @@ def process_tasks():
                 ref_plugin=config.get("plugin1"),
                 main_plugin=config.get("plugin2"),
                 model_inputs=config.get("model_inputs", []),
-                seed=config["output_folder"]
+                seed=config["output_folder"],
+                plugins_config=plugins_config
             )
         except Exception as e:
             exception_str = str(e)

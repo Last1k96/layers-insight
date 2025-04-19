@@ -164,23 +164,33 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
     return inputs, preprocessed_model
 
 
-def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs, seed):
+def clean_empty_values(d):
+    if not isinstance(d, dict):
+        return d
+    return {k: v for k, v in d.items() if v is not None and v != ""}
+
+
+def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs, seed,
+                          plugins_config):
     ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, model_inputs, model_xml,
                                                                        openvino_bin,
                                                                        seed)
-    # TODO Use plugin config
-    plugins_results = []
-    for plugin in [main_plugin, ref_plugin]:
-        compiled_model = core.compile_model(preprocessed_model, plugin)
-        inference_results = compiled_model(inputs)
-        plugins_results.append(inference_results)
+
+    main_plugin_config = clean_empty_values(plugins_config.get(main_plugin, {}))
+    ref_plugin_config = clean_empty_values(plugins_config.get(ref_plugin, {}))
+
+    # Use plugin configurations if provided
+    compiled_main_model = core.compile_model(preprocessed_model, main_plugin, config=main_plugin_config)
+    compiled_ref_model = core.compile_model(preprocessed_model, ref_plugin, config=ref_plugin_config)
+
+    inference_results_main = compiled_main_model(inputs)
+    inference_results_ref = compiled_ref_model(inputs)
 
     results = []
-    for main_key, ref_key in zip(plugins_results[0].keys(), plugins_results[1].keys()):
-        main = plugins_results[0][main_key]
-        ref = plugins_results[1][ref_key]
-        results.append({"main": main,
-                        "ref": ref})
+    for main_key, ref_key in zip(inference_results_main.keys(), inference_results_ref.keys()):
+        main = inference_results_main[main_key]
+        ref = inference_results_ref[ref_key]
+        results.append({"main": main, "ref": ref})
 
     return results
 

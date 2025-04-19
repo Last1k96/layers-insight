@@ -262,10 +262,11 @@ def register_callbacks(app):
         Input('model-path-after-cut', 'data'),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
+        State('plugins-config-store', 'data'),
         prevent_initial_call=True
     )
     def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, restart_layer_btn,
-                              new_model_path, elements, config_data):
+                              new_model_path, elements, config_data, plugins_config):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -303,7 +304,7 @@ def register_callbacks(app):
                     "layer_type": layer_type
                 }
 
-                task_queue.put((node_id, layer_name, layer_type, config_data))
+                task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
                 update_node_style(new_elements, node_id, 'orange')
 
             set_selected_node_style(new_elements, node_id)
@@ -339,7 +340,7 @@ def register_callbacks(app):
                 "layer_type": layer_type
             }
 
-            task_queue.put((node_id, layer_name, layer_type, config_data))
+            task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
             update_node_style(new_elements, node_id, 'orange')
 
         return new_elements
