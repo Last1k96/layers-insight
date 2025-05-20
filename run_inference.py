@@ -171,27 +171,42 @@ def clean_empty_values(d):
 
 
 def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs, seed,
-                          plugins_config):
+                          plugins_config, stop_event):
     ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, model_inputs, model_xml,
                                                                        openvino_bin,
                                                                        seed)
 
-    main_plugin_config = clean_empty_values(plugins_config.get(main_plugin, {}))
-    ref_plugin_config = clean_empty_values(plugins_config.get(ref_plugin, {}))
+    cm_main = core.compile_model(
+        preprocessed_model, main_plugin,
+        config=clean_empty_values(plugins_config.get(main_plugin, {}))
+    )
+    cm_ref = core.compile_model(
+        preprocessed_model, ref_plugin,
+        config=clean_empty_values(plugins_config.get(ref_plugin, {}))
+    )
 
-    # Use plugin configurations if provided
-    compiled_main_model = core.compile_model(preprocessed_model, main_plugin, config=main_plugin_config)
-    compiled_ref_model = core.compile_model(preprocessed_model, ref_plugin, config=ref_plugin_config)
+    # ---------- ASYNC inference ----------
+    ir_main = cm_main.create_infer_request()
+    ir_ref = cm_ref.create_infer_request()
+    ir_main.start_async(inputs)
+    ir_ref.start_async(inputs)
 
-    inference_results_main = compiled_main_model(inputs)
-    inference_results_ref = compiled_ref_model(inputs)
+    # Poll in tiny chunks so we can notice the cancel quickly
+    while True:
+        if stop_event.is_set():
+            ir_main.cancel()
+            ir_ref.cancel()
+            raise RuntimeError("Inference cancelled by user")
 
+        done_main = ir_main.wait_for(10)  # 10 ms
+        done_ref = ir_ref.wait_for(10)
+        if done_main and done_ref:
+            break
+
+    # Gather results exactly as before
     results = []
-    for main_key, ref_key in zip(inference_results_main.keys(), inference_results_ref.keys()):
-        main = inference_results_main[main_key]
-        ref = inference_results_ref[ref_key]
-        results.append({"main": main, "ref": ref})
-
+    for m_key, r_key in zip(ir_main.results.keys(), ir_ref.results.keys()):
+        results.append({"main": ir_main.results[m_key], "ref": ir_ref.results[r_key]})
     return results
 
 

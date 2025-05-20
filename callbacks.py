@@ -4,9 +4,8 @@ import io
 import json
 import os
 import bisect
-from datetime import datetime
 from pathlib import Path
-from queue import Queue
+from queue import Empty
 
 import numpy as np
 from dash import no_update, callback_context, html, dcc
@@ -18,7 +17,6 @@ from layout import build_dynamic_stylesheet, update_config, read_openvino_ir, bu
 from openvino_graph import parse_openvino_ir
 from run_inference import get_available_plugins, prepare_submodel_and_inputs, get_ov_core
 
-from cache import result_cache, task_queue, processing_layers
 import cache
 from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, \
     hierarchical_diff_visualization, tensor_network_visualization, channel_correlation_matrices
@@ -73,12 +71,12 @@ def register_callbacks(app):
         if not ctx.triggered:
             return no_update
 
-        finished_nodes = [node for node in processing_layers if node in result_cache]
+        finished_nodes = [node for node in cache.processing_layers if node in cache.result_cache]
         if not finished_nodes:
             return no_update
 
         for node_id in finished_nodes:
-            processing_layers.pop(node_id)
+            cache.processing_layers.pop(node_id)
 
         return finished_nodes
 
@@ -274,14 +272,14 @@ def register_callbacks(app):
             for element in elements:
                 node_id = element['data'].get("id")
 
-                if node_id in result_cache:
-                    result = result_cache[node_id]
+                if node_id in cache.result_cache:
+                    result = cache.result_cache[node_id]
                     if "error" in result:
                         element['data']['border_color'] = 'red'
                     else:
                         element['data']['border_color'] = 'green'
 
-                if node_id in processing_layers:
+                if node_id in cache.processing_layers:
                     element['data']['border_color'] = 'yellow'
 
             cache.ir_graph_elements = elements
@@ -292,16 +290,16 @@ def register_callbacks(app):
         if any(trigger.startswith('ir-graph') for trigger in triggers):
             node_id = tap_node['data'].get('id')
 
-            if node_id not in result_cache and not any(task[0] == node_id for task in task_queue.queue):
+            if node_id not in cache.result_cache and not any(task[0] == node_id for task in cache.task_queue.queue):
                 layer_name = tap_node['data'].get('layer_name')
                 layer_type = tap_node['data'].get('type')
 
-                processing_layers[node_id] = {
+                cache.processing_layers[node_id] = {
                     "layer_name": layer_name,
                     "layer_type": layer_type
                 }
 
-                task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
+                cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
                 update_node_style(new_elements, node_id, 'orange')
 
             set_selected_node_style(new_elements, node_id)
@@ -310,7 +308,7 @@ def register_callbacks(app):
             for element in new_elements:
                 node_id = element['data'].get("id")
                 if node_id in finished_nodes:
-                    result = result_cache[node_id]
+                    result = cache.result_cache[node_id]
                     color = 'red' if "error" in result else 'green'
                     element['data']['border_color'] = color
 
@@ -327,12 +325,12 @@ def register_callbacks(app):
             selected_layer = cache.layers_store_data[selected_layer_index]
             node_id = selected_layer["node_id"]
 
-            result = result_cache.pop(node_id)
+            result = cache.result_cache.pop(node_id)
 
             layer_name = result["layer_name"]
             layer_type = result["layer_type"]
 
-            processing_layers[node_id] = {
+            cache.processing_layers[node_id] = {
                 "layer_name": layer_name,
                 "layer_type": layer_type
             }
@@ -366,7 +364,7 @@ def register_callbacks(app):
         if any(trigger.startswith('first-load') for trigger in triggers):
             layer_list_out = []
 
-            for node_id, result in result_cache.items():
+            for node_id, result in cache.result_cache.items():
                 if "error" in result:
                     layer_list_out.append({
                         "node_id": node_id,
@@ -382,7 +380,7 @@ def register_callbacks(app):
                         "status": "done"
                     })
 
-            for node_id, result in processing_layers.items():
+            for node_id, result in cache.processing_layers.items():
                 layer_list_out.append({
                     "node_id": node_id,
                     "layer_name": result["layer_name"],
@@ -399,7 +397,7 @@ def register_callbacks(app):
         if any(trigger.startswith('ir-graph') for trigger in triggers):
             node_id = tap_node['data'].get('id')
             clicked_graph_node_id = node_id  # To trigger layer selection after new layer was added to the list
-            if node_id not in result_cache and not any(layer["node_id"] == node_id for layer in layer_list_out):
+            if node_id not in cache.result_cache and not any(layer["node_id"] == node_id for layer in layer_list_out):
                 layer_name = tap_node['data'].get('layer_name')
                 layer_type = tap_node['data'].get('type')
 
@@ -416,7 +414,7 @@ def register_callbacks(app):
             for layer in layer_list_out:
                 node_id = layer["node_id"]
                 if node_id in finished_nodes:
-                    result = result_cache[node_id]
+                    result = cache.result_cache[node_id]
                     status = "error" if "error" in result else "done"
                     layer["status"] = status
 
@@ -601,7 +599,7 @@ def register_callbacks(app):
         if node_id is None:
             return no_update, no_update, no_update, no_update, no_update, no_update
 
-        cached_result = result_cache.get(node_id)
+        cached_result = cache.result_cache.get(node_id)
         if cached_result:
             if "error" in cached_result:
                 return selected_layer_name, cached_result["error"], hide, hide, hide, show
@@ -778,7 +776,7 @@ def register_callbacks(app):
 
         triggers = [t['prop_id'] for t in ctx.triggered]
 
-        result = result_cache[node_id]
+        result = cache.result_cache[node_id]
         layer_name = result["layer_name"]
         sanitized_layer_name = layer_name.replace("/", "-")  # sanitize the layer name
 
@@ -873,7 +871,7 @@ def register_callbacks(app):
 
         store_name = f"{output_id}{viz_name}"
 
-        data = result_cache.get(node_id, {})
+        data = cache.result_cache.get(node_id, {})
         output = data["outputs"][output_id]
         ref = reshape_to_3d(output["ref"])
         main = reshape_to_3d(output["main"])
@@ -1066,10 +1064,23 @@ def register_callbacks(app):
         return True, index
 
     @app.callback(
+        Output("clear-queue-btn", "disabled"),  # dummy Output to satisfy Dash
         Input("clear-queue-btn", "n_clicks"),
+        prevent_initial_call=True,
     )
-    def clear_queue(clear_queue_btn):
-        pass
+    def clear_queue(_):
+        # 1) ask the running worker to stop
+        cache.cancel_event.set()
+
+        # 2) drop everything that has not started yet
+        while True:
+            try:
+                cache.task_queue.get_nowait()
+                cache.task_queue.task_done()
+            except Empty:
+                break
+
+        return False
 
 
 def register_clientside_callbacks(app):

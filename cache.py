@@ -13,6 +13,7 @@ result_cache = {}
 status_cache = {}
 processing_layers = {}
 task_queue = Queue()
+cancel_event = threading.Event()
 
 # The problem with Dash dcc.Store elements is when you have Output and State having the same element
 # the State object could have stale data if the callback for reading the State is enqueued right after
@@ -28,9 +29,16 @@ lock = threading.Lock()
 # Start a background processing thread
 def process_tasks():
     while True:
-        task = task_queue.get()  # blocking get()
-        if task is None:
+        task = task_queue.get()  # blocking
+        if task is None:  # graceful shutdown
             break
+
+        # If the button was pressed *before* we started this task,
+        # just skip it and reset the flag for the next loop.
+        if cancel_event.is_set():
+            cancel_event.clear()
+            task_queue.task_done()
+            continue
 
         node_id, layer_name, layer_type, config, plugins_config = task
 
@@ -46,7 +54,8 @@ def process_tasks():
                 main_plugin=config.get("plugin2"),
                 model_inputs=config.get("model_inputs", []),
                 seed=config["output_folder"],
-                plugins_config=plugins_config
+                plugins_config=plugins_config,
+                stop_event=cancel_event
             )
         except Exception as e:
             exception_str = str(e)
