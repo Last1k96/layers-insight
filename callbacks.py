@@ -518,6 +518,12 @@ def register_callbacks(app):
         if is_settings_opened or is_visualization_opened:
             return no_update
 
+        print(f"{cache.result_cache=}")
+        print(f"{cache.processing_layers=}")
+        print(f"{cache.status_cache=}")
+        print(f"{cache.layers_store_data=}")
+        print()
+
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         new_index = no_update

@@ -172,11 +172,12 @@ def clean_empty_values(d):
 
 
 def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs, seed,
-                          plugins_config, stop_event):
+                          plugins_config, cancel_event):
     ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, model_inputs, model_xml,
                                                                        openvino_bin,
                                                                        seed)
 
+    print("run_partial_inference")
     cm_main = core.compile_model(
         preprocessed_model, main_plugin,
         config=clean_empty_values(plugins_config.get(main_plugin, {}))
@@ -194,7 +195,8 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
 
     # Poll in tiny chunks so we can notice the cancel quickly
     while True:
-        if stop_event.is_set():
+        if cancel_event.is_set():
+            cancel_event.clear()
             ir_main.cancel()
             ir_ref.cancel()
             raise RuntimeError("Inference cancelled")

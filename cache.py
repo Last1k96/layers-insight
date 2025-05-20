@@ -55,7 +55,7 @@ def process_tasks():
                 model_inputs=config.get("model_inputs", []),
                 seed=config["output_folder"],
                 plugins_config=plugins_config,
-                stop_event=cancel_event
+                cancel_event=cancel_event
             )
         except RuntimeError as e:
             if str(e) == "Inference cancelled":
