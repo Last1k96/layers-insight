@@ -370,7 +370,6 @@ def create_layout(openvino_path, model_path, inputs_path):
             n_clicks=0,
             className="w-100",
         ),
-        html.Div(id="clear-queue-dummy-output", style={"display": "none"}),
     ], style={
         'display': 'flex',
         'flexDirection': 'column',
