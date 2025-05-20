@@ -233,9 +233,6 @@ def register_callbacks(app):
             output["main"].tofile(node_output)
             node_outputs.append(node_output)
 
-            # Use only main plugin outputs to do inference for both plugins
-            # output["ref"].tofile(f"{reproducer_folder}/input_{index}_ref.bin")
-
         ov, core = get_ov_core(openvino_bin)
         new_model, new_input_paths = cut_model_at_node_and_remove_unused(ov, core, model_xml, input_paths, node_to_cut,
                                                                          node_outputs)
