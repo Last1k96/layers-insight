@@ -202,7 +202,6 @@ def register_callbacks(app):
         cache.ir_graph_elements = elements
         return elements
 
-
     @app.callback(
         Output('config-store-after-cut', 'data'),
         Output('model-path-after-cut', 'data'),
@@ -255,20 +254,22 @@ def register_callbacks(app):
         Input('selected-layer-index-store', 'data'),
         Input('restart-layer-button', 'n_clicks'),
         Input('model-path-after-cut', 'data'),
+        Input('clear-queue-store', "data"),
         State('ir-graph', 'elements'),
         State('config-store', 'data'),
         State('plugins-config-store', 'data'),
         prevent_initial_call=True
     )
     def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, restart_layer_btn,
-                              new_model_path, elements, config_data, plugins_config):
+                              new_model_path, clear_queue, elements, config_data, plugins_config):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
 
-        if any(trigger.startswith('first-load') for trigger in triggers):
+        if any(trigger.startswith('first-load') for trigger in triggers) or any(
+                trigger.startswith('clear-queue-store') for trigger in triggers):
             for element in elements:
                 node_id = element['data'].get("id")
 
@@ -278,9 +279,10 @@ def register_callbacks(app):
                         element['data']['border_color'] = 'red'
                     else:
                         element['data']['border_color'] = 'green'
-
-                if node_id in cache.processing_layers:
+                elif node_id in cache.processing_layers:
                     element['data']['border_color'] = 'yellow'
+                else:
+                    element['data']['border_color'] = '#242424'
 
             cache.ir_graph_elements = elements
             return elements
@@ -335,7 +337,7 @@ def register_callbacks(app):
                 "layer_type": layer_type
             }
 
-            task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
+            cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
             update_node_style(new_elements, node_id, 'orange')
 
         return new_elements
@@ -348,10 +350,12 @@ def register_callbacks(app):
         Input('just-finished-tasks-store', 'data'),
         Input('restart-layer-button', 'n_clicks'),
         Input('model-path-after-cut', 'data'),
+        Input("clear-queue-btn", "n_clicks"),
         State('selected-node-id-store', 'data'),
         prevent_initial_call=True
     )
-    def update_layers_list(_, tap_node, finished_nodes, restart_layers_btn, model_after_cut, selected_node_id):
+    def update_layers_list(_, tap_node, finished_nodes, restart_layers_btn, model_after_cut, selected_node_id,
+                           clear_queue_btn):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update
@@ -418,12 +422,15 @@ def register_callbacks(app):
                     status = "error" if "error" in result else "done"
                     layer["status"] = status
 
-        if any(trigger.startswith('restart-layer-button') for trigger in triggers) and finished_nodes:
+        if any(trigger.startswith('restart-layer-button') for trigger in triggers):  # and finished_nodes
             for layer in layer_list_out:
                 node_id = layer["node_id"]
                 if node_id == selected_node_id:
-                    print("Set status running")
                     layer["status"] = "running"
+
+        if any(trigger.startswith('clear-queue-btn') for trigger in triggers):
+            cache.processing_layers = {}
+            layer_list_out[:] = [item for item in layer_list_out if item.get("status") != "running"]
 
         return layer_list_out, clicked_graph_node_id
 
@@ -1064,15 +1071,15 @@ def register_callbacks(app):
         return True, index
 
     @app.callback(
-        Output("clear-queue-btn", "disabled"),  # dummy Output to satisfy Dash
+        Output("clear-queue-store", "data"),
         Input("clear-queue-btn", "n_clicks"),
         prevent_initial_call=True,
     )
     def clear_queue(_):
-        # 1) ask the running worker to stop
+        cache.processing_layers.clear()
+
         cache.cancel_event.set()
 
-        # 2) drop everything that has not started yet
         while True:
             try:
                 cache.task_queue.get_nowait()
@@ -1080,7 +1087,7 @@ def register_callbacks(app):
             except Empty:
                 break
 
-        return False
+        return True
 
 
 def register_clientside_callbacks(app):

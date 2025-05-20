@@ -83,6 +83,7 @@ IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff')
 
 
 def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
+    # Use openvino library from local openvino bin folder. Should not depend on an openvino package.
     from openvino import Type, Layout
     from openvino.preprocess import PrePostProcessor, ResizeAlgorithm
 
@@ -196,7 +197,7 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
         if stop_event.is_set():
             ir_main.cancel()
             ir_ref.cancel()
-            raise RuntimeError("Inference cancelled by user")
+            raise RuntimeError("Inference cancelled")
 
         done_main = ir_main.wait_for(10)  # 10 ms
         done_ref = ir_ref.wait_for(10)

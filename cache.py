@@ -57,6 +57,11 @@ def process_tasks():
                 plugins_config=plugins_config,
                 stop_event=cancel_event
             )
+        except RuntimeError as e:
+            if str(e) == "Inference cancelled":
+                # Pretend that this inference resulted in noting
+                # Avoid returning an actual error, so the user would have to click restart button.
+                continue
         except Exception as e:
             exception_str = str(e)
             print(e)
