@@ -502,13 +502,14 @@ def register_callbacks(app):
         Input({'type': 'layer-li', 'index': ALL}, 'n_clicks'),
         Input('clicked-graph-node-id-store', 'data'),
         Input('model-path-after-cut', 'data'),
+        Input("clear-queue-store", "data"),
         State("keyboard", "keydown"),
         State('selected-layer-index-store', 'data'),
         State("inference-settings-modal", "is_open"),
         State("visualization-modal", "is_open"),
         prevent_initial_call=True
     )
-    def update_selected_layer(n_keydowns, li_n_clicks, clicked_graph_node_id, model_after_cut, keydown,
+    def update_selected_layer(n_keydowns, li_n_clicks, clicked_graph_node_id, model_after_cut, clear_queue, keydown,
                               selected_layer_index, is_settings_opened, is_visualization_opened):
         ctx = callback_context
         if not ctx.triggered:
@@ -521,6 +522,9 @@ def register_callbacks(app):
 
         new_index = no_update
         if any(trigger.startswith('model-path-after-cut') for trigger in triggers):
+            return None
+
+        if any(trigger.startswith('clear-queue-store') for trigger in triggers):
             return None
 
         if any(trigger.startswith('clicked-graph-node-id-store') for trigger in triggers):
