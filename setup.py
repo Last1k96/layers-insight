@@ -1,8 +1,8 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="your_project_name",  # Replace with your project's name
-    version="0.1.0",           # Replace with your project's version
+    name="LayersInsight",
+    version="0.1.0",
     packages=find_packages(),
     install_requires=[
         "dash==3.0.2",
