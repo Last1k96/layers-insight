@@ -280,7 +280,7 @@ def register_callbacks(app):
                     else:
                         element['data']['border_color'] = 'green'
                 elif node_id in cache.processing_layers:
-                    element['data']['border_color'] = 'yellow'
+                    element['data']['border_color'] = '#BA8E23'
                 else:
                     element['data']['border_color'] = '#242424'
 
@@ -350,7 +350,7 @@ def register_callbacks(app):
         Input('just-finished-tasks-store', 'data'),
         Input('restart-layer-button', 'n_clicks'),
         Input('model-path-after-cut', 'data'),
-        Input("clear-queue-btn", "n_clicks"),
+        Input("clear-queue-store", "data"),
         State('selected-node-id-store', 'data'),
         prevent_initial_call=True
     )
@@ -361,11 +361,19 @@ def register_callbacks(app):
             return no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
+        print(f"{triggers=}")
 
         if any(trigger.startswith('model-path-after-cut') for trigger in triggers):
             return [], None
 
-        if any(trigger.startswith('first-load') for trigger in triggers):
+        if any(trigger.startswith('clear-queue-store') for trigger in triggers):
+            cache.processing_layers.clear()
+            # Only remove tasks with "running" status, keep finished tasks
+            cache.layers_store_data = [layer for layer in cache.layers_store_data if layer.get("status") != "running"]
+            return cache.layers_store_data, None
+
+        if any(trigger.startswith('first-load') for trigger in triggers) or any(
+                trigger.startswith('clear-queue-store') for trigger in triggers):
             layer_list_out = []
 
             for node_id, result in cache.result_cache.items():
@@ -384,13 +392,14 @@ def register_callbacks(app):
                         "status": "done"
                     })
 
-            for node_id, result in cache.processing_layers.items():
-                layer_list_out.append({
-                    "node_id": node_id,
-                    "layer_name": result["layer_name"],
-                    "layer_type": result["layer_type"],
-                    "status": "running"
-                })
+            if any(trigger.startswith('first-load') for trigger in triggers):
+                for node_id, result in cache.processing_layers.items():
+                    layer_list_out.append({
+                        "node_id": node_id,
+                        "layer_name": result["layer_name"],
+                        "layer_type": result["layer_type"],
+                        "status": "running"
+                    })
 
             layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
             return layer_list_out, no_update
@@ -427,10 +436,6 @@ def register_callbacks(app):
                 node_id = layer["node_id"]
                 if node_id == selected_node_id:
                     layer["status"] = "running"
-
-        if any(trigger.startswith('clear-queue-btn') for trigger in triggers):
-            cache.processing_layers = {}
-            layer_list_out[:] = [item for item in layer_list_out if item.get("status") != "running"]
 
         return layer_list_out, clicked_graph_node_id
 
@@ -518,7 +523,7 @@ def register_callbacks(app):
         if is_settings_opened or is_visualization_opened:
             return no_update
 
-        print(f"{cache.result_cache=}")
+        print(f"{len(cache.result_cache)=}")
         print(f"{cache.processing_layers=}")
         print(f"{cache.status_cache=}")
         print(f"{cache.layers_store_data=}")
@@ -1086,8 +1091,7 @@ def register_callbacks(app):
         prevent_initial_call=True,
     )
     def clear_queue(_):
-        cache.processing_layers.clear()
-
+        # cache.processing_layers.clear()
         cache.cancel_event.set()
 
         while True:
@@ -1118,35 +1122,35 @@ def register_clientside_callbacks(app):
                     }
                 });
             }
-        
+
             const isSettingsOpen = settingsOpened ?? false;
             const isVisualizationOpen = visualizationOpened ?? false;
             if (isSettingsOpen || isVisualizationOpen) {
                 return;
             }
-            
+
             if (!window.ctrlPressed || nodeId == null) {
                 return;
             }
-            
+
             if (window.cy) {
                 const element = window.cy.getElementById(nodeId);
                 if (element.length === 0) return; // Check if node exists
 
                 const currentPan = window.cy.pan();
-                
+
                 const zoom = window.cy.zoom();
                 const nodePos = element.position();
                 const viewportCenterX = window.cy.width() / 2;
                 const viewportCenterY = window.cy.height() / 2;
                 const newPanX = viewportCenterX - (nodePos.x * zoom);
                 const newPanY = viewportCenterY - (nodePos.y * zoom);
-                
+
                 const dx = newPanX - currentPan.x;
                 const dy = newPanY - currentPan.y;
                 const distance = Math.sqrt(dx * dx + dy * dy);
                 const duration = Math.min(300, Math.max(100, distance));
-                
+
                 window.cy.stop();
                 window.cy.animate({
                     pan: { x: newPanX, y: newPanY }
