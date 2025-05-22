@@ -205,6 +205,7 @@ def register_callbacks(app):
     @app.callback(
         Output('config-store-after-cut', 'data'),
         Output('model-path-after-cut', 'data'),
+        Output('transformed-node-name-store', 'data'),
         Input('transform-to-input-button', 'n_clicks'),
         State('config-store', 'data'),
         State('selected-node-id-store', 'data'),
@@ -255,7 +256,18 @@ def register_callbacks(app):
             model_inputs=[str(path) for path in new_input_paths]
         )
 
-        return config, config["model_xml"]
+        # Find the actual name of the parameter node in the new graph
+        # Parse the new model to get the actual parameter node name
+        new_elements = parse_openvino_ir(str(xml_path.resolve()))
+        parameter_node = None
+        for element in new_elements:
+            if 'data' in element and element['data'].get('type') == 'Parameter':
+                parameter_node = element
+                break
+
+        transformed_node_name = parameter_node['data']['layer_name'] if parameter_node else "Parameter"
+
+        return config, config["model_xml"], transformed_node_name
 
     @app.callback(
         Output('ir-graph', 'elements'),
@@ -1175,6 +1187,68 @@ def register_clientside_callbacks(app):
         }
         """,
         Input('selected-node-id-store', 'data'),
+        State("inference-settings-modal", "is_open"),
+        State("visualization-modal", "is_open"),
+    )
+
+    # Center on the transformed node after graph transformation
+    app.clientside_callback(
+        """
+        function(transformedNodeName, elements, settingsOpened, visualizationOpened) {
+            if (!transformedNodeName || !elements || elements.length === 0) {
+                return;
+            }
+
+            const isSettingsOpen = settingsOpened ?? false;
+            const isVisualizationOpen = visualizationOpened ?? false;
+            if (isSettingsOpen || isVisualizationOpen) {
+                return;
+            }
+
+            if (window.cy) {
+                // Find the node with the matching layer_name
+                let targetNode = null;
+                for (const element of elements) {
+                    if (element.data && element.data.layer_name === transformedNodeName) {
+                        targetNode = element;
+                        break;
+                    }
+                }
+
+                if (!targetNode) return; // No matching node found
+
+                const nodeId = targetNode.data.id;
+                const element = window.cy.getElementById(nodeId);
+                if (element.length === 0) return; // Check if node exists in cytoscape
+
+                const currentPan = window.cy.pan();
+
+                const zoom = window.cy.zoom();
+                const nodePos = element.position();
+                const viewportCenterX = window.cy.width() / 2;
+                const viewportCenterY = window.cy.height() / 2;
+                const newPanX = viewportCenterX - (nodePos.x * zoom);
+                const newPanY = viewportCenterY - (nodePos.y * zoom);
+
+                const dx = newPanX - currentPan.x;
+                const dy = newPanY - currentPan.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                const duration = Math.min(300, Math.max(100, distance));
+
+                window.cy.stop();
+                window.cy.animate({
+                    pan: { x: newPanX, y: newPanY }
+                }, { 
+                    duration: duration,
+                    easing: 'ease-in-out',
+                    queue: false
+                });
+            }
+            return;
+        }
+        """,
+        Input('transformed-node-name-store', 'data'),
+        State('ir-graph', 'elements'),
         State("inference-settings-modal", "is_open"),
         State("visualization-modal", "is_open"),
     )

@@ -485,6 +485,7 @@ def create_layout(openvino_path, model_path, inputs_path):
             dcc.Store(id='clicked-graph-node-id-store'),  # to break circular dependency
             dcc.Store(id='clear-queue-store', data=False),
 
+            dcc.Store(id='transformed-node-name-store', data=None),  # to store the name of the node that was transformed
             dcc.Store('dummy-output', data=None),
 
             dcc.Interval(id='update-interval', interval=1000, n_intervals=0),
