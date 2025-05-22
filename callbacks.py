@@ -211,6 +211,17 @@ def register_callbacks(app):
         prevent_initial_call=True
     )
     def transform_layer_to_model_input(transform_to_input_btn, config, selected_node_id):
+        # Stop any running inference tasks
+        cache.cancel_event.set()
+
+        # Clear the task queue
+        while True:
+            try:
+                cache.task_queue.get_nowait()
+                cache.task_queue.task_done()
+            except Empty:
+                break
+
         # Save outputs of current node in a subgraph folder
         layer = cache.result_cache[selected_node_id]
         node_to_cut = layer["layer_name"]
