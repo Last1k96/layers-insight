@@ -335,7 +335,7 @@ def create_layout(openvino_path, model_path, inputs_path):
             'fit': False,
         },
         autoungrabify=True,
-        autoRefreshLayout=True,
+        autoRefreshLayout=False,
         wheelSensitivity=0.2,
         stylesheet=dynamic_stylesheet
     )
@@ -489,5 +489,6 @@ def create_layout(openvino_path, model_path, inputs_path):
             dcc.Store('dummy-output', data=None),
 
             dcc.Interval(id='update-interval', interval=1000, n_intervals=0),
+            dcc.Interval(id='layout-reset-interval', interval=5, n_intervals=0, max_intervals=1, disabled=True),
         ],
     )

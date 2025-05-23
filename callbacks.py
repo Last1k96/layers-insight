@@ -62,6 +62,143 @@ def update_selection(elements, selected_id):
 
 def register_callbacks(app):
     @app.callback(
+        Output('ir-graph', 'stylesheet'),
+        Input('just-finished-tasks-store', 'data'),
+        Input('selected-layer-index-store', 'data'),
+        Input('restart-layer-button', 'n_clicks'),
+        Input('ir-graph', 'tapNode'),
+        State('ir-graph', 'stylesheet'),
+        State('ir-graph', 'elements'),
+        prevent_initial_call=True
+    )
+    def update_node_stylesheet(finished_nodes, selected_layer_index, restart_layer_btn, tap_node, current_stylesheet, elements):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update
+
+        # Start with the base stylesheet
+        if current_stylesheet is None:
+            # If no stylesheet is provided, use a default one
+            stylesheet = build_dynamic_stylesheet(cache.ir_graph_elements)
+        else:
+            # Use the current stylesheet as a base
+            stylesheet = current_stylesheet
+
+        # Update node border colors based on elements' data attributes
+        for element in elements:
+            if 'data' in element and 'id' in element['data'] and 'border_color' in element['data']:
+                node_id = element['data']['id']
+                color = element['data']['border_color']
+
+                # Check if a selector for this node already exists
+                node_selector = f'node[id = "{node_id}"]'
+
+                # Find if this selector already exists in the stylesheet
+                selector_exists = False
+                for style in stylesheet:
+                    if style.get('selector') == node_selector:
+                        # Update the existing style
+                        style['style']['border-color'] = color
+                        selector_exists = True
+                        break
+
+                # If the selector doesn't exist, add a new style
+                if not selector_exists:
+                    stylesheet.append({
+                        'selector': node_selector,
+                        'style': {
+                            'border-color': color
+                        }
+                    })
+
+        # Update the selected node style
+        if hasattr(cache, 'selected_node_id') and cache.selected_node_id is not None:
+            # Add a style for the selected node class
+            selected_class_exists = False
+            for style in stylesheet:
+                if style.get('selector') == 'node.selected':
+                    selected_class_exists = True
+                    break
+
+            if not selected_class_exists:
+                stylesheet.append({
+                    'selector': 'node.selected',
+                    'style': {
+                        'background-color': 'red',
+                        'z-index': 9999  # Ensure selected node is on top
+                    }
+                })
+
+            # We don't need to add a style for the specific selected node
+            # because the class selector will handle it, and the class is
+            # applied to the node in the set_selected_node_style function
+
+        return stylesheet
+
+    @app.callback(
+        Output('ir-graph', 'layout'),
+        Output('layout-reset-interval', 'disabled'),
+        Output('layout-reset-interval', 'n_intervals'),
+        Input('model-path-after-cut', 'data'),
+        prevent_initial_call=True
+    )
+    def refresh_graph_layout(model_path_after_cut):
+        """
+        Manually refresh the graph layout when the model is modified.
+        This is needed because autoRefreshLayout is set to False to prevent
+        unnecessary layout recalculations during normal operation.
+        """
+        if not model_path_after_cut:
+            return no_update, no_update, no_update, no_update
+
+        import time
+        timestamp = int(time.time())  # Current Unix timestamp in seconds
+
+        layout = {
+            'name': 'dagre',
+            'directed': True,
+            'rankDir': 'TB',
+            'nodeSep': 25,
+            'rankSep': 50,
+            'fit': True,  # Change to True to force a complete layout refresh
+            'animate': True,  # Add animation to make the refresh more visible
+            'randomize': timestamp,  # Use timestamp to ensure the layout is seen as new
+            'refresh': True,  # Explicitly request a refresh
+        }
+
+        # Enable the interval component to trigger a layout reset after a delay
+        # Also reset the interval component's n_intervals to 0
+        return layout, False, 0
+
+    @app.callback(
+        Output('ir-graph', 'layout', allow_duplicate=True),
+        Output('layout-reset-interval', 'disabled', allow_duplicate=True),
+        Input('layout-reset-interval', 'n_intervals'),
+        prevent_initial_call=True
+    )
+    def reset_layout_after_delay(n_intervals):
+        """
+        Reset the layout to its original configuration after a delay.
+        This ensures that the graph is properly redrawn and then returns to its original state.
+        """
+        if n_intervals is None or n_intervals < 1:
+            return no_update, no_update
+
+        print(f"[DEBUG] Resetting graph layout after delay (n_intervals: {n_intervals})")
+
+        # Return the original layout configuration and disable the interval
+        layout = {
+            'name': 'dagre',
+            'directed': True,
+            'rankDir': 'TB',
+            'nodeSep': 25,
+            'rankSep': 50,
+            'fit': False,  # Reset to False to match the original configuration
+        }
+
+        return layout, True
+
+    @app.callback(
         Output('just-finished-tasks-store', 'data'),
         Input('update-interval', 'n_intervals'),
         prevent_initial_call=True
@@ -292,7 +429,8 @@ def register_callbacks(app):
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         if any(trigger.startswith('first-load') for trigger in triggers) or any(
-                trigger.startswith('clear-queue-store') for trigger in triggers):
+                trigger.startswith('clear-queue-store') for trigger in triggers) or any(
+                trigger.startswith('model-path-after-cut') for trigger in triggers):
             for element in elements:
                 node_id = element['data'].get("id")
 
