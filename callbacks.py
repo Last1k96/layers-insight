@@ -16,6 +16,7 @@ import dash_bootstrap_components as dbc
 from layout import build_dynamic_stylesheet, update_config, read_openvino_ir, build_model_input_fields
 from openvino_graph import parse_openvino_ir
 from run_inference import get_available_plugins, prepare_submodel_and_inputs, get_ov_core
+from colors import BORDER_COLORS, BorderColorType
 
 import cache
 from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, \
@@ -43,9 +44,19 @@ def update_node_style(elements, node_id, color):
 
 
 def set_selected_node_style(elements, node_id):
+    # Get the type of the selected node
+    selected_type = None
+    for element in elements:
+        if element["data"].get("id") == node_id:
+            selected_type = element["data"].get("type")
+            break
+
+    # Set classes based on node type
     for element in elements:
         if element["data"].get("id") == node_id:
             element["classes"] = "selected"
+        elif selected_type and element["data"].get("type") != selected_type:
+            element["classes"] = "selected-different-type"
         else:
             element["classes"] = ""
 
@@ -113,19 +124,33 @@ def register_callbacks(app):
 
         # Update the selected node style
         if hasattr(cache, 'selected_node_id') and cache.selected_node_id is not None:
-            # Add a style for the selected node class
+            # Add styles for the selected node classes
             selected_class_exists = False
+            selected_different_type_class_exists = False
+
             for style in stylesheet:
                 if style.get('selector') == 'node.selected':
                     selected_class_exists = True
+                if style.get('selector') == 'node.selected-different-type':
+                    selected_different_type_class_exists = True
+                if selected_class_exists and selected_different_type_class_exists:
                     break
 
             if not selected_class_exists:
                 stylesheet.append({
                     'selector': 'node.selected',
                     'style': {
-                        'background-color': 'red',
+                        'background-color': BORDER_COLORS[BorderColorType.ERROR],
                         'z-index': 9999  # Ensure selected node is on top
+                    }
+                })
+
+            if not selected_different_type_class_exists:
+                stylesheet.append({
+                    'selector': 'node.selected-different-type',
+                    'style': {
+                        'background-color': BORDER_COLORS[BorderColorType.SELECTED_DIFFERENT_TYPE],
+                        'z-index': 9998  # Just below the selected node
                     }
                 })
 
@@ -437,13 +462,13 @@ def register_callbacks(app):
                 if node_id in cache.result_cache:
                     result = cache.result_cache[node_id]
                     if "error" in result:
-                        element['data']['border_color'] = 'red'
+                        element['data']['border_color'] = BORDER_COLORS[BorderColorType.ERROR]
                     else:
-                        element['data']['border_color'] = 'green'
+                        element['data']['border_color'] = BORDER_COLORS[BorderColorType.SUCCESS]
                 elif node_id in cache.processing_layers:
-                    element['data']['border_color'] = '#BA8E23'
+                    element['data']['border_color'] = BORDER_COLORS[BorderColorType.PROCESSING]
                 else:
-                    element['data']['border_color'] = '#242424'
+                    element['data']['border_color'] = BORDER_COLORS[BorderColorType.DEFAULT]
 
             cache.ir_graph_elements = elements
             return elements
@@ -463,7 +488,7 @@ def register_callbacks(app):
                 }
 
                 cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
-                update_node_style(new_elements, node_id, 'orange')
+                update_node_style(new_elements, node_id, BORDER_COLORS[BorderColorType.SELECTED])
 
             set_selected_node_style(new_elements, node_id)
 
@@ -472,7 +497,7 @@ def register_callbacks(app):
                 node_id = element['data'].get("id")
                 if node_id in finished_nodes:
                     result = cache.result_cache[node_id]
-                    color = 'red' if "error" in result else 'green'
+                    color = BORDER_COLORS[BorderColorType.ERROR] if "error" in result else BORDER_COLORS[BorderColorType.SUCCESS]
                     element['data']['border_color'] = color
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
@@ -499,7 +524,7 @@ def register_callbacks(app):
             }
 
             cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
-            update_node_style(new_elements, node_id, 'orange')
+            update_node_style(new_elements, node_id, BORDER_COLORS[BorderColorType.SELECTED])
 
         return new_elements
 

@@ -1,4 +1,5 @@
 import xml.etree.ElementTree as ET
+from colors import BORDER_COLORS, BorderColorType
 
 def parse_openvino_ir(xml_file_path):
     tree = ET.parse(xml_file_path)
@@ -61,7 +62,7 @@ def parse_openvino_ir(xml_file_path):
                 'type': layer_type,
                 'display_label': layer_type,
                 'layer_name': layer_name,
-                'border_color': "#242424"
+                'border_color': BORDER_COLORS[BorderColorType.DEFAULT]
             }
         })
 
