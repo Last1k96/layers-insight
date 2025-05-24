@@ -9,7 +9,7 @@ import dash_cytoscape as cyto
 
 from openvino_graph import parse_openvino_ir
 from known_ops import OPENVINO_OP_COLORS_DARK
-from colors import BORDER_COLORS, BorderColorType
+from colors import BorderColorType
 import dash_bootstrap_components as dbc
 from dash_split_pane import DashSplitPane
 
@@ -101,7 +101,7 @@ def build_dynamic_stylesheet(elements):
     stylesheet.append({
         'selector': 'node.selected',  # .selected is a custom class, :selected builtin bugs when resetting manually
         'style': {
-            'background-color': BORDER_COLORS[BorderColorType.ERROR],
+            'background-color': BorderColorType.ERROR.value,
         }
     })
 

@@ -16,7 +16,7 @@ import dash_bootstrap_components as dbc
 from layout import build_dynamic_stylesheet, update_config, read_openvino_ir, build_model_input_fields
 from openvino_graph import parse_openvino_ir
 from run_inference import get_available_plugins, prepare_submodel_and_inputs, get_ov_core
-from colors import BORDER_COLORS, BorderColorType
+from colors import BorderColorType
 
 import cache
 from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, \
@@ -140,7 +140,7 @@ def register_callbacks(app):
                 stylesheet.append({
                     'selector': 'node.selected',
                     'style': {
-                        'background-color': BORDER_COLORS[BorderColorType.ERROR],
+                        'background-color': BorderColorType.ERROR.value,
                         'z-index': 9999  # Ensure selected node is on top
                     }
                 })
@@ -149,7 +149,7 @@ def register_callbacks(app):
                 stylesheet.append({
                     'selector': 'node.selected-different-type',
                     'style': {
-                        'background-color': BORDER_COLORS[BorderColorType.SELECTED_DIFFERENT_TYPE],
+                        'background-color': BorderColorType.SELECTED_DIFFERENT_TYPE.value,
                         'z-index': 9998  # Just below the selected node
                     }
                 })
@@ -462,13 +462,13 @@ def register_callbacks(app):
                 if node_id in cache.result_cache:
                     result = cache.result_cache[node_id]
                     if "error" in result:
-                        element['data']['border_color'] = BORDER_COLORS[BorderColorType.ERROR]
+                        element['data']['border_color'] = BorderColorType.ERROR.value
                     else:
-                        element['data']['border_color'] = BORDER_COLORS[BorderColorType.SUCCESS]
+                        element['data']['border_color'] = BorderColorType.SUCCESS.value
                 elif node_id in cache.processing_layers:
-                    element['data']['border_color'] = BORDER_COLORS[BorderColorType.PROCESSING]
+                    element['data']['border_color'] = BorderColorType.PROCESSING.value
                 else:
-                    element['data']['border_color'] = BORDER_COLORS[BorderColorType.DEFAULT]
+                    element['data']['border_color'] = BorderColorType.DEFAULT.value
 
             cache.ir_graph_elements = elements
             return elements
@@ -488,7 +488,7 @@ def register_callbacks(app):
                 }
 
                 cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
-                update_node_style(new_elements, node_id, BORDER_COLORS[BorderColorType.SELECTED])
+                update_node_style(new_elements, node_id, BorderColorType.SELECTED.value)
 
             set_selected_node_style(new_elements, node_id)
 
@@ -497,7 +497,7 @@ def register_callbacks(app):
                 node_id = element['data'].get("id")
                 if node_id in finished_nodes:
                     result = cache.result_cache[node_id]
-                    color = BORDER_COLORS[BorderColorType.ERROR] if "error" in result else BORDER_COLORS[BorderColorType.SUCCESS]
+                    color = BorderColorType.ERROR.value if "error" in result else BorderColorType.SUCCESS.value
                     element['data']['border_color'] = color
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
@@ -524,7 +524,7 @@ def register_callbacks(app):
             }
 
             cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
-            update_node_style(new_elements, node_id, BORDER_COLORS[BorderColorType.SELECTED])
+            update_node_style(new_elements, node_id, BorderColorType.SELECTED.value)
 
         return new_elements
 

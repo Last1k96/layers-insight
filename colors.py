@@ -1,21 +1,11 @@
 # colors.py
-from enum import Enum, auto
+from enum import Enum
 
-# Border colors for node states as an enum
+# Border colors for node states as an enum with direct color values
 class BorderColorType(Enum):
-    DEFAULT = auto()
-    ERROR = auto()
-    SUCCESS = auto()
-    PROCESSING = auto()
-    SELECTED = auto()
-    SELECTED_DIFFERENT_TYPE = auto()  # New color for selected nodes of different types
-
-# Mapping from enum to actual color values
-BORDER_COLORS = {
-    BorderColorType.DEFAULT: "#242424",  # Default state
-    BorderColorType.ERROR: "red",        # Error state
-    BorderColorType.SUCCESS: "green",    # Success state
-    BorderColorType.PROCESSING: "#BA8E23", # Processing state
-    BorderColorType.SELECTED: "orange",   # Selected state
-    BorderColorType.SELECTED_DIFFERENT_TYPE: "purple"  # Different type selected state
-}
+    DEFAULT = "#242424"                # Default state
+    ERROR = "red"                      # Error state
+    SUCCESS = "green"                  # Success state
+    PROCESSING = "#BA8E23"             # Processing state
+    SELECTED = "orange"                # Selected state
+    SELECTED_DIFFERENT_TYPE = "purple" # Different type selected state
