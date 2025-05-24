@@ -547,7 +547,6 @@ def register_callbacks(app):
             return no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
-        print(f"{triggers=}")
 
         if any(trigger.startswith('model-path-after-cut') for trigger in triggers):
             return [], None
@@ -708,12 +707,6 @@ def register_callbacks(app):
 
         if is_settings_opened or is_visualization_opened:
             return no_update
-
-        print(f"{len(cache.result_cache)=}")
-        print(f"{cache.processing_layers=}")
-        print(f"{cache.status_cache=}")
-        print(f"{cache.layers_store_data=}")
-        print()
 
         triggers = [t['prop_id'] for t in ctx.triggered]
 

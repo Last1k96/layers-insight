@@ -176,8 +176,6 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
     ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, model_inputs, model_xml,
                                                                        openvino_bin,
                                                                        seed)
-
-    print("run_partial_inference")
     cm_main = core.compile_model(
         preprocessed_model, main_plugin,
         config=clean_empty_values(plugins_config.get(main_plugin, {}))
