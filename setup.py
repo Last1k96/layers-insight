@@ -5,17 +5,17 @@ setup(
     version="0.1.0",
     packages=find_packages(),
     install_requires=[
-        "dash==3.0.2",
+        "dash",
         "dash-cytoscape",
         "dash-bootstrap-components",
         "dash-extensions",
         "dash-split-pane",
         "numpy",
         "opencv-python-headless",
-        "scikit-image~=0.25.1",
-        "plotly~=6.0.0",
-        "matplotlib~=3.10.0",
-        "scipy~=1.15.1",
+        "scikit-image",
+        "plotly",
+        "matplotlib",
+        "scipy",
         "umap-learn"
     ],
 )

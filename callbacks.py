@@ -34,7 +34,7 @@ class LockGuard:
         self._lock.release()
 
 
-def update_node_style(elements, node_id, color):
+def update_border_color(elements, node_id, color):
     for element in elements:
         if element['data'].get('id') == node_id:
             element['data']['border_color'] = color
@@ -299,13 +299,13 @@ def register_callbacks(app):
                 if node_id in cache.result_cache:
                     result = cache.result_cache[node_id]
                     if "error" in result:
-                        element['data']['border_color'] = 'red'
+                        element['data']['border_color'] = BorderColor.ERROR.value
                     else:
-                        element['data']['border_color'] = 'green'
+                        element['data']['border_color'] = BorderColor.SUCCESS.value
                 elif node_id in cache.processing_layers:
-                    element['data']['border_color'] = '#BA8E23'
+                    element['data']['border_color'] = BorderColor.PROCESSING.value
                 else:
-                    element['data']['border_color'] = '#242424'
+                    element['data']['border_color'] = BorderColor.DEFAULT.value
 
             cache.ir_graph_elements = elements
             return elements
@@ -325,7 +325,7 @@ def register_callbacks(app):
                 }
 
                 cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
-                update_node_style(new_elements, node_id, 'orange')
+                update_border_color(new_elements, node_id, BorderColor.SELECTED.value)
 
             set_selected_node_style(new_elements, node_id)
 
@@ -334,7 +334,7 @@ def register_callbacks(app):
                 node_id = element['data'].get("id")
                 if node_id in finished_nodes:
                     result = cache.result_cache[node_id]
-                    color = 'red' if "error" in result else 'green'
+                    color = BorderColor.ERROR.value if "error" in result else BorderColor.SUCCESS.value
                     element['data']['border_color'] = color
 
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
@@ -361,7 +361,7 @@ def register_callbacks(app):
             }
 
             cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
-            update_node_style(new_elements, node_id, 'orange')
+            update_border_color(new_elements, node_id, BorderColor.SELECTED.value)
 
         return new_elements
 
@@ -384,7 +384,6 @@ def register_callbacks(app):
             return no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
-        print(f"{triggers=}")
 
         if any(trigger.startswith('model-path-after-cut') for trigger in triggers):
             return [], None
@@ -545,12 +544,6 @@ def register_callbacks(app):
 
         if is_settings_opened or is_visualization_opened:
             return no_update
-
-        print(f"{len(cache.result_cache)=}")
-        print(f"{cache.processing_layers=}")
-        print(f"{cache.status_cache=}")
-        print(f"{cache.layers_store_data=}")
-        print()
 
         triggers = [t['prop_id'] for t in ctx.triggered]
 
