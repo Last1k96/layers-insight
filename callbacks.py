@@ -16,6 +16,7 @@ import dash_bootstrap_components as dbc
 from layout import build_dynamic_stylesheet, update_config, read_openvino_ir, build_model_input_fields
 from openvino_graph import parse_openvino_ir
 from run_inference import get_available_plugins, prepare_submodel_and_inputs, get_ov_core
+from colors import BorderColor
 
 import cache
 from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, \
