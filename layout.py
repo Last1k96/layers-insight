@@ -336,7 +336,7 @@ def create_layout(openvino_path, model_path, inputs_path):
             'fit': False,
         },
         autoungrabify=True,
-        autoRefreshLayout=True,
+        autoRefreshLayout=False,
         wheelSensitivity=0.2,
         stylesheet=dynamic_stylesheet
     )
@@ -488,6 +488,7 @@ def create_layout(openvino_path, model_path, inputs_path):
 
             dcc.Store(id='transformed-node-name-store', data=None),  # to store the name of the node that was transformed
             dcc.Store('dummy-output', data=None),
+            dcc.Store(id='refresh-layout-trigger', data=0),  # to trigger manual layout refresh
 
             dcc.Interval(id='update-interval', interval=1000, n_intervals=0),
         ],

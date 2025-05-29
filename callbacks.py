@@ -188,10 +188,12 @@ def register_callbacks(app):
 
     @app.callback(
         Output('ir-graph', 'elements', allow_duplicate=True),
+        Output('refresh-layout-trigger', 'data'),
         Input('model-path-after-cut', 'data'),
+        State('refresh-layout-trigger', 'data'),
         prevent_initial_call=True
     )
-    def clear_cache(model_after_cut):
+    def clear_cache(model_after_cut, refresh_layout_trigger):
         with cache.lock:
             cache.result_cache.clear()
             cache.status_cache.clear()
@@ -201,7 +203,7 @@ def register_callbacks(app):
         elements = parse_openvino_ir(model_after_cut)
 
         cache.ir_graph_elements = elements
-        return elements
+        return elements, refresh_layout_trigger + 1
 
     @app.callback(
         Output('config-store-after-cut', 'data'),
@@ -1120,8 +1122,32 @@ def register_callbacks(app):
 
         return True
 
-
 def register_clientside_callbacks(app):
+    # Manual layout refresh function
+    app.clientside_callback(
+        """
+        function(trigger) {
+            if (window.cy) {
+                // Run the layout algorithm manually
+                window.cy.layout({
+                    name: 'dagre',
+                    directed: true,
+                    rankDir: 'TB',
+                    nodeSep: 25,
+                    rankSep: 50,
+                    fit: false
+                }).run();
+
+                return trigger;
+            }
+            return trigger;
+        }
+        """,
+        Output('refresh-layout-trigger', 'data', allow_duplicate=True),
+        Input('refresh-layout-trigger', 'data'),
+        prevent_initial_call=True
+    )
+
     # Center on the node when Ctrl key is being held
     app.clientside_callback(
         """
