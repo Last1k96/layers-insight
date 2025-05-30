@@ -374,7 +374,7 @@ def create_layout(openvino_path, model_path, inputs_path):
     ], style={
         'display': 'flex',
         'flexDirection': 'column',
-        'height': '100vh'
+        'height': '100%'
     })
 
     right_pane = html.Div([
@@ -411,7 +411,7 @@ def create_layout(openvino_path, model_path, inputs_path):
                 )
             ],
             style={
-                'maxHeight': '100vh',
+                'height': '100%',
                 'overflowY': 'auto'
             }
         )
@@ -504,4 +504,8 @@ def create_layout(openvino_path, model_path, inputs_path):
 
             dcc.Interval(id='update-interval', interval=1000, n_intervals=0),
         ],
+            style={
+                'height': '100vh',
+                'overflow': 'hidden'
+            }
     )
