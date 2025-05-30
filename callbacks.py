@@ -1123,6 +1123,92 @@ def register_callbacks(app):
         return True
 
 def register_clientside_callbacks(app):
+    # Panel resize functionality
+    app.clientside_callback(
+        """
+        function(dummy) {
+            // Initialize the resize functionality only once
+            if (!window.panelResizeInitialized) {
+                window.panelResizeInitialized = true;
+
+                function initPanelResize() {
+                    const leftPanel = document.getElementById('left-panel');
+                    const rightPanel = document.getElementById('right-panel');
+                    const leftHandle = document.getElementById('left-panel-resize-handle');
+                    const rightHandle = document.getElementById('right-panel-resize-handle');
+
+                    if (!leftPanel || !rightPanel || !leftHandle || !rightHandle) {
+                        // If elements aren't ready yet, try again later
+                        setTimeout(initPanelResize, 100);
+                        return;
+                    }
+
+                    let isLeftDragging = false;
+                    let isRightDragging = false;
+                    let startX = 0;
+                    let startWidth = 0;
+
+                    // Left panel resize
+                    leftHandle.addEventListener('mousedown', function(e) {
+                        isLeftDragging = true;
+                        startX = e.clientX;
+                        startWidth = parseFloat(getComputedStyle(leftPanel).width);
+                        document.body.style.cursor = 'col-resize';
+                        e.preventDefault();
+                    });
+
+                    // Right panel resize
+                    rightHandle.addEventListener('mousedown', function(e) {
+                        isRightDragging = true;
+                        startX = e.clientX;
+                        startWidth = parseFloat(getComputedStyle(rightPanel).width);
+                        document.body.style.cursor = 'col-resize';
+                        e.preventDefault();
+                    });
+
+                    document.addEventListener('mousemove', function(e) {
+                        if (isLeftDragging) {
+                            const width = startWidth + (e.clientX - startX);
+                            const minWidth = 150;
+                            const maxWidth = window.innerWidth * 0.5;
+
+                            if (width >= minWidth && width <= maxWidth) {
+                                leftPanel.style.width = width + 'px';
+                            }
+                        } else if (isRightDragging) {
+                            const width = startWidth - (e.clientX - startX);
+                            const minWidth = 150;
+                            const maxWidth = window.innerWidth * 0.5;
+
+                            if (width >= minWidth && width <= maxWidth) {
+                                rightPanel.style.width = width + 'px';
+                            }
+                        }
+                    });
+
+                    document.addEventListener('mouseup', function() {
+                        isLeftDragging = false;
+                        isRightDragging = false;
+                        document.body.style.cursor = '';
+                    });
+                }
+
+                // Initialize the resize functionality
+                initPanelResize();
+
+                // Re-initialize on window resize
+                window.addEventListener('resize', function() {
+                    initPanelResize();
+                });
+            }
+
+            return null;
+        }
+        """,
+        Output('dummy-output', 'data'),
+        Input('first-load', 'pathname')
+    );
+
     # Manual layout refresh function
     app.clientside_callback(
         """

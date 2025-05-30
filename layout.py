@@ -11,7 +11,6 @@ from openvino_graph import parse_openvino_ir
 from known_ops import OPENVINO_OP_COLORS_DARK
 from colors import BorderColor
 import dash_bootstrap_components as dbc
-from dash_split_pane import DashSplitPane
 
 from run_inference import get_available_plugins
 
@@ -425,39 +424,58 @@ def create_layout(openvino_path, model_path, inputs_path):
         dismissable=True,
         duration=5000,
         style={
-            "position": "absolute",
-            "left": "-310px",  # Negative offset to place the toast to the left of the right pane.
+            "position": "fixed",
+            "right": "calc(15% + 20px)",  # Position to the left of the right panel
             "top": "10px",
             "width": "300px",
             "zIndex": 1000,
         }
     )
 
-    graph_and_left = DashSplitPane(
-        split="vertical",
-        size="15%",
-        primary="first",
-        children=[left_pane, graph_container]
+    # Create a layout with absolute positioning
+    # Main graph container (full screen)
+    graph_container_full = html.Div(
+        graph_container,
+        className="main-graph"
     )
 
-    right_pane_with_notification = html.Div(
-        children=[
-            right_pane,
-            notification_toast
+    # Left panel (resizable)
+    left_panel = html.Div(
+        [
+            html.Div(
+                left_pane,
+                className="panel-content"
+            ),
+            html.Div(
+                className="resize-handle",
+                id="left-panel-resize-handle"
+            )
         ],
-        style={"position": "relative", "width": "100%", "height": "100%"}
+        className="side-panel left-panel",
+        id="left-panel"
     )
 
-    dash_pane = DashSplitPane(
-        split="vertical",
-        size="15%",
-        primary="second",
-        children=[graph_and_left, right_pane_with_notification]
+    # Right panel (resizable) with notification toast
+    right_panel = html.Div(
+        [
+            html.Div(
+                [right_pane, notification_toast],
+                className="panel-content"
+            ),
+            html.Div(
+                className="resize-handle",
+                id="right-panel-resize-handle"
+            )
+        ],
+        className="side-panel right-panel",
+        id="right-panel"
     )
 
     return html.Div(
         [
-            dash_pane,
+            graph_container_full,
+            left_panel,
+            right_panel,
 
             config_modal,
             plugin_store,
