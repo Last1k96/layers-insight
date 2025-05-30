@@ -382,7 +382,7 @@ def create_layout(openvino_path, model_path, inputs_path):
         html.Div(
             children=[
                 html.Div(
-                    id='right-panel',
+                    id='right-panel-content',
                     style={'height': '100%', 'overflow': 'auto'},
                 ),
                 dbc.Button(

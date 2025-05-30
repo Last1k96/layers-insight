@@ -598,7 +598,7 @@ def register_callbacks(app):
 
     @app.callback(
         Output('right-panel-layer-name', 'children'),
-        Output('right-panel', 'children'),
+        Output('right-panel-content', 'children'),
         Output('save-outputs-button', 'style'),
         Output('save-reproducer-button', 'style'),
         Output('transform-to-input-button', 'style'),
@@ -1123,6 +1123,37 @@ def register_callbacks(app):
         return True
 
 def register_clientside_callbacks(app):
+    app.clientside_callback(
+        """
+        function(pathname) {
+            function applyPercentagePan() {
+                if (window.cy) {
+                    const panX = window.innerWidth * 0.30;
+
+                    window.cy.pan({
+                        x: panX,
+                        y: 0
+                    });
+                }
+            }
+
+            // Apply pan on initial load
+            applyPercentagePan();
+
+            // Set up resize handler if not already done
+            if (!window.panHandlerInitialized) {
+                window.addEventListener('resize', applyPercentagePan);
+                window.panHandlerInitialized = true;
+            }
+
+            return null;
+        }
+        """,
+        Output('dummy-output', 'data', allow_duplicate=True),
+        Input('first-load', 'pathname'),
+        prevent_initial_call=True
+    )
+
     # Panel resize functionality
     app.clientside_callback(
         """
