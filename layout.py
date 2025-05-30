@@ -319,6 +319,7 @@ def create_layout(openvino_path, model_path, inputs_path):
 
     graph_container = cyto.Cytoscape(
         id='ir-graph',
+        className="main-graph",
         elements=elements,
         style={
             "width": "100%",
@@ -432,13 +433,6 @@ def create_layout(openvino_path, model_path, inputs_path):
         }
     )
 
-    # Create a layout with absolute positioning
-    # Main graph container (full screen)
-    graph_container_full = html.Div(
-        graph_container,
-        className="main-graph"
-    )
-
     # Left panel (resizable)
     left_panel = html.Div(
         [
@@ -473,7 +467,7 @@ def create_layout(openvino_path, model_path, inputs_path):
 
     return html.Div(
         [
-            graph_container_full,
+            graph_container,
             left_panel,
             right_panel,
 
