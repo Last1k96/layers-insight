@@ -1110,7 +1110,7 @@ def register_callbacks(app):
         prevent_initial_call=True,
     )
     def clear_queue(_):
-        # cache.processing_layers.clear()
+        cache.processing_layers.clear()
         cache.cancel_event.set()
 
         while True:
@@ -1119,6 +1119,10 @@ def register_callbacks(app):
                 cache.task_queue.task_done()
             except Empty:
                 break
+
+        # Clear the cancel event after emptying the queue
+        # to ensure the first task after clearing is not skipped
+        cache.cancel_event.clear()
 
         return True
 
