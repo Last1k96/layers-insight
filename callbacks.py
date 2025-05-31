@@ -328,7 +328,7 @@ def register_callbacks(app):
                 }
 
                 cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
-                update_border_color(new_elements, node_id, BorderColor.SELECTED.value)
+                update_border_color(new_elements, node_id, BorderColor.PROCESSING.value)
 
             set_selected_node_style(new_elements, node_id)
 
@@ -364,7 +364,7 @@ def register_callbacks(app):
             }
 
             cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
-            update_border_color(new_elements, node_id, BorderColor.SELECTED.value)
+            update_border_color(new_elements, node_id, BorderColor.PROCESSING.value)
 
         return new_elements
 
