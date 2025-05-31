@@ -74,12 +74,6 @@ def build_dynamic_stylesheet(elements):
                 'font-family': 'sans-serif',
                 'font-size': '8'
             }
-        },
-        {
-            'selector': 'node.selected',
-            'style': {
-                'background-color': BorderColor.SELECTED.value,
-            }
         }
     ]
 
@@ -103,6 +97,13 @@ def build_dynamic_stylesheet(elements):
                     'selector': selector,
                     'style': {'background-color': color}
                 })
+
+    stylesheet.append({
+        'selector': 'node.selected',  # .selected is a custom class, :selected builtin bugs when resetting manually
+        'style': {
+            'background-color': BorderColor.SELECTED.value,
+        }
+    })
 
     return stylesheet
 
