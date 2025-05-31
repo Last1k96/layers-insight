@@ -121,12 +121,26 @@ def build_model_input_fields(model_inputs, inputs_path):
         name, shape = model_input["name"], model_input["shape"]
         components.extend([
             dbc.Label(f"Input #{index}: '{name}' with shape {shape}"),
-            dbc.Input(
-                id={"type": "model-input", "name": name},
-                type="text",
-                placeholder=f"Enter input path (fill with random noize if empty)",
-                value=input_path,
-            ),
+            dbc.Row([
+                dbc.Col(
+                    dbc.Input(
+                        id={"type": "model-input", "name": name},
+                        type="text",
+                        placeholder=f"Enter input path (fill with random noize if empty)",
+                        value=input_path,
+                    ),
+                    width=10
+                ),
+                dbc.Col(
+                    dbc.Button(
+                        "Browse",
+                        id={"type": "browse-button", "target": f"model-input-{name}"},
+                        color="secondary",
+                        className="w-100"
+                    ),
+                    width=2
+                )
+            ]),
             html.Br()
         ])
     return components
@@ -173,8 +187,22 @@ def create_layout(openvino_path, model_path, inputs_path):
                     dbc.Tab(
                         [
                             dbc.Label("Path to OpenVINO bin folder"),
-                            dbc.Input(id="ov-bin-path", value=openvino_path,
-                                      placeholder="Path to OpenVINO bin/ folder"),
+                            dbc.Row([
+                                dbc.Col(
+                                    dbc.Input(id="ov-bin-path", value=openvino_path,
+                                              placeholder="Path to OpenVINO bin/ folder"),
+                                    width=10
+                                ),
+                                dbc.Col(
+                                    dbc.Button(
+                                        "Browse",
+                                        id="browse-ov-bin-path",
+                                        color="secondary",
+                                        className="w-100"
+                                    ),
+                                    width=2
+                                )
+                            ]),
                             html.Br(),
                             dbc.Label("Reference Plugin"),
                             dcc.Dropdown(id="reference-plugin-dropdown", options=discovered_plugins, clearable=False),
@@ -188,7 +216,21 @@ def create_layout(openvino_path, model_path, inputs_path):
                     dbc.Tab(
                         [
                             dbc.Label("Path to model.xml"),
-                            dbc.Input(id="model-xml-path", value=model_path, placeholder="Enter path to model.xml"),
+                            dbc.Row([
+                                dbc.Col(
+                                    dbc.Input(id="model-xml-path", value=model_path, placeholder="Enter path to model.xml"),
+                                    width=10
+                                ),
+                                dbc.Col(
+                                    dbc.Button(
+                                        "Browse",
+                                        id="browse-model-xml-path",
+                                        color="secondary",
+                                        className="w-100"
+                                    ),
+                                    width=2
+                                )
+                            ]),
                             html.Br(),
                             html.Div(id="model-input-paths",
                                      children=build_model_input_fields(model_inputs, inputs_path)),
@@ -216,6 +258,48 @@ def create_layout(openvino_path, model_path, inputs_path):
         id="inference-settings-modal",
         is_open=False,
         size="xl",
+    )
+
+    # File browser modal
+    file_browser_modal = dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle("File Browser")),
+            dbc.ModalBody([
+                dbc.Row([
+                    dbc.Col([
+                        dbc.Input(
+                            id="file-browser-current-path",
+                            type="text",
+                            placeholder="Current path",
+                            value="",
+                            disabled=True
+                        ),
+                    ], width=10),
+                    dbc.Col([
+                        dbc.Button(
+                            "Go Up",
+                            id="file-browser-go-up",
+                            color="secondary",
+                            className="w-100"
+                        ),
+                    ], width=2)
+                ]),
+                html.Div(
+                    id="file-browser-content",
+                    style={"height": "400px", "overflowY": "auto", "marginTop": "10px"}
+                ),
+                dcc.Store(id="file-browser-target", data=""),
+                dcc.Store(id="file-browser-mode", data="directory"),  # 'directory' or 'file'
+                dcc.Store(id="file-browser-selected-file", data=""),  # Store the selected file path
+            ]),
+            dbc.ModalFooter([
+                dbc.Button("Cancel", id="file-browser-cancel", className="me-2"),
+                dbc.Button("Select", id="file-browser-select", color="primary"),
+            ]),
+        ],
+        id="file-browser-modal",
+        is_open=False,
+        size="lg",
     )
 
     # Visualization modal
@@ -370,6 +454,7 @@ def create_layout(openvino_path, model_path, inputs_path):
             left_panel,
             right_panel,
             config_modal,
+            file_browser_modal,
             plugin_store,
             config_store,
             visualization_modal,
