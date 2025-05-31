@@ -83,6 +83,10 @@ html, body {
     box-sizing: border-box;
 }
 
+.left-panel .panel-content {
+    padding: 0;
+}
+
 .main-graph {
     position: absolute;
     top: 0;

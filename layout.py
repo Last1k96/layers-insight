@@ -348,33 +348,42 @@ def create_layout(openvino_path, model_path, inputs_path):
             color="dark",
             n_clicks=0,
             className="w-100",
-            style={'margin-bottom': '10px'}
+            style={'margin': '0'}
         ),
-        Keyboard(
-            id="keyboard",
-            captureKeys=["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"],
-        ),
-        html.Div(
-            html.Ul(
-                id='layer-panel-list',
-                style={'padding': '2px'}
+        html.Div([
+            Keyboard(
+                id="keyboard",
+                captureKeys=["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"],
             ),
-            style={
-                'overflowY': 'auto',
-                'flex': '1'
-            }
-        ),
+            html.Div(
+                html.Ul(
+                    id='layer-panel-list',
+                    style={'padding': '2px'}
+                ),
+                style={
+                    'overflowY': 'auto',
+                    'flex': '1'
+                }
+            ),
+        ], style={
+            'flex': '1',
+            'display': 'flex',
+            'flexDirection': 'column',
+            'overflow': 'hidden'
+        }),
         dbc.Button(
             "Clear Queue",
             id="clear-queue-btn",
             color="dark",
             n_clicks=0,
             className="w-100",
+            style={'margin': '0'}
         ),
     ], style={
         'display': 'flex',
         'flexDirection': 'column',
-        'height': '100%'
+        'height': '100%',
+        'padding': '0'
     })
 
     right_pane = html.Div([
