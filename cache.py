@@ -15,11 +15,8 @@ processing_layers = {}
 task_queue = Queue()
 cancel_event = threading.Event()
 
-# The problem with Dash dcc.Store elements is when you have Output and State having the same element
-# the State object could have stale data if the callback for reading the State is enqueued right after
-# the state was updated with Output. State captures the data as the callback was created, thus if it was
-# created while you were updating the State, you will lose the updated state in the next callback.
-# Use global variables for cases where we are both reading the State and Output-ing the same state in the same callback
+# Global variables to avoid race conditions with Dash dcc.Store elements
+# when the same element is used as both Output and State in callbacks
 layers_store_data = []
 ir_graph_elements = {}
 
@@ -42,8 +39,8 @@ def process_tasks():
 
         node_id, layer_name, layer_type, config, plugins_config = task
 
-        exception_str = ""
         outputs = []
+        result = {"node_id": node_id, "layer_name": layer_name, "layer_type": layer_type}
 
         try:
             outputs = run_partial_inference(
@@ -57,20 +54,8 @@ def process_tasks():
                 plugins_config=plugins_config,
                 cancel_event=cancel_event
             )
-        except RuntimeError as e:
-            if str(e) == "Inference cancelled":
-                # Pretend that this inference resulted in noting
-                # Avoid returning an actual error, so the user would have to click restart button.
-                continue
-        except Exception as e:
-            exception_str = str(e)
-            print(e)
 
-        result = {}
-
-        if exception_str:
-            result = {"error": exception_str}
-        else:
+            # Create comparison metrics table for successful inference
             right_panel_div = html.Div([
                 dbc.CardGroup([
                     comparison_metrics_table(output["ref"], output["main"], idx),
@@ -78,11 +63,18 @@ def process_tasks():
                 for idx, output in enumerate(outputs)
             ])
             status_cache[node_id] = right_panel_div
+            result["outputs"] = outputs
 
-        result["node_id"] = node_id
-        result["layer_name"] = layer_name
-        result["layer_type"] = layer_type
-        result["outputs"] = outputs
+        except RuntimeError as e:
+            if str(e) == "Inference cancelled":
+                # Skip this task if inference was cancelled
+                continue
+        except Exception as e:
+            print(e)
+            result["error"] = str(e)
+
+        # Result dictionary is already populated with node_id, layer_name, layer_type
+        # and outputs (if successful)
 
         with lock:
             result_cache[node_id] = result

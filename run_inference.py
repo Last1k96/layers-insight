@@ -174,51 +174,46 @@ def clean_empty_values(d):
 def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs, seed,
                           plugins_config, cancel_event):
     ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, model_inputs, model_xml,
-                                                                       openvino_bin,
-                                                                       seed)
-    cm_main = core.compile_model(
-        preprocessed_model, main_plugin,
-        config=clean_empty_values(plugins_config.get(main_plugin, {}))
-    )
-    cm_ref = core.compile_model(
-        preprocessed_model, ref_plugin,
-        config=clean_empty_values(plugins_config.get(ref_plugin, {}))
-    )
+                                                                       openvino_bin, seed)
 
-    # ---------- ASYNC inference ----------
-    ir_main = cm_main.create_infer_request()
-    ir_ref = cm_ref.create_infer_request()
+    # Compile models for both plugins
+    cm_main = core.compile_model(preprocessed_model, main_plugin,
+                                 config=clean_empty_values(plugins_config.get(main_plugin, {})))
+    cm_ref = core.compile_model(preprocessed_model, ref_plugin,
+                                config=clean_empty_values(plugins_config.get(ref_plugin, {})))
+
+    # Create and start async inference requests
+    ir_main, ir_ref = cm_main.create_infer_request(), cm_ref.create_infer_request()
     ir_main.start_async(inputs)
     ir_ref.start_async(inputs)
 
-    # Poll in tiny chunks so we can notice the cancel quickly
-    while True:
+    # Poll in small intervals to allow cancellation
+    while not (ir_main.wait_for(10) and ir_ref.wait_for(10)):  # 10 ms
         if cancel_event.is_set():
             cancel_event.clear()
             ir_main.cancel()
             ir_ref.cancel()
             raise RuntimeError("Inference cancelled")
 
-        done_main = ir_main.wait_for(10)  # 10 ms
-        done_ref = ir_ref.wait_for(10)
-        if done_main and done_ref:
-            break
-
-    # Gather results exactly as before
-    results = []
-    for m_key, r_key in zip(ir_main.results.keys(), ir_ref.results.keys()):
-        results.append({"main": ir_main.results[m_key], "ref": ir_ref.results[r_key]})
-    return results
+    # Collect results
+    return [{"main": ir_main.results[m_key], "ref": ir_ref.results[r_key]}
+            for m_key, r_key in zip(ir_main.results.keys(), ir_ref.results.keys())]
 
 
 def prepare_submodel_and_inputs(layer_name, model_inputs, model_xml, openvino_bin, seed):
     ov, core = get_ov_core(openvino_bin)
     model = core.read_model(model=model_xml)
+
+    # Find the target layer
     intermediate_nodes = [op for op in model.get_ops() if op.get_friendly_name() == layer_name]
     if len(intermediate_nodes) != 1:
         raise ValueError(f"Failed to find node '{layer_name}'")
-    parameters = [inp.get_node() for inp in model.inputs]
-    sub_model = ov.Model(intermediate_nodes[0].outputs(), parameters, "sub_model")
-    model_rt = model.get_rt_info()
-    inputs, preprocessed_model = configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed)
+
+    # Create submodel from the target layer to inputs
+    sub_model = ov.Model(intermediate_nodes[0].outputs(),
+                         [inp.get_node() for inp in model.inputs],
+                         "sub_model")
+
+    # Configure inputs and return everything needed for inference
+    inputs, preprocessed_model = configure_inputs_for_submodel(sub_model, model.get_rt_info(), model_inputs, seed)
     return ov, core, inputs, preprocessed_model
