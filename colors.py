@@ -7,5 +7,5 @@ class BorderColor(Enum):
     ERROR = "red"                      # Error state
     SUCCESS = "green"                  # Success state
     PROCESSING = "#BA8E23"             # Processing state
-    SELECTED = "orange"                # Selected state
+    SELECTED = "#AA2424"                # Selected state
     SELECTED_DIFFERENT_TYPE = "purple" # Different type selected state

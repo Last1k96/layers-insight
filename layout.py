@@ -78,7 +78,7 @@ def build_dynamic_stylesheet(elements):
         {
             'selector': 'node.selected',
             'style': {
-                'background-color': BorderColor.ERROR.value,
+                'background-color': BorderColor.SELECTED.value,
             }
         }
     ]
