@@ -506,6 +506,10 @@ def create_layout(openvino_path, model_path, inputs_path):
         ],
             style={
                 'height': '100vh',
-                'overflow': 'hidden'
+                'overflow': 'hidden',
+                'position': 'fixed',
+                'width': '100%',
+                'top': '0',
+                'left': '0'
             }
     )
