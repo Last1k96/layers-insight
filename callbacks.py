@@ -1,3 +1,4 @@
+import ast
 import base64
 import copy
 import io
@@ -60,6 +61,37 @@ def update_selection(elements, selected_id):
         updated.append(new_elem)
     return updated
 
+def parse_prop_id(prop_id):
+    """
+    - If prop_id looks like "{…}.some_prop", parse the {…} as JSON or a Python literal.
+    - Otherwise, if it’s "some-id.some_prop", split on the last '.' and return the id string.
+    Returns: (id_value, trigger_name_or_None)
+      • id_value will be a dict if the original began with "{", or a plain string otherwise.
+      • trigger_name_or_None is the part after the final '.', or None if no dot‐suffix.
+    """
+    # 1) If it begins with "{", try to find the matching "}" and parse it.
+    if prop_id.startswith("{"):
+        i = prop_id.rfind("}")
+        if i == -1:
+            raise ValueError(f"Malformed prop_id (no closing brace): {prop_id!r}")
+        literal = prop_id[: i + 1]
+        remainder = prop_id[i + 1 :].lstrip()
+        trigger = remainder[1:].strip() if remainder.startswith(".") else None
+
+        try:
+            return json.loads(literal), trigger
+        except json.JSONDecodeError:
+            return ast.literal_eval(literal), trigger
+
+    # 2) Otherwise, treat it as "some-id.some_prop" (or maybe just "some-id" with no dot).
+    else:
+        # Find the last dot
+        j = prop_id.rfind(".")
+        if j == -1:
+            # No dot at all → no trigger suffix
+            return prop_id, None
+        else:
+            return prop_id[:j], prop_id[j+1:]
 
 def register_callbacks(app):
     @app.callback(
@@ -588,8 +620,8 @@ def register_callbacks(app):
             # Avoid fantom click events when adding new elements to the layers list
             if not all(nc == 0 for nc in li_n_clicks):
                 try:
-                    id_part = first_trigger.split('.')[0]
-                    triggered_id = json.loads(id_part)
+                    id_part, _ = parse_prop_id(first_trigger)
+                    triggered_id = id_part
                     new_index = triggered_id.get("index")
                 except Exception:
                     pass
@@ -891,7 +923,7 @@ def register_callbacks(app):
         if ctx.triggered[0]["value"] is None:
             return no_update, no_update, no_update
 
-        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+        triggered_id, _ = parse_prop_id(ctx.triggered[0]["prop_id"])
 
         # Clear cache if the new node was clicked
         if store_figure and store_figure.get("node_id", None) != node_id:
@@ -907,8 +939,14 @@ def register_callbacks(app):
                 return html.Div(), last_selected_visualization, no_update
 
         else:
-            button_id = json.loads(triggered_id)
-            viz_name = button_id["index"]
+            try:
+                # Fix potential JSON parsing issues by ensuring proper quotes
+                cleaned_triggered_id = triggered_id.replace('"{', '{').replace('}"', '}')
+                button_id = json.loads(cleaned_triggered_id)
+                viz_name = button_id["index"]
+            except Exception as e:
+                print(f"Error parsing triggered_id: {triggered_id}, Error: {str(e)}")
+                return html.Div("Error parsing visualization selection"), last_selected_visualization, no_update
 
         store_name = f"{output_id}{viz_name}"
 
@@ -1099,8 +1137,13 @@ def register_callbacks(app):
             raise PreventUpdate
 
         # Get the id of the button that triggered the callback
-        triggered_id = json.loads(ctx.triggered[0]["prop_id"].split(".")[0])
-        index = triggered_id["index"]
+        try:
+            trigger_id, _ = parse_prop_id(ctx.triggered[0]["prop_id"])
+            triggered_id = trigger_id
+            index = triggered_id["index"]
+        except Exception as e:
+            print(f"Error parsing trigger_id: {ctx.triggered[0]["prop_id"]}, Error: {str(e)}")
+            return False, no_update
 
         return True, index
 
@@ -1125,6 +1168,211 @@ def register_callbacks(app):
         cache.cancel_event.clear()
 
         return True
+
+    # Helper function to create file browser content
+    def create_file_browser_content(path, selected_file=None):
+        if not os.path.exists(path):
+            return html.Div("Path does not exist")
+
+        # Create the current path display
+        path_display = html.Div(
+            [
+                html.Strong("Current path: "),
+                html.Span(path),
+            ],
+            style={"marginBottom": "10px"}
+        )
+
+        # Get directories and files in the current path
+        try:
+            items = os.listdir(path)
+            directories = [item for item in items if os.path.isdir(os.path.join(path, item))]
+            files = [item for item in items if os.path.isfile(os.path.join(path, item))]
+
+            # Sort directories and files alphabetically
+            directories.sort()
+            files.sort()
+
+            # Create parent directory entry (..)
+            parent_directory_item = [
+                html.Li(
+                    dbc.Button(
+                        "📁 ..",
+                        id={"type": "file-browser-item", "index": ".."},
+                        color="link",
+                        style={"textAlign": "left", "width": "100%"}
+                    ),
+                    style={"marginBottom": "5px"}
+                )
+            ]
+
+            # Create list items for directories
+            directory_items = [
+                html.Li(
+                    dbc.Button(
+                        f"📁 {directory}",
+                        id={"type": "file-browser-item", "index": directory},
+                        color="link",
+                        style={"textAlign": "left", "width": "100%"}
+                    ),
+                    style={"marginBottom": "5px"}
+                )
+                for directory in directories
+            ]
+
+            # Create list items for files
+            file_items = [
+                html.Li(
+                    dbc.Button(
+                        f"📄 {file}",
+                        id={"type": "file-browser-item", "index": file},
+                        color="link",
+                        style={
+                            "textAlign": "left", 
+                            "width": "100%",
+                            "backgroundColor": "#007bff" if selected_file and os.path.basename(selected_file) == file else "transparent",
+                            "color": "white" if selected_file and os.path.basename(selected_file) == file else "inherit"
+                        }
+                    ),
+                    style={"marginBottom": "5px"}
+                )
+                for file in files
+            ]
+
+            # Combine parent directory, directories, and files
+            items_list = html.Ul(
+                parent_directory_item + directory_items + file_items,
+                style={"listStyleType": "none", "padding": 0, "maxHeight": "400px", "overflowY": "auto"}
+            )
+
+            return html.Div([path_display, items_list])
+
+        except Exception as e:
+            return html.Div(f"Error: {str(e)}")
+
+    # File browser callbacks
+    @app.callback(
+        [
+            Output("file-browser-modal", "is_open"),
+            Output("file-browser-current-path", "data"),
+            Output("file-browser-target", "data"),
+            Output("file-browser-content", "children"),
+            Output("file-browser-mode", "data"),
+            Output("file-browser-selected-file", "data"),
+        ],
+        [
+            Input("browse-ov-bin-path", "n_clicks"),
+            Input("file-browser-select", "n_clicks"),
+            Input("file-browser-cancel", "n_clicks"),
+            Input({"type": "file-browser-item", "index": ALL}, "n_clicks"),
+        ],
+        [
+            State("file-browser-modal", "is_open"),
+            State("file-browser-current-path", "data"),
+            State("file-browser-target", "data"),
+            State("file-browser-mode", "data"),
+            State("file-browser-selected-file", "data"),
+            State("ov-bin-path", "value"),
+        ],
+        prevent_initial_call=True,
+    )
+    def handle_file_browser(
+        browse_btn, select_btn, cancel_btn, item_clicks,
+        is_open, current_path, target, mode, selected_file, ov_bin_path
+    ):
+        ctx = callback_context
+        if not ctx.triggered:
+            return no_update, no_update, no_update, no_update, no_update, no_update
+
+        trigger_id, _ = parse_prop_id(ctx.triggered[0]["prop_id"])
+
+
+        # Open file browser when browse button is clicked
+        if trigger_id == "browse-ov-bin-path":
+            # Start with the current path if it exists, otherwise use C:\ or user's home
+            path = ov_bin_path if ov_bin_path and os.path.exists(ov_bin_path) else os.path.expanduser("~")
+            if not os.path.isdir(path):
+                path = os.path.dirname(path) if os.path.exists(os.path.dirname(path)) else os.path.expanduser("~")
+
+            return True, path, "ov-bin-path", create_file_browser_content(path), "directory", ""
+
+        # Handle file/directory selection
+        if isinstance(trigger_id, dict) or (isinstance(trigger_id, str) and trigger_id.startswith("{")):
+            # A file or directory was clicked
+            try:
+                if isinstance(trigger_id, dict):
+                    # If trigger_id is already a dictionary, use it directly
+                    item_id = trigger_id
+                else:
+                    # Otherwise parse it as JSON
+                    # Fix potential JSON parsing issues by ensuring proper quotes
+                    cleaned_trigger_id = trigger_id.replace('"{', '{').replace('}"', '}')
+                    item_id = json.loads(cleaned_trigger_id)
+                item_index = item_id["index"]
+
+                # Special handling for ".." (parent directory)
+                if item_index == "..":
+                    parent_path = os.path.dirname(current_path)
+                    return True, parent_path, target, create_file_browser_content(parent_path), mode, selected_file
+
+                # Get the path of the clicked item
+                path = os.path.join(current_path, item_index)
+            except Exception as e:
+                # Print the error for debugging
+                print(f"asdError parsing trigger_id: {ctx.triggered[0]["prop_id"]}, Error: {str(e)}")
+
+                # If we can't parse the JSON, check if it's the ".." button
+                if trigger_id and ".." in trigger_id:
+                    parent_path = os.path.dirname(current_path)
+                    return True, parent_path, target, create_file_browser_content(parent_path), mode, selected_file
+                # If it's not the ".." button and we can't parse the JSON, just return no update
+                return no_update, no_update, no_update, no_update, no_update, no_update
+
+            # If it's a directory, navigate to it
+            if os.path.isdir(path):
+                return True, path, target, create_file_browser_content(path), mode, selected_file
+
+            # If it's a file and we're in file mode, select it
+            if os.path.isfile(path) and mode == "file":
+                return True, current_path, target, create_file_browser_content(current_path, path), mode, path
+
+            # If it's a file but we're in directory mode, do nothing
+            return True, current_path, target, create_file_browser_content(current_path), mode, selected_file
+
+
+        # Handle select button
+        if trigger_id == "file-browser-select":
+            # In directory mode, select the current directory
+            if mode == "directory":
+                return False, current_path, target, no_update, mode, current_path
+
+            # In file mode, select the selected file
+            if mode == "file" and selected_file:
+                return False, current_path, target, no_update, mode, selected_file
+
+            # No selection
+            return True, current_path, target, create_file_browser_content(current_path), mode, selected_file
+
+        # Handle cancel button
+        if trigger_id == "file-browser-cancel":
+            return False, current_path, target, no_update, mode, selected_file
+
+        return no_update, no_update, no_update, no_update, no_update, no_update
+
+    @app.callback(
+        Output("ov-bin-path", "value", allow_duplicate=True),
+        Input("file-browser-selected-file", "data"),
+        State("file-browser-target", "data"),
+        prevent_initial_call=True,
+    )
+    def update_path_input(selected_path, target):
+        if not selected_path or not target:
+            raise PreventUpdate
+
+        if target == "ov-bin-path":
+            return selected_path
+
+        raise PreventUpdate
 
 def register_clientside_callbacks(app):
     app.clientside_callback(

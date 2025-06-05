@@ -173,8 +173,11 @@ def create_layout(openvino_path, model_path, inputs_path):
                     dbc.Tab(
                         [
                             dbc.Label("Path to OpenVINO bin folder"),
-                            dbc.Input(id="ov-bin-path", value=openvino_path,
-                                      placeholder="Path to OpenVINO bin/ folder"),
+                            dbc.InputGroup([
+                                dbc.Input(id="ov-bin-path", value=openvino_path,
+                                          placeholder="Path to OpenVINO bin/ folder"),
+                                dbc.Button("Browse", id="browse-ov-bin-path", color="secondary"),
+                            ]),
                             html.Br(),
                             dbc.Label("Reference Plugin"),
                             dcc.Dropdown(id="reference-plugin-dropdown", options=discovered_plugins, clearable=False),
@@ -364,6 +367,31 @@ def create_layout(openvino_path, model_path, inputs_path):
         dcc.Store(id='refresh-layout-trigger', data=0),
     ]
 
+    # File browser modal for directory selection
+    file_browser_modal = dbc.Modal(
+        [
+            dbc.ModalHeader(dbc.ModalTitle("Select Directory")),
+            dbc.ModalBody(
+                [
+                    html.Div(id="file-browser-content"),
+                    dcc.Store(id="file-browser-current-path", data=""),
+                    dcc.Store(id="file-browser-target", data=""),
+                    dcc.Store(id="file-browser-mode", data="directory"),
+                    dcc.Store(id="file-browser-selected-file", data=""),
+                ]
+            ),
+            dbc.ModalFooter(
+                [
+                    dbc.Button("Cancel", id="file-browser-cancel", className="me-2"),
+                    dbc.Button("Select", id="file-browser-select", color="primary"),
+                ]
+            ),
+        ],
+        id="file-browser-modal",
+        is_open=False,
+        size="lg",
+    )
+
     return html.Div(
         [
             graph_container,
@@ -373,6 +401,7 @@ def create_layout(openvino_path, model_path, inputs_path):
             plugin_store,
             config_store,
             visualization_modal,
+            file_browser_modal,
             dcc.Location(id='first-load', refresh=False),
             *visualization_stores,
             *layer_selection_stores,
