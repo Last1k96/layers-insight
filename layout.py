@@ -121,12 +121,15 @@ def build_model_input_fields(model_inputs, inputs_path):
         name, shape = model_input["name"], model_input["shape"]
         components.extend([
             dbc.Label(f"Input #{index}: '{name}' with shape {shape}"),
-            dbc.Input(
-                id={"type": "model-input", "name": name},
-                type="text",
-                placeholder=f"Enter input path (fill with random noize if empty)",
-                value=input_path,
-            ),
+            dbc.InputGroup([
+                dbc.Input(
+                    id={"type": "model-input", "name": name},
+                    type="text",
+                    placeholder=f"Enter input path (fill with random noize if empty)",
+                    value=input_path,
+                ),
+                dbc.Button("Browse", id={"type": "browse-model-input", "name": name}, color="secondary"),
+            ]),
             html.Br()
         ])
     return components
@@ -191,7 +194,10 @@ def create_layout(openvino_path, model_path, inputs_path):
                     dbc.Tab(
                         [
                             dbc.Label("Path to model.xml"),
-                            dbc.Input(id="model-xml-path", value=model_path, placeholder="Enter path to model.xml"),
+                            dbc.InputGroup([
+                                dbc.Input(id="model-xml-path", value=model_path, placeholder="Enter path to model.xml"),
+                                dbc.Button("Browse", id="browse-model-xml-path", color="secondary"),
+                            ]),
                             html.Br(),
                             html.Div(id="model-input-paths",
                                      children=build_model_input_fields(model_inputs, inputs_path)),

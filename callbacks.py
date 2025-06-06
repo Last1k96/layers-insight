@@ -1262,6 +1262,8 @@ def register_callbacks(app):
         ],
         [
             Input("browse-ov-bin-path", "n_clicks"),
+            Input("browse-model-xml-path", "n_clicks"),
+            Input({"type": "browse-model-input", "name": ALL}, "n_clicks"),
             Input("file-browser-select", "n_clicks"),
             Input("file-browser-cancel", "n_clicks"),
             Input({"type": "file-browser-item", "index": ALL}, "n_clicks"),
@@ -1273,12 +1275,15 @@ def register_callbacks(app):
             State("file-browser-mode", "data"),
             State("file-browser-selected-file", "data"),
             State("ov-bin-path", "value"),
+            State("model-xml-path", "value"),
+            State({"type": "model-input", "name": ALL}, "value"),
+            State({"type": "model-input", "name": ALL}, "id"),
         ],
         prevent_initial_call=True,
     )
     def handle_file_browser(
-        browse_btn, select_btn, cancel_btn, item_clicks,
-        is_open, current_path, target, mode, selected_file, ov_bin_path
+        browse_ov_btn, browse_model_btn, browse_input_btns, select_btn, cancel_btn, item_clicks,
+        is_open, current_path, target, mode, selected_file, ov_bin_path, model_path, input_paths, input_ids
     ):
         ctx = callback_context
         if not ctx.triggered:
@@ -1287,13 +1292,44 @@ def register_callbacks(app):
         trigger_id, _ = parse_prop_id(ctx.triggered[0]["prop_id"])
 
         # Check if the trigger is actually a button click, not just a property change
-        if trigger_id == "browse-ov-bin-path" and browse_btn is not None:
+        if trigger_id == "browse-ov-bin-path" and browse_ov_btn is not None:
             # Start with the current path if it exists, otherwise use C:\ or user's home
             path = ov_bin_path if ov_bin_path and os.path.exists(ov_bin_path) else os.path.expanduser("~")
             if not os.path.isdir(path):
                 path = os.path.dirname(path) if os.path.exists(os.path.dirname(path)) else os.path.expanduser("~")
 
             return True, path, "ov-bin-path", create_file_browser_content(path), "directory", ""
+
+        # Handle model XML path browse button
+        if trigger_id == "browse-model-xml-path" and browse_model_btn is not None:
+            # Start with the current path if it exists, otherwise use user's home
+            path = model_path if model_path and os.path.exists(model_path) else os.path.expanduser("~")
+            if os.path.isfile(path):
+                path = os.path.dirname(path)
+            elif not os.path.isdir(path):
+                path = os.path.dirname(path) if os.path.exists(os.path.dirname(path)) else os.path.expanduser("~")
+
+            return True, path, "model-xml-path", create_file_browser_content(path), "file", ""
+
+        # Handle model input path browse buttons
+        if isinstance(trigger_id, dict) and trigger_id.get("type") == "browse-model-input" and any(browse_input_btns):
+            input_name = trigger_id.get("name")
+            # Find the corresponding input path
+            input_path = ""
+            for i, input_id in enumerate(input_ids):
+                if input_id.get("name") == input_name:
+                    input_path = input_paths[i] if i < len(input_paths) else ""
+                    break
+
+            # Start with the current path if it exists, otherwise use user's home
+            path = input_path if input_path and os.path.exists(input_path) else os.path.expanduser("~")
+            if os.path.isfile(path):
+                path = os.path.dirname(path)
+            elif not os.path.isdir(path):
+                path = os.path.dirname(path) if os.path.exists(os.path.dirname(path)) else os.path.expanduser("~")
+
+            target_id = {"type": "model-input", "name": input_name}
+            return True, path, target_id, create_file_browser_content(path), "file", ""
 
         # Handle file/directory selection
         if isinstance(trigger_id, dict) or (isinstance(trigger_id, str) and trigger_id.startswith("{")):
@@ -1359,17 +1395,40 @@ def register_callbacks(app):
         return no_update, no_update, no_update, no_update, no_update, no_update
 
     @app.callback(
-        Output("ov-bin-path", "value", allow_duplicate=True),
+        [
+            Output("ov-bin-path", "value", allow_duplicate=True),
+            Output("model-xml-path", "value", allow_duplicate=True),
+            Output({"type": "model-input", "name": ALL}, "value", allow_duplicate=True),
+        ],
         Input("file-browser-selected-file", "data"),
-        State("file-browser-target", "data"),
+        [
+            State("file-browser-target", "data"),
+            State({"type": "model-input", "name": ALL}, "id"),
+        ],
         prevent_initial_call=True,
     )
-    def update_path_input(selected_path, target):
+    def update_path_input(selected_path, target, input_ids):
         if not selected_path or not target:
             raise PreventUpdate
 
+        # For OpenVINO bin path
         if target == "ov-bin-path":
-            return selected_path
+            return selected_path, no_update, [no_update] * len(input_ids)
+
+        # For model XML path
+        if target == "model-xml-path":
+            return no_update, selected_path, [no_update] * len(input_ids)
+
+        # For model input paths
+        if isinstance(target, dict) and target.get("type") == "model-input":
+            target_name = target.get("name")
+            input_updates = []
+            for input_id in input_ids:
+                if input_id.get("name") == target_name:
+                    input_updates.append(selected_path)
+                else:
+                    input_updates.append(no_update)
+            return no_update, no_update, input_updates
 
         raise PreventUpdate
 
