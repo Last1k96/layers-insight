@@ -1286,9 +1286,8 @@ def register_callbacks(app):
 
         trigger_id, _ = parse_prop_id(ctx.triggered[0]["prop_id"])
 
-
-        # Open file browser when browse button is clicked
-        if trigger_id == "browse-ov-bin-path":
+        # Check if the trigger is actually a button click, not just a property change
+        if trigger_id == "browse-ov-bin-path" and browse_btn is not None:
             # Start with the current path if it exists, otherwise use C:\ or user's home
             path = ov_bin_path if ov_bin_path and os.path.exists(ov_bin_path) else os.path.expanduser("~")
             if not os.path.isdir(path):
