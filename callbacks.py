@@ -940,9 +940,13 @@ def register_callbacks(app):
 
         else:
             try:
-                # Fix potential JSON parsing issues by ensuring proper quotes
-                cleaned_triggered_id = triggered_id.replace('"{', '{').replace('}"', '}')
-                button_id = json.loads(cleaned_triggered_id)
+                # Check if triggered_id is already a dictionary
+                if isinstance(triggered_id, dict):
+                    button_id = triggered_id
+                else:
+                    # Fix potential JSON parsing issues by ensuring proper quotes
+                    cleaned_triggered_id = triggered_id.replace('"{', '{').replace('}"', '}')
+                    button_id = json.loads(cleaned_triggered_id)
                 viz_name = button_id["index"]
             except Exception as e:
                 print(f"Error parsing triggered_id: {triggered_id}, Error: {str(e)}")
@@ -1335,14 +1339,14 @@ def register_callbacks(app):
         if isinstance(trigger_id, dict) or (isinstance(trigger_id, str) and trigger_id.startswith("{")):
             # A file or directory was clicked
             try:
-                if isinstance(trigger_id, dict):
-                    # If trigger_id is already a dictionary, use it directly
-                    item_id = trigger_id
-                else:
-                    # Otherwise parse it as JSON
-                    # Fix potential JSON parsing issues by ensuring proper quotes
-                    cleaned_trigger_id = trigger_id.replace('"{', '{').replace('}"', '}')
-                    item_id = json.loads(cleaned_trigger_id)
+                # Use parse_prop_id to get the item_id
+                item_id, _ = parse_prop_id(ctx.triggered[0]["prop_id"])
+
+                # Check if the item_id has the expected structure (has an "index" key)
+                if not isinstance(item_id, dict) or "index" not in item_id:
+                    # This is not a file browser item click, so skip this section
+                    raise PreventUpdate
+
                 item_index = item_id["index"]
 
                 # Special handling for ".." (parent directory)
@@ -1352,14 +1356,20 @@ def register_callbacks(app):
 
                 # Get the path of the clicked item
                 path = os.path.join(current_path, item_index)
+            except PreventUpdate:
+                raise
             except Exception as e:
                 # Print the error for debugging
-                print(f"asdError parsing trigger_id: {ctx.triggered[0]["prop_id"]}, Error: {str(e)}")
+                print(f"Error parsing trigger_id: {ctx.triggered[0]['prop_id']}, Error: {str(e)}")
 
-                # If we can't parse the JSON, check if it's the ".." button
-                if trigger_id and ".." in trigger_id:
-                    parent_path = os.path.dirname(current_path)
-                    return True, parent_path, target, create_file_browser_content(parent_path), mode, selected_file
+                # If we can't parse the JSON, try to parse it again with parse_prop_id
+                try:
+                    parsed_id, _ = parse_prop_id(trigger_id)
+                    if parsed_id == ".." or (isinstance(parsed_id, dict) and parsed_id.get("index") == ".."):
+                        parent_path = os.path.dirname(current_path)
+                        return True, parent_path, target, create_file_browser_content(parent_path), mode, selected_file
+                except:
+                    pass
                 # If it's not the ".." button and we can't parse the JSON, just return no update
                 return no_update, no_update, no_update, no_update, no_update, no_update
 
