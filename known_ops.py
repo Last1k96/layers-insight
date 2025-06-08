@@ -2,14 +2,14 @@
 
 # A single array of unique dark-theme colors:
 COLOR_PALETTE = [
-    "#303030",  # Common - unchanged (serves as dark background)
-    "#34579F",  # Convolution – higher sat, lower light
-    "#4C5FA3",  # Pooling
-    "#4CA35F",  # Activation
-    "#A04054",  # Reduction
-    "#A07740",  # Normalization
-    "#744CA3",  # Tensor Manipulation
-    "#8B3647",  # Other
+    "#303030",  # Common
+    "#2856B9",  # Convolution
+    "#C69045",  # Pooling
+    "#3BA052",  # Activation
+    "#27356B",  # Reduction
+    "#A8314A",  # Normalization
+    "#7241AD",  # Tensor Manipulation
+    "#AC3149",  # Other
 ]
 
 OPENVINO_OP_COLORS_DARK = {
