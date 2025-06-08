@@ -69,7 +69,7 @@ if __name__ == '__main__':
     args = parse_arguments()
 
     # Log the parsed arguments
-    logger.info("Starting Layer Insight with the following parameters:")
+    logger.info("Provided arguments:")
     logger.info(f"OpenVINO bin path: {args.openvino_bin}")
     logger.info(f"Model path: {args.model}")
     logger.info(f"Inputs path: {args.inputs}")
