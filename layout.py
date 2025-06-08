@@ -376,7 +376,7 @@ def create_layout(openvino_path, model_path, inputs_path):
     # File browser modal for directory selection
     file_browser_modal = dbc.Modal(
         [
-            dbc.ModalHeader(dbc.ModalTitle("Select Directory")),
+            dbc.ModalHeader(dbc.ModalTitle(id="file-browser-header", children="Select Directory")),
             dbc.ModalBody(
                 [
                     html.Div(id="file-browser-content"),

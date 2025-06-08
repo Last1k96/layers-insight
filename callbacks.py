@@ -1181,7 +1181,6 @@ def register_callbacks(app):
         # Create the current path display
         path_display = html.Div(
             [
-                html.Strong("Current path: "),
                 html.Span(path),
             ],
             style={"marginBottom": "10px"}
@@ -1263,6 +1262,7 @@ def register_callbacks(app):
             Output("file-browser-content", "children"),
             Output("file-browser-mode", "data"),
             Output("file-browser-selected-file", "data"),
+            Output("file-browser-header", "children"),
         ],
         [
             Input("browse-ov-bin-path", "n_clicks"),
@@ -1290,7 +1290,7 @@ def register_callbacks(app):
     ):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update, no_update, no_update, no_update, no_update, no_update
+            return no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
         trigger_id, _ = parse_prop_id(ctx.triggered[0]["prop_id"])
 
@@ -1301,7 +1301,7 @@ def register_callbacks(app):
             if not os.path.isdir(path):
                 path = os.path.dirname(path) if os.path.exists(os.path.dirname(path)) else os.path.expanduser("~")
 
-            return True, path, "ov-bin-path", create_file_browser_content(path), "directory", ""
+            return True, path, "ov-bin-path", create_file_browser_content(path), "directory", "", "Select Directory"
 
         # Handle model XML path browse button
         if trigger_id == "browse-model-xml-path" and browse_model_btn is not None:
@@ -1312,7 +1312,7 @@ def register_callbacks(app):
             elif not os.path.isdir(path):
                 path = os.path.dirname(path) if os.path.exists(os.path.dirname(path)) else os.path.expanduser("~")
 
-            return True, path, "model-xml-path", create_file_browser_content(path), "file", ""
+            return True, path, "model-xml-path", create_file_browser_content(path), "file", "", "Select File"
 
         # Handle model input path browse buttons
         if isinstance(trigger_id, dict) and trigger_id.get("type") == "browse-model-input" and any(browse_input_btns):
@@ -1332,7 +1332,7 @@ def register_callbacks(app):
                 path = os.path.dirname(path) if os.path.exists(os.path.dirname(path)) else os.path.expanduser("~")
 
             target_id = {"type": "model-input", "name": input_name}
-            return True, path, target_id, create_file_browser_content(path), "file", ""
+            return True, path, target_id, create_file_browser_content(path), "file", "", "Select File"
 
         # Handle file/directory selection
         if isinstance(trigger_id, dict) or (isinstance(trigger_id, str) and trigger_id.startswith("{")):
@@ -1351,7 +1351,8 @@ def register_callbacks(app):
                 # Special handling for ".." (parent directory)
                 if item_index == "..":
                     parent_path = os.path.dirname(current_path)
-                    return True, parent_path, target, create_file_browser_content(parent_path), mode, selected_file
+                    header_text = "Select Directory" if mode == "directory" else "Select File"
+                    return True, parent_path, target, create_file_browser_content(parent_path), mode, selected_file, header_text
 
                 # Get the path of the clicked item
                 path = os.path.join(current_path, item_index)
@@ -1374,31 +1375,34 @@ def register_callbacks(app):
 
             # If it's a directory, navigate to it
             if os.path.isdir(path):
-                return True, path, target, create_file_browser_content(path), mode, selected_file
+                header_text = "Select Directory" if mode == "directory" else "Select File"
+                return True, path, target, create_file_browser_content(path), mode, selected_file, header_text
 
             # If it's a file and we're in file mode, select it
             if os.path.isfile(path) and mode == "file":
-                return True, current_path, target, create_file_browser_content(current_path, path), mode, path
+                return True, current_path, target, create_file_browser_content(current_path, path), mode, path, "Select File"
 
             # If it's a file but we're in directory mode, do nothing
-            return True, current_path, target, create_file_browser_content(current_path), mode, selected_file
+            header_text = "Select Directory" if mode == "directory" else "Select File"
+            return True, current_path, target, create_file_browser_content(current_path), mode, selected_file, header_text
 
 
         # Handle select button
         if trigger_id == "file-browser-select":
             # In directory mode, select the current directory
             if mode == "directory":
-                return False, current_path, target, no_update, mode, current_path
+                return False, current_path, target, no_update, mode, current_path, no_update
 
             # In file mode, select the selected file
             if mode == "file" and selected_file:
-                return False, current_path, target, no_update, mode, selected_file
+                return False, current_path, target, no_update, mode, selected_file, no_update
 
             # No selection
-            return True, current_path, target, create_file_browser_content(current_path), mode, selected_file
+            header_text = "Select Directory" if mode == "directory" else "Select File"
+            return True, current_path, target, create_file_browser_content(current_path), mode, selected_file, header_text
 
 
-        return no_update, no_update, no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
     @app.callback(
         [
