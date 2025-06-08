@@ -1,4 +1,5 @@
 import socket
+import argparse
 from app import create_app
 
 def get_local_ip():
@@ -14,16 +15,23 @@ def get_local_ip():
     return ip
 
 
-def run_app():
-    # ir_path = "/home/last1k/code/models/age-gender-recognition-retail-0013/age-gender-recognition-retail-0013.xml"
-    ir_path = "/home/last1k/code/models/yolo_v8n/onnx/onnx/FP16/INT8/1/ov/optimized/yolo_v8n.xml"
-    openvino_path = "/home/last1k/code/openvino/bin/intel64/Release"
-    inputs_path = ["/home/last1k/images/Cat03.jpg"]
-    # inputs_path = []
+def parse_arguments():
+    parser = argparse.ArgumentParser(description='Layers Insight - OpenVINO Model Visualization Tool')
+    parser.add_argument('--openvino_bin', required=True, help='Path to OpenVINO bin directory')
+    parser.add_argument('--model', required=True, help='Path to model XML file')
+    parser.add_argument('--inputs', required=True, help='Comma-separated list of input file paths')
+    parser.add_argument('--port', type=int, default=8050, help='Port to start the server on (default: 8050)')
+
+    return parser.parse_args()
+
+
+def run_app(openvino_path, ir_path, inputs_path, port=8050):
+    # Convert comma-separated inputs to list if it's a string
+    if isinstance(inputs_path, str):
+        inputs_path = [path.strip() for path in inputs_path.split(',')]
 
     app = create_app(openvino_path=openvino_path, ir_xml_path=ir_path, inputs_path=inputs_path)
 
-    port = 8050
     local_ip = get_local_ip()
     url = f"http://{local_ip}:{port}"
 
@@ -32,4 +40,10 @@ def run_app():
 
 
 if __name__ == '__main__':
-    run_app()
+    args = parse_arguments()
+    run_app(
+        openvino_path=args.openvino_bin,
+        ir_path=args.model,
+        inputs_path=args.inputs,
+        port=args.port
+    )
