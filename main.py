@@ -42,7 +42,7 @@ def get_local_ip():
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser(description='Layers Insight - OpenVINO Model Visualization Tool')
+    parser = argparse.ArgumentParser(description='Layer Insight - OpenVINO Model Visualization Tool')
     parser.add_argument('--openvino_bin', required=True, help='Path to OpenVINO bin directory')
     parser.add_argument('--model', required=True, help='Path to model XML file')
     parser.add_argument('--inputs', required=True, help='Comma-separated list of input file paths')
@@ -69,7 +69,7 @@ if __name__ == '__main__':
     args = parse_arguments()
 
     # Log the parsed arguments
-    logger.info("Starting Layers Insight with the following parameters:")
+    logger.info("Starting Layer Insight with the following parameters:")
     logger.info(f"OpenVINO bin path: {args.openvino_bin}")
     logger.info(f"Model path: {args.model}")
     logger.info(f"Inputs path: {args.inputs}")

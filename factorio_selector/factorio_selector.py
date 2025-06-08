@@ -26,7 +26,7 @@ operators = [
 height = 25
 element_height = 40
 
-app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+app = dash.Dash("Layer Insight", external_stylesheets=[dbc.themes.BOOTSTRAP])
 
 app.layout = html.Div([
     dcc.Store(id='global-element-index', data=0),
