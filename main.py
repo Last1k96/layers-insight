@@ -1,6 +1,32 @@
 import socket
 import argparse
+import logging
+import colorlog
 from app import create_app
+
+
+def setup_logger():
+    """Set up and configure a colored logger."""
+    handler = colorlog.StreamHandler()
+    handler.setFormatter(colorlog.ColoredFormatter(
+        '%(log_color)s[%(levelname)s] %(message)s',
+        log_colors={
+            'DEBUG': 'cyan',
+            'INFO': 'green',
+            'WARNING': 'yellow',
+            'ERROR': 'red',
+            'CRITICAL': 'red,bg_white',
+        }
+    ))
+
+    logger = logging.getLogger('layers-insight')
+    logger.setLevel(logging.INFO)
+    logger.addHandler(handler)
+    return logger
+
+
+# Initialize the logger
+logger = setup_logger()
 
 def get_local_ip():
     """ Helper to get local IP if you want to open from Windows side. """
@@ -41,6 +67,14 @@ def run_app(openvino_path, ir_path, inputs_path, port=8050):
 
 if __name__ == '__main__':
     args = parse_arguments()
+
+    # Log the parsed arguments
+    logger.info("Starting Layers Insight with the following parameters:")
+    logger.info(f"OpenVINO bin path: {args.openvino_bin}")
+    logger.info(f"Model path: {args.model}")
+    logger.info(f"Inputs path: {args.inputs}")
+    logger.info(f"Port: {args.port}")
+
     run_app(
         openvino_path=args.openvino_bin,
         ir_path=args.model,

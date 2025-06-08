@@ -16,6 +16,7 @@ setup(
         "plotly",
         "matplotlib",
         "scipy",
-        "umap-learn"
+        "umap-learn",
+        "colorlog"
     ],
 )
