@@ -279,7 +279,7 @@ def create_layout(openvino_path, model_path, inputs_path):
         layout={'name': 'dagre', 'directed': True, 'rankDir': 'TB', 'nodeSep': 25, 'rankSep': 50, 'fit': False},
         autoungrabify=True,
         autoRefreshLayout=False,
-        wheelSensitivity=0.2,
+        wheelSensitivity=0.5,
         stylesheet=dynamic_stylesheet
     )
 
@@ -388,7 +388,6 @@ def create_layout(openvino_path, model_path, inputs_path):
             ),
             dbc.ModalFooter(
                 [
-                    dbc.Button("Cancel", id="file-browser-cancel", className="me-2"),
                     dbc.Button("Select", id="file-browser-select", color="primary"),
                 ]
             ),

@@ -1269,7 +1269,6 @@ def register_callbacks(app):
             Input("browse-model-xml-path", "n_clicks"),
             Input({"type": "browse-model-input", "name": ALL}, "n_clicks"),
             Input("file-browser-select", "n_clicks"),
-            Input("file-browser-cancel", "n_clicks"),
             Input({"type": "file-browser-item", "index": ALL}, "n_clicks"),
         ],
         [
@@ -1286,7 +1285,7 @@ def register_callbacks(app):
         prevent_initial_call=True,
     )
     def handle_file_browser(
-        browse_ov_btn, browse_model_btn, browse_input_btns, select_btn, cancel_btn, item_clicks,
+        browse_ov_btn, browse_model_btn, browse_input_btns, select_btn, item_clicks,
         is_open, current_path, target, mode, selected_file, ov_bin_path, model_path, input_paths, input_ids
     ):
         ctx = callback_context
@@ -1398,9 +1397,6 @@ def register_callbacks(app):
             # No selection
             return True, current_path, target, create_file_browser_content(current_path), mode, selected_file
 
-        # Handle cancel button
-        if trigger_id == "file-browser-cancel":
-            return False, current_path, target, no_update, mode, selected_file
 
         return no_update, no_update, no_update, no_update, no_update, no_update
 
