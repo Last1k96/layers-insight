@@ -757,6 +757,23 @@ def register_callbacks(app):
                 all_input_values
             )
 
+            # Save settings to settings/settings.json
+            settings_dir = Path("settings")
+            settings_dir.mkdir(exist_ok=True)
+            settings_file = settings_dir / "settings.json"
+
+            # Create settings object with selected plugins
+            settings = {
+                "plugins": {
+                    "reference_plugin": plugin1,
+                    "main_plugin": plugin2
+                }
+            }
+
+            # Save settings to file
+            with open(settings_file, 'w') as f:
+                json.dump(settings, f, indent=4)
+
             model_inputs = read_openvino_ir(config["model_xml"])
             inputs_layout_div = build_model_input_fields(model_inputs, config["model_inputs"])
 
