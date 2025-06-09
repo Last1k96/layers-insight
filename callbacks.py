@@ -61,6 +61,7 @@ def update_selection(elements, selected_id):
         updated.append(new_elem)
     return updated
 
+
 def parse_prop_id(prop_id):
     """
     - If prop_id looks like "{…}.some_prop", parse the {…} as JSON or a Python literal.
@@ -75,7 +76,7 @@ def parse_prop_id(prop_id):
         if i == -1:
             raise ValueError(f"Malformed prop_id (no closing brace): {prop_id!r}")
         literal = prop_id[: i + 1]
-        remainder = prop_id[i + 1 :].lstrip()
+        remainder = prop_id[i + 1:].lstrip()
         trigger = remainder[1:].strip() if remainder.startswith(".") else None
 
         try:
@@ -91,7 +92,8 @@ def parse_prop_id(prop_id):
             # No dot at all → no trigger suffix
             return prop_id, None
         else:
-            return prop_id[:j], prop_id[j+1:]
+            return prop_id[:j], prop_id[j + 1:]
+
 
 def register_callbacks(app):
     @app.callback(
@@ -1231,9 +1233,10 @@ def register_callbacks(app):
                         id={"type": "file-browser-item", "index": file},
                         color="link",
                         style={
-                            "textAlign": "left", 
+                            "textAlign": "left",
                             "width": "100%",
-                            "backgroundColor": "#007bff" if selected_file and os.path.basename(selected_file) == file else "transparent",
+                            "backgroundColor": "#007bff" if selected_file and os.path.basename(
+                                selected_file) == file else "transparent",
                             "color": "white" if selected_file and os.path.basename(selected_file) == file else "inherit"
                         }
                     ),
@@ -1285,8 +1288,8 @@ def register_callbacks(app):
         prevent_initial_call=True,
     )
     def handle_file_browser(
-        browse_ov_btn, browse_model_btn, browse_input_btns, select_btn, item_clicks,
-        is_open, current_path, target, mode, selected_file, ov_bin_path, model_path, input_paths, input_ids
+            browse_ov_btn, browse_model_btn, browse_input_btns, select_btn, item_clicks,
+            is_open, current_path, target, mode, selected_file, ov_bin_path, model_path, input_paths, input_ids
     ):
         ctx = callback_context
         if not ctx.triggered:
@@ -1352,7 +1355,8 @@ def register_callbacks(app):
                 if item_index == "..":
                     parent_path = os.path.dirname(current_path)
                     header_text = "Select Directory" if mode == "directory" else "Select File"
-                    return True, parent_path, target, create_file_browser_content(parent_path), mode, selected_file, header_text
+                    return True, parent_path, target, create_file_browser_content(
+                        parent_path), mode, selected_file, header_text
 
                 # Get the path of the clicked item
                 path = os.path.join(current_path, item_index)
@@ -1380,12 +1384,13 @@ def register_callbacks(app):
 
             # If it's a file and we're in file mode, select it
             if os.path.isfile(path) and mode == "file":
-                return True, current_path, target, create_file_browser_content(current_path, path), mode, path, "Select File"
+                return True, current_path, target, create_file_browser_content(current_path,
+                                                                               path), mode, path, "Select File"
 
             # If it's a file but we're in directory mode, do nothing
             header_text = "Select Directory" if mode == "directory" else "Select File"
-            return True, current_path, target, create_file_browser_content(current_path), mode, selected_file, header_text
-
+            return True, current_path, target, create_file_browser_content(
+                current_path), mode, selected_file, header_text
 
         # Handle select button
         if trigger_id == "file-browser-select":
@@ -1399,8 +1404,8 @@ def register_callbacks(app):
 
             # No selection
             header_text = "Select Directory" if mode == "directory" else "Select File"
-            return True, current_path, target, create_file_browser_content(current_path), mode, selected_file, header_text
-
+            return True, current_path, target, create_file_browser_content(
+                current_path), mode, selected_file, header_text
 
         return no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
@@ -1441,6 +1446,7 @@ def register_callbacks(app):
             return no_update, no_update, input_updates
 
         raise PreventUpdate
+
 
 def register_clientside_callbacks(app):
     app.clientside_callback(
