@@ -96,6 +96,10 @@ html, body {
     padding: 0 4px 0 0;
 }
 
+.right-panel .panel-content {
+    padding: 0 4px 10px 10px;
+}
+
 .main-graph {
     position: absolute;
     top: 0;

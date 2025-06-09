@@ -337,7 +337,7 @@ def create_layout(openvino_path, model_path, inputs_path):
     ]
 
     right_pane = html.Div([
-        html.H5(id='right-panel-layer-name', children=["Layer's Status"]),
+        html.H4(id='right-panel-layer-name', children=["Layer's Status"]),
         html.Div(
             children=[
                 html.Div(id='right-panel-content', style={'height': '100%', 'overflow': 'auto'}),
