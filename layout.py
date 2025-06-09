@@ -1,5 +1,6 @@
 import os
 import random
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -13,6 +14,20 @@ from colors import BorderColor
 import dash_bootstrap_components as dbc
 
 from run_inference import get_available_plugins
+
+
+def load_settings():
+    """Load settings from settings.json file."""
+    settings_path = Path("settings") / "settings.json"
+
+    if settings_path.exists():
+        try:
+            with open(settings_path, 'r') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Error loading settings: {e}")
+
+    return {}
 
 
 def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, plugin2=None, model_inputs=None):
@@ -144,13 +159,24 @@ def create_layout(openvino_path, model_path, inputs_path):
     else:
         discovered_plugins = []
 
-    if "CPU" in discovered_plugins:
-        plugin1_value = "CPU"
-    else:
-        plugin1_value = discovered_plugins[0] if discovered_plugins else None
+    # Load settings from settings.json
+    settings = load_settings()
+    plugin1_value = None
+    plugin2_value = None
 
-    non_cpu_plugins = [p for p in discovered_plugins if p != "CPU"]
-    plugin2_value = non_cpu_plugins[0] if non_cpu_plugins else None
+    # Get plugin preferences from settings if they exist
+    if "plugins" in settings:
+        # Set plugin1_value if reference_plugin is in settings and is available
+        if "reference_plugin" in settings["plugins"]:
+            reference_plugin = settings["plugins"]["reference_plugin"]
+            if reference_plugin in discovered_plugins:
+                plugin1_value = reference_plugin
+
+        # Set plugin2_value if main_plugin is in settings and is available
+        if "main_plugin" in settings["plugins"]:
+            main_plugin = settings["plugins"]["main_plugin"]
+            if main_plugin in discovered_plugins:
+                plugin2_value = main_plugin
 
     model_inputs = read_openvino_ir(model_path)
 

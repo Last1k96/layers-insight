@@ -741,12 +741,14 @@ def register_callbacks(app):
         if any(trigger.startswith('inference-settings-btn') for trigger in triggers):
             model_inputs = read_openvino_ir(config["model_xml"])
             inputs_layout_div = build_model_input_fields(model_inputs, config["model_inputs"])
-            return True, no_update, config["model_xml"], config["ov_bin_path"], None, None, config["plugin1"], config[
-                "plugin2"], inputs_layout_div
+            # Get plugin values from config, defaulting to None if not present
+            plugin1 = config.get("plugin1")
+            plugin2 = config.get("plugin2")
+            return True, no_update, config["model_xml"], config["ov_bin_path"], None, None, plugin1, plugin2, inputs_layout_div
 
         if any(trigger.startswith('save-inference-config-button') for trigger in triggers):
-            plugin1 = ref_plugin if ref_plugin is not None else config["plugin1"]
-            plugin2 = other_plugin if other_plugin is not None else config["plugin2"]
+            plugin1 = ref_plugin if ref_plugin is not None else config.get("plugin1")
+            plugin2 = other_plugin if other_plugin is not None else config.get("plugin2")
 
             update_config(
                 config,
@@ -998,8 +1000,8 @@ def register_callbacks(app):
             if store_name in store_figure:
                 viz = store_figure[store_name]
             else:
-                ref_plugin_name = config["plugin1"]
-                main_plugin_name = config["plugin2"]
+                ref_plugin_name = config.get("plugin1", "Reference")
+                main_plugin_name = config.get("plugin2", "Main")
                 viz = plot_diagnostics(ref, main, ref_plugin_name, main_plugin_name)
                 buf = io.BytesIO()
                 viz.savefig(buf, format="png", bbox_inches="tight")
