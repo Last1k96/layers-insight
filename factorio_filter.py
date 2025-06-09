@@ -131,7 +131,7 @@ def register_factorio_callbacks(app):
             ]
         )
 
-        current_children.append(row_layout)
+        current_children.insert(0, row_layout)
 
         if not toggles:
             toggles = []
@@ -151,7 +151,7 @@ def register_factorio_callbacks(app):
             )
             global_toggle_index += 1
 
-            toggles.append(and_or_button)
+            toggles.insert(0, and_or_button)
 
         return current_children, toggles, global_element_index, global_toggle_index
 
