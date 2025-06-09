@@ -231,7 +231,6 @@ def comparison_metrics_table(ref_data, main_data, idx):
         className="w-100 mt-2"
     )
 
-    # Clean, unified layout
     return html.Div(
         [table, advanced_metrics, visualization_button],
         className="metrics-container"
