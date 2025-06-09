@@ -8,7 +8,7 @@ import argparse
 def check_python():
     """Check if Python is installed."""
     try:
-        subprocess.run(["python", "--version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(["python3", "--version"], check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return True
     except (subprocess.SubprocessError, FileNotFoundError):
         print("Python is not installed or not in PATH. Please install Python and try again.")
@@ -19,7 +19,7 @@ def create_venv():
     if not os.path.exists(".venv"):
         print("Creating virtual environment...")
         try:
-            subprocess.run(["python", "-m", "venv", ".venv"], check=True)
+            subprocess.run(["python3", "-m", "venv", ".venv"], check=True)
         except subprocess.SubprocessError:
             print("Failed to create virtual environment. Please ensure you have venv module installed.")
             return False
