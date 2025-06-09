@@ -68,6 +68,15 @@ def process_tasks():
             if str(e) == "Inference cancelled":
                 continue
             else:
+                # Create error box for the right panel
+                right_panel_div = html.Div([
+                    dbc.Alert(
+                        f"Error: {str(e)}",
+                        color="danger",
+                        style={"marginLeft": "8px", "marginRight": "8px"}
+                    )
+                ])
+                status_cache[node_id] = right_panel_div
                 result["error"] = str(e)
 
         with lock:
