@@ -114,9 +114,17 @@ def register_factorio_callbacks(app):
                             "𐌗",
                             id={"type": "factorio-remove-condition", "index": row_id},
                             n_clicks=0,
-                            color="danger",
                             size="sm",
-                            style={"width": "30px", "height": HEIGHT + 4, "marginTop": "10px"}
+                            style={
+                                "width": "30px",
+                                "height": HEIGHT + 8,
+                                "marginTop": "6px",
+                                "backgroundColor": "transparent",
+                                "color": "#F05050",
+                                "fontWeight": "bold",
+                                "fontSize": "18px",
+                                "border": "none"
+                            }
                         )
                     ]
                 )
@@ -138,7 +146,7 @@ def register_factorio_callbacks(app):
                     "width": "60px",
                     "marginTop": "5px",
                     "position": "relative",
-                    "top": f"{ELEMENT_HEIGHT / 2}px",
+                    "top": f"{ELEMENT_HEIGHT / 2 + 5}px",
                 }
             )
             global_toggle_index += 1
