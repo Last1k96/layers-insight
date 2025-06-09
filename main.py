@@ -1,5 +1,7 @@
 import socket
 import argparse
+import logging
+import re
 from app import create_app
 from logger import log
 
@@ -34,6 +36,10 @@ def run_app(openvino_path, ir_path, inputs_path, port=8050, debug=False):
 
     app = create_app(openvino_path=openvino_path, ir_xml_path=ir_path, inputs_path=inputs_path)
 
+    # Disable annoying log messages when in a debug=False mode
+    if not debug:
+        logging.getLogger('werkzeug').disabled = True
+
     local_ip = get_local_ip()
     url = f"http://{local_ip}:{port}"
 
@@ -50,8 +56,6 @@ if __name__ == '__main__':
     log.info(f"  Model path: {args.model}")
     log.info(f"  Inputs path: {args.inputs}")
     log.info(f"  Port: {args.port}")
-    if args.debug:
-        log.info(f"  Debug mode is ON")
 
     run_app(
         openvino_path=args.openvino_bin,
