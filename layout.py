@@ -326,7 +326,7 @@ def create_layout(openvino_path, model_path, inputs_path):
             ),
         ], style={'flex': '1', 'display': 'flex', 'flexDirection': 'column', 'overflow': 'hidden'}),
         html.Div(id="factorio-selector-container", children=create_factorio_selector(), style={'width': '100%'}),
-        dbc.Button("Clear Queue", id="clear-queue-btn", color="dark", n_clicks=0,
+        dbc.Button("Clear Inference Queue", id="clear-queue-btn", color="dark", n_clicks=0,
                    className="w-100", style={'margin': '0'}),
     ], style={'display': 'flex', 'flexDirection': 'column', 'height': '100%', 'padding': '0'})
 

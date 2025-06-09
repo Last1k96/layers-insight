@@ -18,6 +18,7 @@ OPERATORS = {
 HEIGHT = 25
 ELEMENT_HEIGHT = 40
 
+
 def create_factorio_selector():
     """Create the Factorio Selector component for the left panel."""
     return html.Div([
@@ -33,12 +34,15 @@ def create_factorio_selector():
                 html.Div(id="factorio-conditions-container", style={"flex": "1"})
             ]
         ),
-        dbc.Button("Add condition",
-                  id="factorio-add-condition-btn",
-                  n_clicks=0,
-                  className="w-100",
-                  style={'margin': '0'})
+        dbc.Button(
+            "Add Filter",
+            id="factorio-add-filter-btn",
+            n_clicks=0,
+            className="w-100",
+            style={'margin': '0'},
+        )
     ])
+
 
 def register_factorio_callbacks(app):
     """Register all callbacks for the Factorio Selector."""
@@ -50,7 +54,7 @@ def register_factorio_callbacks(app):
             Output("factorio-element-index", "data"),
             Output("factorio-toggle-index", "data")
         ],
-        Input("factorio-add-condition-btn", "n_clicks"),
+        Input("factorio-add-filter-btn", "n_clicks"),
         State("factorio-element-index", "data"),
         State("factorio-toggle-index", "data"),
         State("factorio-conditions-container", "children"),
@@ -96,7 +100,7 @@ def register_factorio_callbacks(app):
                         ),
                         dbc.Select(
                             id={"type": "factorio-operator-dropdown", "index": row_id},
-                            options=[{"label": op, "value": op} for op in OPERATORS["metrics"]],  # All operators for "metrics.MSE"
+                            options=[{"label": op, "value": op} for op in OPERATORS["metrics"]],
                             placeholder="",
                             value=">",
                             style={"width": "60px", "height": HEIGHT + 10, "marginRight": "4px", "marginTop": "10px"},
@@ -230,7 +234,7 @@ def register_factorio_callbacks(app):
             Input({"type": "factorio-variable-dropdown", "index": ALL}, "value"),
             Input({"type": "factorio-operator-dropdown", "index": ALL}, "value"),
             Input({"type": "factorio-value-input", "index": ALL}, "value"),
-            Input("factorio-add-condition-btn", "n_clicks"),
+            Input("factorio-add-filter-btn", "n_clicks"),
             Input({"type": "factorio-remove-condition", "index": ALL}, "n_clicks"),
             Input("layers-store", "data"),  # Add layers-store as an input to trigger on list changes
             Input("metrics-store", "data")  # Add metrics-store as an input
@@ -240,7 +244,7 @@ def register_factorio_callbacks(app):
         ],
         prevent_initial_call=True
     )
-    def apply_filter(logic_ops, variable_values, operator_values, input_values, add_clicks, remove_clicks, 
+    def apply_filter(logic_ops, variable_values, operator_values, input_values, add_clicks, remove_clicks,
                      layers, metrics_store, conditions):
         # Check if callback was triggered by add/remove buttons but no conditions exist
         ctx = dash.callback_context
@@ -320,6 +324,7 @@ def register_factorio_callbacks(app):
 
         return grayed_out_operations, dash.no_update
 
+
 def build_expression_function_with_regex(tokens):
     """Build an expression function that supports regex comparison for layer_name and layer_type."""
     if not tokens:
@@ -354,7 +359,7 @@ def build_expression_function_with_regex(tokens):
                 found = False
                 for key, value in metrics_dict.items():
                     # Check if the key matches the pattern "metric_name_X" where X is a number
-                    if key.startswith(f"{metric_name}_") and key[len(metric_name)+1:].isdigit():
+                    if key.startswith(f"{metric_name}_") and key[len(metric_name) + 1:].isdigit():
                         actual_value = value
                         found = True
                         break
