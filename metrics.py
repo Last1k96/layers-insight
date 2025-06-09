@@ -232,7 +232,7 @@ def comparison_metrics_table(ref_data, main_data, idx):
     )
 
     # Add a horizontal line spacer
-    spacer = html.Hr(style={'margin': '10px 0'})
+    spacer = html.Hr(style={'margin': '4px 0'})
 
     return html.Div(
         [table, advanced_metrics, visualization_button, spacer],
