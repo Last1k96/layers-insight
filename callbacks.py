@@ -15,6 +15,7 @@ from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 
 from layout import build_dynamic_stylesheet, update_config, read_openvino_ir, build_model_input_fields
+from config_io import save_config_to_file, load_config_from_file
 from openvino_graph import parse_openvino_ir
 from run_inference import get_available_plugins, prepare_submodel_and_inputs, get_ov_core
 from colors import BorderColor
@@ -727,11 +728,12 @@ def register_callbacks(app):
         State("reference-plugin-dropdown", "value"),
         State("main-plugin-dropdown", "value"),
         State({"type": "model-input", "name": ALL}, "value"),
+        State("plugins-config-store", "data"),
         prevent_initial_call=True
     )
     def save_config(save_btn_clicks, open_settings_btn_clicks, config_after_cut, config, model_xml, bin_path,
                     ref_plugin,
-                    other_plugin, all_input_values):
+                    other_plugin, all_input_values, plugins_config):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
@@ -756,6 +758,10 @@ def register_callbacks(app):
                 plugin2,
                 all_input_values
             )
+            try:
+                save_config_to_file(config, plugins_config, "config.json")
+            except Exception as e:
+                print(f"Failed to save config: {e}")
 
             model_inputs = read_openvino_ir(config["model_xml"])
             inputs_layout_div = build_model_input_fields(model_inputs, config["model_inputs"])
@@ -1271,6 +1277,7 @@ def register_callbacks(app):
             Input("browse-ov-bin-path", "n_clicks"),
             Input("browse-model-xml-path", "n_clicks"),
             Input({"type": "browse-model-input", "name": ALL}, "n_clicks"),
+            Input("load-inference-config-button", "n_clicks"),
             Input("file-browser-select", "n_clicks"),
             Input({"type": "file-browser-item", "index": ALL}, "n_clicks"),
         ],
@@ -1288,7 +1295,7 @@ def register_callbacks(app):
         prevent_initial_call=True,
     )
     def handle_file_browser(
-            browse_ov_btn, browse_model_btn, browse_input_btns, select_btn, item_clicks,
+            browse_ov_btn, browse_model_btn, browse_input_btns, load_cfg_btn, select_btn, item_clicks,
             is_open, current_path, target, mode, selected_file, ov_bin_path, model_path, input_paths, input_ids
     ):
         ctx = callback_context
@@ -1336,6 +1343,11 @@ def register_callbacks(app):
 
             target_id = {"type": "model-input", "name": input_name}
             return True, path, target_id, create_file_browser_content(path), "file", "", "Select File"
+
+        # Handle load config button
+        if trigger_id == "load-inference-config-button" and load_cfg_btn is not None:
+            path = os.path.expanduser("~")
+            return True, path, "load-config-file", create_file_browser_content(path), "file", "", "Select File"
 
         # Handle file/directory selection
         if isinstance(trigger_id, dict) or (isinstance(trigger_id, str) and trigger_id.startswith("{")):
@@ -1446,6 +1458,52 @@ def register_callbacks(app):
             return no_update, no_update, input_updates
 
         raise PreventUpdate
+
+    @app.callback(
+        [
+            Output("config-store", "data", allow_duplicate=True),
+            Output("plugins-config-store", "data", allow_duplicate=True),
+            Output("ov-bin-path", "value", allow_duplicate=True),
+            Output("model-xml-path", "value", allow_duplicate=True),
+            Output({"type": "model-input", "name": ALL}, "value", allow_duplicate=True),
+            Output("reference-plugin-dropdown", "value", allow_duplicate=True),
+            Output("main-plugin-dropdown", "value", allow_duplicate=True),
+            Output("model-input-paths", "children", allow_duplicate=True),
+        ],
+        Input("file-browser-selected-file", "data"),
+        [
+            State("file-browser-target", "data"),
+            State({"type": "model-input", "name": ALL}, "id"),
+        ],
+        prevent_initial_call=True,
+    )
+    def load_config_from_file_callback(selected_path, target, input_ids):
+        if target != "load-config-file" or not selected_path:
+            raise PreventUpdate
+
+        config, plugins_config = load_config_from_file(selected_path)
+        model_inputs = read_openvino_ir(config["model_xml"])
+        input_fields = build_model_input_fields(model_inputs, config.get("model_inputs", []))
+        input_values = []
+        for inp in input_ids:
+            name = inp.get("name")
+            value = ""
+            for model_name, path in zip([m["name"] for m in model_inputs], config.get("model_inputs", [])):
+                if model_name == name:
+                    value = path
+                    break
+            input_values.append(value)
+
+        return (
+            config,
+            plugins_config,
+            config.get("ov_bin_path", ""),
+            config.get("model_xml", ""),
+            input_values,
+            config.get("plugin1"),
+            config.get("plugin2"),
+            input_fields,
+        )
 
 
 def register_clientside_callbacks(app):
