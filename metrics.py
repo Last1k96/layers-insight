@@ -228,7 +228,7 @@ def comparison_metrics_table(ref_data, main_data, idx):
         "Visualization",
         id={"type": "visualization-button", "index": idx},
         color="secondary",
-        className="w-100"
+        className="w-100 mb-1"
     )
 
     # Add a horizontal line spacer
