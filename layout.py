@@ -25,12 +25,12 @@ def load_settings():
         try:
             with open(settings_path, 'r') as f:
                 settings = json.load(f)
-                log.info(f"Settings loaded successfully from {settings_path}")
+                log.info(f"Settings loaded successfully from '{settings_path}'")
                 return settings
         except (json.JSONDecodeError, IOError) as e:
-            log.error(f"Error loading settings from {settings_path}: {e}")
+            log.error(f"Error loading settings from '{settings_path}': {e}")
     else:
-        log.warning(f"Settings file not found at {settings_path}")
+        log.warning(f"Settings file not found at '{settings_path}'")
 
     return {}
 
