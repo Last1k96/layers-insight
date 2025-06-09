@@ -14,6 +14,7 @@ from colors import BorderColor
 import dash_bootstrap_components as dbc
 
 from run_inference import get_available_plugins
+from logger import log
 
 
 def load_settings():
@@ -23,9 +24,13 @@ def load_settings():
     if settings_path.exists():
         try:
             with open(settings_path, 'r') as f:
-                return json.load(f)
+                settings = json.load(f)
+                log.info(f"Settings loaded successfully from {settings_path}")
+                return settings
         except (json.JSONDecodeError, IOError) as e:
-            print(f"Error loading settings: {e}")
+            log.error(f"Error loading settings from {settings_path}: {e}")
+    else:
+        log.warning(f"Settings file not found at {settings_path}")
 
     return {}
 
