@@ -776,11 +776,11 @@ def register_callbacks(app):
             # Add plugin configurations if available, filtering out empty values
             if plugins_config and isinstance(plugins_config, dict):
                 filtered_plugin_configs = {}
-                for plugin, config in plugins_config.items():
-                    if config:
-                        filtered_config = {k: v for k, v in config.items() if v.strip() != ""}
+                for plugin_name, plugin_config in plugins_config.items():
+                    if plugin_config:
+                        filtered_config = {k: v for k, v in plugin_config.items() if v.strip() != ""}
                         if filtered_config:  # Only include plugins with at least one non-empty config
-                            filtered_plugin_configs[plugin] = filtered_config
+                            filtered_plugin_configs[plugin_name] = filtered_config
 
                 settings["plugin_configs"] = filtered_plugin_configs
 
