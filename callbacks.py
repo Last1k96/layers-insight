@@ -727,11 +727,12 @@ def register_callbacks(app):
         State("reference-plugin-dropdown", "value"),
         State("main-plugin-dropdown", "value"),
         State({"type": "model-input", "name": ALL}, "value"),
+        State("plugins-config-store", "data"),
         prevent_initial_call=True
     )
     def save_config(save_btn_clicks, open_settings_btn_clicks, config_after_cut, config, model_xml, bin_path,
                     ref_plugin,
-                    other_plugin, all_input_values):
+                    other_plugin, all_input_values, plugins_config):
         ctx = callback_context
         if not ctx.triggered:
             return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
@@ -772,6 +773,17 @@ def register_callbacks(app):
                 }
             }
 
+            # Add plugin configurations if available, filtering out empty values
+            if plugins_config and isinstance(plugins_config, dict):
+                filtered_plugin_configs = {}
+                for plugin, config in plugins_config.items():
+                    if config:
+                        filtered_config = {k: v for k, v in config.items() if v.strip() != ""}
+                        if filtered_config:  # Only include plugins with at least one non-empty config
+                            filtered_plugin_configs[plugin] = filtered_config
+
+                settings["plugin_configs"] = filtered_plugin_configs
+
             # Save settings to file
             with open(settings_file, 'w') as f:
                 json.dump(settings, f, indent=4)
@@ -802,12 +814,14 @@ def register_callbacks(app):
             return store_data if store_data is not None else {}
         if store_data is None:
             store_data = {}
-        # Save only the inputs that belong to the currently selected plugin.
+
+        # Save only the inputs that belong to the currently selected plugin and have non-empty values.
         current_config = {
             comp_id["param"]: value
             for value, comp_id in zip(values, ids)
-            if comp_id.get("plugin") == selected_plugin
+            if comp_id.get("plugin") == selected_plugin and value.strip() != ""
         }
+
         store_data[selected_plugin] = current_config
         return store_data
 

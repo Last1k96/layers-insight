@@ -242,7 +242,7 @@ def create_layout(openvino_path, model_path, inputs_path):
                             dcc.Dropdown(id="config-plugin-dropdown", options=discovered_plugins, clearable=False),
                             html.Br(),
                             html.Div(id="plugin-config-table"),
-                            dcc.Store(id="plugins-config-store", data={})
+                            dcc.Store(id="plugins-config-store", data=settings.get("plugin_configs", {}))
                         ],
                         label="Plugin Config",
                         className="p-3"
