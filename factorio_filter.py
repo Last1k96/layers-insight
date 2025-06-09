@@ -10,8 +10,8 @@ from metrics import METRIC_INFO
 # List of operators for different variable types
 OPERATORS = {
     "metrics": [">", "<", ">=", "<=", "==", "!="],
-    "name": ["~="],
-    "type": ["~="]
+    "layer_name": ["~="],
+    "layer_type": ["~="]
 }
 
 # Element styling
@@ -23,7 +23,7 @@ def create_factorio_selector():
     return html.Div([
         dcc.Store(id='factorio-element-index', data=0),
         dcc.Store(id='factorio-toggle-index', data=0),
-        dcc.Store(id='factorio-filtered-operations', data=[]),
+        dcc.Store(id='factorio-grayed-out-operations', data=[]),
         html.Div(
             style={"display": "flex", "width": "100%", "marginBottom": "10px"},
             children=[
@@ -64,16 +64,19 @@ def register_factorio_callbacks(app):
         row_id = f"factorio-condition-row-{global_element_index}"
         global_element_index += 1
 
-        # Create variable options: Name, Type, and all metrics
-        variable_options = [
-            {"label": "Name", "value": "name"},
-            {"label": "Type", "value": "type"}
-        ]
+        # Create variable options: metrics first, then Layer Type and Layer Name at the bottom
+        variable_options = []
 
         # Add metrics from METRIC_INFO
         for metric_key in METRIC_INFO:
             full_name, _ = METRIC_INFO[metric_key]
             variable_options.append({"label": full_name, "value": f"metrics.{metric_key}"})
+
+        # Add Layer Type and Layer Name at the bottom
+        variable_options.extend([
+            {"label": "Layer Type", "value": "layer_type"},
+            {"label": "Layer Name", "value": "layer_name"}
+        ])
 
         row_layout = html.Div(
             className="factorio-condition-row-container",
@@ -87,15 +90,15 @@ def register_factorio_callbacks(app):
                             id={"type": "factorio-variable-dropdown", "index": row_id},
                             options=variable_options,
                             placeholder="Select variable",
-                            value=variable_options[0]["value"],
+                            value="metrics.MSE",  # Default to MSE
                             style={"width": "100%", "height": HEIGHT + 10, "marginRight": "4px", "marginTop": "10px"},
                             size="sm"
                         ),
                         dbc.Select(
                             id={"type": "factorio-operator-dropdown", "index": row_id},
-                            options=[{"label": "~=", "value": "~="}],  # Default for "name"
+                            options=[{"label": op, "value": op} for op in OPERATORS["metrics"]],  # All operators for "metrics.MSE"
                             placeholder="",
-                            value="~=",
+                            value=">",
                             style={"width": "60px", "height": HEIGHT + 10, "marginRight": "4px", "marginTop": "10px"},
                             size="sm"
                         ),
@@ -103,7 +106,7 @@ def register_factorio_callbacks(app):
                             id={"type": "factorio-value-input", "index": row_id},
                             type="text",
                             placeholder="Value",
-                            value="",
+                            value="0",  # Default value of 0
                             style={"width": "100px", "height": HEIGHT + 10, "marginRight": "4px", "marginTop": "10px"},
                             size="sm"  # Options: "sm", "md", "lg"
                         ),
@@ -163,11 +166,11 @@ def register_factorio_callbacks(app):
         if variable_value.startswith("metrics."):
             operators = OPERATORS["metrics"]
             default_value = ">"
-        elif variable_value == "name":
-            operators = OPERATORS["name"]
+        elif variable_value == "layer_name":
+            operators = OPERATORS["layer_name"]
             default_value = "~="
-        elif variable_value == "type":
-            operators = OPERATORS["type"]
+        elif variable_value == "layer_type":
+            operators = OPERATORS["layer_type"]
             default_value = "~="
         else:
             operators = OPERATORS["metrics"]
@@ -211,7 +214,7 @@ def register_factorio_callbacks(app):
 
     @app.callback(
         [
-            Output("factorio-filtered-operations", "data"),
+            Output("factorio-grayed-out-operations", "data"),
             Output("dummy-output", "data", allow_duplicate=True)
         ],
         [
@@ -221,14 +224,16 @@ def register_factorio_callbacks(app):
             Input({"type": "factorio-value-input", "index": ALL}, "value"),
             Input("factorio-add-condition-btn", "n_clicks"),
             Input({"type": "factorio-remove-condition", "index": ALL}, "n_clicks"),
-            Input("layers-store", "data")  # Add layers-store as an input to trigger on list changes
+            Input("layers-store", "data"),  # Add layers-store as an input to trigger on list changes
+            Input("metrics-store", "data")  # Add metrics-store as an input
         ],
         [
             State("factorio-conditions-container", "children")
         ],
         prevent_initial_call=True
     )
-    def apply_filter(logic_ops, variable_values, operator_values, input_values, add_clicks, remove_clicks, layers, conditions):
+    def apply_filter(logic_ops, variable_values, operator_values, input_values, add_clicks, remove_clicks, 
+                     layers, metrics_store, conditions):
         # Check if callback was triggered by add/remove buttons but no conditions exist
         ctx = dash.callback_context
         if not ctx.triggered or not variable_values or not conditions:
@@ -265,25 +270,50 @@ def register_factorio_callbacks(app):
         # Create a function to evaluate operations against the filter
         expr = build_expression_function_with_regex(tokens)
 
-        # Apply filter to layers and collect matching operations
-        filtered_operations = []
+        # Apply filter to layers and collect operations that should be grayed out (don't match the filter)
+        grayed_out_operations = []
+        all_layer_names = []
+
         for layer in layers:
+            layer_name = layer.get("layer_name", "")
+            all_layer_names.append(layer_name)
+
+            node_id = layer.get("node_id", "")
+
+            # Get metrics from metrics-store if available, otherwise use layer metrics
+            metrics = {}
+            if metrics_store and node_id in metrics_store:
+                # Use the metrics directly from metrics-store without modifying the names
+                metrics_data = metrics_store[node_id]
+                if "outputs" in metrics_data and metrics_data["outputs"]:
+                    # Store the metrics data directly
+                    metrics = {"outputs": metrics_data["outputs"]}
+            else:
+                # Fallback to the old metrics format from the layer data
+                metrics = layer.get("metrics", {})
+
             layer_data = {
-                "name": layer.get("layer_name", ""),
-                "type": layer.get("layer_type", ""),
-                "metrics": layer.get("metrics", {})
+                "layer_name": layer_name,
+                "layer_type": layer.get("layer_type", ""),
+                "metrics": metrics
             }
 
-            if expr(layer_data):
-                filtered_operations.append(layer.get("layer_name", ""))
+            # If the layer doesn't match the filter, add it to the grayed out list
+            if not expr(layer_data):
+                grayed_out_operations.append(layer_name)
 
-        # Print to console for debugging
-        print("Filtered operations:", filtered_operations)
+        # If no conditions are set, don't gray out any operations
+        if not conditions:
+            grayed_out_operations = []
 
-        return filtered_operations, dash.no_update
+        # If all operations are grayed out (filter too strict), gray out everything
+        if len(grayed_out_operations) == len(all_layer_names) and len(all_layer_names) > 0:
+            grayed_out_operations = all_layer_names
+
+        return grayed_out_operations, dash.no_update
 
 def build_expression_function_with_regex(tokens):
-    """Build an expression function that supports regex comparison for name and type."""
+    """Build an expression function that supports regex comparison for layer_name and layer_type."""
     if not tokens:
         return lambda value: False
 
@@ -295,18 +325,41 @@ def build_expression_function_with_regex(tokens):
         # Handle metrics.X path
         if var_name.startswith("metrics."):
             metric_name = var_name.split(".", 1)[1]
-            if metric_name in values.get("metrics", {}):
-                actual_value = values["metrics"][metric_name]
+
+            # Check if metrics has the new format with "outputs" key
+            metrics_dict = values.get("metrics", {})
+            if "outputs" in metrics_dict and metrics_dict["outputs"]:
+                # Look for the metric in all outputs
+                found = False
+                for output_metrics in metrics_dict["outputs"]:
+                    if metric_name in output_metrics:
+                        actual_value = output_metrics[metric_name]
+                        found = True
+                        break
+                if not found:
+                    return False
+            # Check if the metric exists directly in the metrics dictionary (old format)
+            elif metric_name in metrics_dict:
+                actual_value = metrics_dict[metric_name]
             else:
-                return False
+                # If not found directly, it might be in the old format with index suffix
+                found = False
+                for key, value in metrics_dict.items():
+                    # Check if the key matches the pattern "metric_name_X" where X is a number
+                    if key.startswith(f"{metric_name}_") and key[len(metric_name)+1:].isdigit():
+                        actual_value = value
+                        found = True
+                        break
+                if not found:
+                    return False
         else:
-            # Handle name and type
+            # Handle layer_name and layer_type
             if var_name in values:
                 actual_value = values[var_name]
             else:
                 return False
 
-        # Handle regex comparison for name and type
+        # Handle regex comparison for layer_name and layer_type
         if op_str == "~=":
             try:
                 pattern = re.compile(comp_value, re.IGNORECASE)

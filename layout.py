@@ -394,6 +394,7 @@ def create_layout(openvino_path, model_path, inputs_path):
         dcc.Store(id='just-finished-tasks-store', data=[]),
         dcc.Store(id='selected-layer-type-store', data=""),
         dcc.Store(id='selected-node-id-store', data=None),
+        dcc.Store(id='metrics-store', data={}),
     ]
 
     model_update_stores = [

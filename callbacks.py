@@ -403,8 +403,11 @@ def register_callbacks(app):
         return new_elements
 
     @app.callback(
-        Output('layers-store', 'data'),
-        Output('clicked-graph-node-id-store', 'data'),
+        [
+            Output('layers-store', 'data'),
+            Output('clicked-graph-node-id-store', 'data'),
+            Output('metrics-store', 'data')
+        ],
         Input('first-load', 'pathname'),
         Input('ir-graph', 'tapNode'),
         Input('just-finished-tasks-store', 'data'),
@@ -412,28 +415,76 @@ def register_callbacks(app):
         Input('model-path-after-cut', 'data'),
         Input("clear-queue-store", "data"),
         State('selected-node-id-store', 'data'),
+        State('metrics-store', 'data'),
         prevent_initial_call=True
     )
-    def update_layers_list(_, tap_node, finished_nodes, restart_layers_btn, model_after_cut, selected_node_id,
-                           clear_queue_btn):
+    def update_layers_list(_, tap_node, finished_nodes, restart_layers_btn, model_after_cut, clear_queue_btn, 
+                           selected_node_id, metrics_store):
         ctx = callback_context
         if not ctx.triggered:
-            return no_update, no_update
+            return no_update, no_update, no_update
 
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         if any(trigger.startswith('model-path-after-cut') for trigger in triggers):
-            return [], None
+            return [], None, {}
 
         if any(trigger.startswith('clear-queue-store') for trigger in triggers):
             cache.processing_layers.clear()
             # Only remove tasks with "running" status, keep finished tasks
             cache.layers_store_data = [layer for layer in cache.layers_store_data if layer.get("status") != "running"]
-            return cache.layers_store_data, None
+            return cache.layers_store_data, None, metrics_store
+
+        # Function to calculate metrics for a result
+        def calculate_metrics(result):
+            if "error" in result or "outputs" not in result:
+                return {}
+
+            metrics_data = {}
+            outputs_metrics = []
+
+            for idx, output in enumerate(result["outputs"]):
+                ref_data = output["ref"]
+                main_data = output["main"]
+                diff = ref_data - main_data
+
+                # Create a metrics dictionary for this output
+                output_metrics = {
+                    # Basic metrics
+                    "min": float(np.min(ref_data)),
+                    "mean": float(np.mean(ref_data)),
+                    "max": float(np.max(ref_data)),
+                    "std": float(np.std(ref_data)),
+
+                    # Advanced metrics
+                    "MAE": float(np.mean(np.abs(diff))),
+                    "MSE": float(np.mean(diff ** 2))
+                }
+
+                # Calculate RMSE and NRMSE
+                rmse_value = float(np.sqrt(output_metrics["MSE"]))
+                ref_range = float(np.max(ref_data) - np.min(ref_data))
+                output_metrics["NRMSE"] = float(rmse_value / ref_range if ref_range != 0 else 0)
+
+                # Calculate PSNR
+                max_val = float(np.max(np.abs(ref_data)))
+                output_metrics["PSNR"] = float('inf') if output_metrics["MSE"] == 0 else float(20 * np.log10(max_val) - 10 * np.log10(output_metrics["MSE"]))
+
+                # Calculate Pearson correlation
+                if np.std(ref_data) > 0 and np.std(main_data) > 0:
+                    output_metrics["Pearson"] = float(np.corrcoef(ref_data.flatten(), main_data.flatten())[0, 1])
+                else:
+                    output_metrics["Pearson"] = 0.0
+
+                outputs_metrics.append(output_metrics)
+
+            metrics_data["outputs"] = outputs_metrics
+            return metrics_data
 
         if any(trigger.startswith('first-load') for trigger in triggers) or any(
                 trigger.startswith('clear-queue-store') for trigger in triggers):
             layer_list_out = []
+            new_metrics_store = {}
 
             for node_id, result in cache.result_cache.items():
                 if "error" in result:
@@ -444,11 +495,23 @@ def register_callbacks(app):
                         "status": "error"
                     })
                 else:
+                    # Calculate metrics and store them in the metrics store
+                    metrics_data = calculate_metrics(result)
+                    new_metrics_store[node_id] = metrics_data
+
+                    # For backward compatibility, also include a simplified version in the layer data
+                    layer_metrics = {}
+                    if "outputs" in metrics_data:
+                        for idx, output_metrics in enumerate(metrics_data["outputs"]):
+                            for metric_name, metric_value in output_metrics.items():
+                                layer_metrics[f"{metric_name}_{idx}"] = metric_value
+
                     layer_list_out.append({
                         "node_id": node_id,
                         "layer_name": result["layer_name"],
                         "layer_type": result["layer_type"],
-                        "status": "done"
+                        "status": "done",
+                        "metrics": layer_metrics
                     })
 
             if any(trigger.startswith('first-load') for trigger in triggers):
@@ -461,10 +524,11 @@ def register_callbacks(app):
                     })
 
             layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
-            return layer_list_out, no_update
+            return layer_list_out, no_update, new_metrics_store
 
         layer_list_out = cache.layers_store_data
         clicked_graph_node_id = no_update
+        new_metrics_store = metrics_store.copy() if metrics_store else {}
 
         if any(trigger.startswith('ir-graph') for trigger in triggers):
             node_id = tap_node['data'].get('id')
@@ -490,23 +554,43 @@ def register_callbacks(app):
                     status = "error" if "error" in result else "done"
                     layer["status"] = status
 
+                    # If the layer is done, calculate and add metrics
+                    if status == "done":
+                        # Calculate metrics and store them in the metrics store
+                        metrics_data = calculate_metrics(result)
+                        new_metrics_store[node_id] = metrics_data
+
+                        # For backward compatibility, also include a simplified version in the layer data
+                        layer_metrics = {}
+                        if "outputs" in metrics_data:
+                            for idx, output_metrics in enumerate(metrics_data["outputs"]):
+                                for metric_name, metric_value in output_metrics.items():
+                                    layer_metrics[f"{metric_name}_{idx}"] = metric_value
+
+                        layer["metrics"] = layer_metrics
+
         if any(trigger.startswith('restart-layer-button') for trigger in triggers):  # and finished_nodes
             for layer in layer_list_out:
                 node_id = layer["node_id"]
                 if node_id == selected_node_id:
                     layer["status"] = "running"
+                    # Remove metrics when restarting a layer
+                    if "metrics" in layer:
+                        del layer["metrics"]
+                    if node_id in new_metrics_store:
+                        del new_metrics_store[node_id]
 
-        return layer_list_out, clicked_graph_node_id
+        return layer_list_out, clicked_graph_node_id, new_metrics_store
 
     @app.callback(
         Output('layer-panel-list', 'children'),
         Input('selected-layer-index-store', 'data'),
         Input('layers-store', 'data'),
-        Input('factorio-filtered-operations', 'data'),
+        Input('factorio-grayed-out-operations', 'data'),
         State('layer-panel-list', 'children'),
         prevent_initial_call=True
     )
-    def render_layers(selected_index, layers_list, filtered_operations, rendered_layers):
+    def render_layers(selected_index, layers_list, grayed_out_operations, rendered_layers):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -526,10 +610,6 @@ def register_callbacks(app):
 
         li_elements = []
 
-        # If no filter conditions are set, treat all operations as matching
-        if not filtered_operations:
-            filtered_operations = [layer.get("layer_name", "") for layer in layers_list]
-
         for i, layer in enumerate(layers_list):
             if layer["status"] == "done":
                 color = '#4CAF50'
@@ -544,8 +624,8 @@ def register_callbacks(app):
                 'marginBottom': '0px',
             }
 
-            # Gray out layers that don't match the filter
-            if layer.get("layer_name", "") not in filtered_operations:
+            # Gray out layers that are in the grayed-out list
+            if layer.get("layer_name", "") in grayed_out_operations:
                 style.update({
                     'opacity': '0.5',
                 })
