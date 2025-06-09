@@ -115,3 +115,8 @@ html, body {
     width: 100%;
     table-layout: fixed;
 }
+
+#save-outputs-button, #save-reproducer-button, #transform-to-input-button, #restart-layer-button {
+    width: 100% !important;
+    margin: 4px 0 !important;
+}
