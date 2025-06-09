@@ -39,7 +39,6 @@ def process_tasks():
 
         node_id, layer_name, layer_type, config, plugins_config = task
 
-        outputs = []
         result = {"node_id": node_id, "layer_name": layer_name, "layer_type": layer_type}
 
         try:
@@ -65,16 +64,11 @@ def process_tasks():
             status_cache[node_id] = right_panel_div
             result["outputs"] = outputs
 
-        except RuntimeError as e:
-            if str(e) == "Inference cancelled":
-                # Skip this task if inference was cancelled
-                continue
         except Exception as e:
-            print(e)
-            result["error"] = str(e)
-
-        # Result dictionary is already populated with node_id, layer_name, layer_type
-        # and outputs (if successful)
+            if str(e) == "Inference cancelled":
+                continue
+            else:
+                result["error"] = str(e)
 
         with lock:
             result_cache[node_id] = result
