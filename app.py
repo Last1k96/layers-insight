@@ -5,6 +5,7 @@ from dash import Output, Input, State
 from cache import process_tasks
 from layout import create_layout
 from callbacks import register_callbacks, register_clientside_callbacks
+from factorio_filter import register_factorio_callbacks
 import dash_bootstrap_components as dbc
 
 import threading
@@ -17,6 +18,7 @@ def create_app(openvino_path, ir_xml_path, inputs_path):
 
     register_callbacks(app)
     register_clientside_callbacks(app)
+    register_factorio_callbacks(app)
 
     threading.Thread(target=process_tasks, daemon=True).start()
 

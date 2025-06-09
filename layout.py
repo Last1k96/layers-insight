@@ -15,6 +15,7 @@ import dash_bootstrap_components as dbc
 
 from run_inference import get_available_plugins
 from logger import log
+from factorio_filter import create_factorio_selector
 
 
 def load_settings():
@@ -324,6 +325,7 @@ def create_layout(openvino_path, model_path, inputs_path):
                 style={'overflowY': 'auto', 'flex': '1'}
             ),
         ], style={'flex': '1', 'display': 'flex', 'flexDirection': 'column', 'overflow': 'hidden'}),
+        html.Div(id="factorio-selector-container", children=create_factorio_selector(), style={'width': '100%'}),
         dbc.Button("Clear Queue", id="clear-queue-btn", color="dark", n_clicks=0,
                    className="w-100", style={'margin': '0'}),
     ], style={'display': 'flex', 'flexDirection': 'column', 'height': '100%', 'padding': '0'})

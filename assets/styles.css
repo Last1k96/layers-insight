@@ -73,14 +73,14 @@ html, body {
     top: 0;
     right: -12px;
     width: 24px;
-    margin-right: -6px;
+    margin-right: -8px;
 }
 
 .right-panel .resize-handle {
     top: 0;
     left: -12px;
     width: 24px;
-    margin-left: -6px;
+    margin-left: -8px;
 }
 
 .panel-content {
