@@ -23,6 +23,7 @@ def create_factorio_selector():
     return html.Div([
         dcc.Store(id='factorio-element-index', data=0),
         dcc.Store(id='factorio-toggle-index', data=0),
+        dcc.Store(id='factorio-filtered-operations', data=[]),
         html.Div(
             style={"display": "flex", "width": "100%", "marginBottom": "10px"},
             children=[
@@ -209,17 +210,29 @@ def register_factorio_callbacks(app):
         return rows, toggles
 
     @app.callback(
-        Output("dummy-output", "data", allow_duplicate=True),
-        Input({"type": "factorio-logic-operator", "index": ALL}, "children"),
-        Input({"type": "factorio-variable-dropdown", "index": ALL}, "value"),
-        Input({"type": "factorio-operator-dropdown", "index": ALL}, "value"),
-        Input({"type": "factorio-value-input", "index": ALL}, "value"),
-        State("layers-store", "data"),
+        [
+            Output("factorio-filtered-operations", "data"),
+            Output("dummy-output", "data", allow_duplicate=True)
+        ],
+        [
+            Input({"type": "factorio-logic-operator", "index": ALL}, "children"),
+            Input({"type": "factorio-variable-dropdown", "index": ALL}, "value"),
+            Input({"type": "factorio-operator-dropdown", "index": ALL}, "value"),
+            Input({"type": "factorio-value-input", "index": ALL}, "value"),
+            Input("factorio-add-condition-btn", "n_clicks"),
+            Input({"type": "factorio-remove-condition", "index": ALL}, "n_clicks"),
+            Input("layers-store", "data")  # Add layers-store as an input to trigger on list changes
+        ],
+        [
+            State("factorio-conditions-container", "children")
+        ],
         prevent_initial_call=True
     )
-    def apply_filter(logic_ops, variable_values, operator_values, input_values, layers):
-        if not variable_values or not layers:
-            return dash.no_update
+    def apply_filter(logic_ops, variable_values, operator_values, input_values, add_clicks, remove_clicks, layers, conditions):
+        # Check if callback was triggered by add/remove buttons but no conditions exist
+        ctx = dash.callback_context
+        if not ctx.triggered or not variable_values or not conditions:
+            return [], dash.no_update
 
         # Build tokens for the expression function
         tokens = []
@@ -243,28 +256,31 @@ def register_factorio_callbacks(app):
 
         # If no tokens, return without filtering
         if not tokens:
-            return dash.no_update
+            return [], dash.no_update
+
+        # If no layers data, return empty list
+        if not layers:
+            return [], dash.no_update
 
         # Create a function to evaluate operations against the filter
         expr = build_expression_function_with_regex(tokens)
 
-        # Apply filter to layers and print matching operations
+        # Apply filter to layers and collect matching operations
         filtered_operations = []
         for layer in layers:
             layer_data = {
-                "name": layer.get("name", ""),
-                "type": layer.get("type", ""),
+                "name": layer.get("layer_name", ""),
+                "type": layer.get("layer_type", ""),
                 "metrics": layer.get("metrics", {})
             }
 
             if expr(layer_data):
-                filtered_operations.append(layer_data["name"])
+                filtered_operations.append(layer.get("layer_name", ""))
 
-        # Print filtered operations to console
-        if filtered_operations:
-            print("Filtered operations:", filtered_operations)
+        # Print to console for debugging
+        print("Filtered operations:", filtered_operations)
 
-        return dash.no_update
+        return filtered_operations, dash.no_update
 
 def build_expression_function_with_regex(tokens):
     """Build an expression function that supports regex comparison for name and type."""

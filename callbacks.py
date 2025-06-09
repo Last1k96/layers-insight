@@ -502,10 +502,11 @@ def register_callbacks(app):
         Output('layer-panel-list', 'children'),
         Input('selected-layer-index-store', 'data'),
         Input('layers-store', 'data'),
+        Input('factorio-filtered-operations', 'data'),
         State('layer-panel-list', 'children'),
         prevent_initial_call=True
     )
-    def render_layers(selected_index, layers_list, rendered_layers):
+    def render_layers(selected_index, layers_list, filtered_operations, rendered_layers):
         ctx = callback_context
         if not ctx.triggered:
             return no_update
@@ -525,6 +526,10 @@ def register_callbacks(app):
 
         li_elements = []
 
+        # If no filter conditions are set, treat all operations as matching
+        if not filtered_operations:
+            filtered_operations = [layer.get("layer_name", "") for layer in layers_list]
+
         for i, layer in enumerate(layers_list):
             if layer["status"] == "done":
                 color = '#4CAF50'
@@ -538,6 +543,13 @@ def register_callbacks(app):
                 'padding': '4px',
                 'marginBottom': '0px',
             }
+
+            # Gray out layers that don't match the filter
+            if layer.get("layer_name", "") not in filtered_operations:
+                style.update({
+                    'opacity': '0.5',
+                })
+
             if i == layer_index:
                 style.update({
                     'backgroundColor': '#292E37',
