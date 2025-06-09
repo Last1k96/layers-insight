@@ -7,6 +7,24 @@ html, body {
     height: 100%;
 }
 
+/* Fix for dropdown items with white text on white background in DARKLY theme */
+.dash-dropdown .VirtualizedSelectOption,
+.Select-option,
+.Select-menu-outer .Select-option,
+.Select--single > .Select-control .Select-value,
+.Select-menu-outer,
+.VirtualizedSelectFocusedOption,
+.VirtualizedSelectOption {
+    color: black !important;
+}
+
+/* Ensure dropdown selected value is still visible */
+.dash-dropdown .Select-value-label,
+.Select-value-label,
+.Select--single > .Select-control .Select-value .Select-value-label {
+    color: white !important;
+}
+
 #layer-panel-list li:hover {
     background-color: #333;
     cursor: pointer;
