@@ -5,7 +5,6 @@ import dash
 from dash import dcc, html, Input, Output, State, MATCH, ALL
 import dash_bootstrap_components as dbc
 
-from factorio_selector.evaluate_expr import build_expression_function
 from metrics import METRIC_INFO
 
 # List of operators for different variable types
@@ -83,28 +82,29 @@ def register_factorio_callbacks(app):
                 html.Div(
                     style={"display": "flex", "alignItems": "center"},
                     children=[
-                        dcc.Dropdown(
+                        dbc.Select(
                             id={"type": "factorio-variable-dropdown", "index": row_id},
                             options=variable_options,
                             placeholder="Select variable",
                             value=variable_options[0]["value"],
-                            style={"width": "100%", "height": HEIGHT, "marginRight": "4px"},
-                            clearable=False,
+                            style={"width": "100%", "height": HEIGHT + 10, "marginRight": "4px", "marginTop": "10px"},
+                            size="sm"
                         ),
-                        dcc.Dropdown(
+                        dbc.Select(
                             id={"type": "factorio-operator-dropdown", "index": row_id},
                             options=[{"label": "~=", "value": "~="}],  # Default for "name"
                             placeholder="",
                             value="~=",
-                            style={"width": "60px", "height": HEIGHT, "marginRight": "4px"},
-                            clearable=False,
+                            style={"width": "60px", "height": HEIGHT + 10, "marginRight": "4px", "marginTop": "10px"},
+                            size="sm"
                         ),
-                        dcc.Input(
+                        dbc.Input(
                             id={"type": "factorio-value-input", "index": row_id},
                             type="text",
                             placeholder="Value",
                             value="",
-                            style={"width": "100px", "height": HEIGHT + 10, "marginRight": "4px", "marginTop": "10px"}
+                            style={"width": "100px", "height": HEIGHT + 10, "marginRight": "4px", "marginTop": "10px"},
+                            size="sm"  # Options: "sm", "md", "lg"
                         ),
                         dbc.Button(
                             "𐌗",

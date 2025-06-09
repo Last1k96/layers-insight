@@ -124,3 +124,9 @@ html, body {
     width: 100% !important;
     margin: 4px 0 !important;
 }
+
+.dropdown-up .Select-menu-outer {
+    top: auto !important;
+    bottom: 100% !important;
+    box-shadow: 0 -2px 4px rgba(0,0,0,0.1) !important;
+}
