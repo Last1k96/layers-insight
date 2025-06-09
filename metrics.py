@@ -158,17 +158,14 @@ def advanced_diff_metrics(diff, ref_data, main_data):
         metric_table_row("R2", format_value(r2_value)),
     ]
 
+    # Advanced metrics table with clean styling
     table = dbc.Table(
-        [
-            html.Tbody(
-                error_metrics_rows
-            )
-        ],
+        [html.Tbody(error_metrics_rows)],
         bordered=True,
         striped=True,
         hover=True,
         size="sm",
-        style={"margin": "8px", "marginTop": "0px"}
+        className="mb-2"
     )
 
     return table
@@ -180,6 +177,7 @@ def comparison_metrics_table(ref_data, main_data, idx):
     diff = ref_data - main_data
     diff_metrics = compute_metrics(diff)
 
+    # Basic metrics table
     table = dbc.Table(
         [
             html.Thead(
@@ -219,22 +217,22 @@ def comparison_metrics_table(ref_data, main_data, idx):
         striped=True,
         hover=True,
         size="sm",
-        style={"margin": "8px", "marginTop": "0px"}
+        className="mb-2"
     )
 
+    # Advanced metrics table
     advanced_metrics = advanced_diff_metrics(diff, ref_data, main_data)
 
-    layout = dbc.Col(
-        [
-            dbc.Row(table),
-            dbc.Row(advanced_metrics),
-            dbc.Row(dbc.Button(
-                "Visualization",
-                id={"type": "visualization-button", "index": idx},
-                color="secondary",
-                style={'display': 'block', 'width': '100%', "margin": "8px", "marginTop": "0px"},
-            ))
-        ],
+    # Visualization button
+    visualization_button = dbc.Button(
+        "Visualization",
+        id={"type": "visualization-button", "index": idx},
+        color="secondary",
+        className="w-100 mt-2"
     )
 
-    return html.Div(layout, style={"marginRight": "26px", "width": "100%"})
+    # Clean, unified layout
+    return html.Div(
+        [table, advanced_metrics, visualization_button],
+        className="metrics-container"
+    )

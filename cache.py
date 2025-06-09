@@ -56,11 +56,9 @@ def process_tasks():
 
             # Create comparison metrics table for successful inference
             right_panel_div = html.Div([
-                dbc.CardGroup([
-                    comparison_metrics_table(output["ref"], output["main"], idx),
-                ], style={"marginLeft": "8px"})
+                comparison_metrics_table(output["ref"], output["main"], idx)
                 for idx, output in enumerate(outputs)
-            ])
+            ], className="metrics-panels")
             status_cache[node_id] = right_panel_div
             result["outputs"] = outputs
 
@@ -73,9 +71,9 @@ def process_tasks():
                     dbc.Alert(
                         f"Error: {str(e)}",
                         color="danger",
-                        style={"marginLeft": "8px", "marginRight": "8px"}
+                        className="m-0"
                     )
-                ])
+                ], className="metrics-panels")
                 status_cache[node_id] = right_panel_div
                 result["error"] = str(e)
 

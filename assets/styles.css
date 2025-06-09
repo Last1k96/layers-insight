@@ -104,3 +104,22 @@ html, body {
     z-index: 5;
     overflow: hidden;
 }
+
+/* Styles for metrics display */
+.metrics-panels {
+    padding: 0.5rem;
+}
+
+.metrics-container {
+    margin-bottom: 1rem;
+    width: 100%;
+}
+
+.metrics-container table {
+    width: 100%;
+    table-layout: fixed;
+}
+
+.metrics-container .btn {
+    margin-top: 0.5rem;
+}
