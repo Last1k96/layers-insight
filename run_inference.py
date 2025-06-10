@@ -117,7 +117,7 @@ def configure_inputs_for_submodel(sub_model, model_rt, model_inputs, seed):
             expected_layout = input_rt["layout_0"].astype(str) if "layout_0" in input_rt else "[N,C,H,W]"
 
             # Determine target dimensions and prepare the image based on expected layout.
-            if expected_layout and expected_layout.lower() == "[N,H,W,C]":
+            if expected_layout and expected_layout.upper() == "[N,H,W,C]":
                 target_height = input_shape[1]
                 target_width = input_shape[2]
                 resized_img = cv2.resize(img, (target_width, target_height))
