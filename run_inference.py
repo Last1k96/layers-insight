@@ -3,6 +3,11 @@
 import os
 import re
 import sys
+import subprocess
+import pickle
+import tempfile
+import traceback
+import time
 
 import cv2
 import numpy as np
@@ -171,33 +176,155 @@ def clean_empty_values(d):
     return {k: v for k, v in d.items() if v is not None and v != ""}
 
 
+def _run_inference_in_subprocess(params_file, results_file):
+    """
+    Function to be executed in a subprocess to isolate OpenVINO execution.
+
+    Args:
+        params_file: Path to a pickle file containing the parameters for inference
+        results_file: Path where the results will be saved
+    """
+    # Create an empty results file immediately to ensure it exists even if we crash
+    with open(results_file, 'wb') as f:
+        pickle.dump({'status': 'error', 'error': 'Process terminated unexpectedly (possible segfault)'}, f)
+
+    try:
+        # Load parameters
+        with open(params_file, 'rb') as f:
+            params = pickle.load(f)
+
+        openvino_bin = params['openvino_bin']
+        model_xml = params['model_xml']
+        layer_name = params['layer_name']
+        ref_plugin = params['ref_plugin']
+        main_plugin = params['main_plugin']
+        model_inputs = params['model_inputs']
+        seed = params['seed']
+        plugins_config = params['plugins_config']
+
+        # Prepare submodel and inputs
+        ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(
+            layer_name, model_inputs, model_xml, openvino_bin, seed
+        )
+
+        # Compile models for both plugins
+        cm_main = core.compile_model(
+            preprocessed_model, main_plugin,
+            config=clean_empty_values(plugins_config.get(main_plugin, {}))
+        )
+        cm_ref = core.compile_model(
+            preprocessed_model, ref_plugin,
+            config=clean_empty_values(plugins_config.get(ref_plugin, {}))
+        )
+
+        # Create and start inference requests
+        ir_main, ir_ref = cm_main.create_infer_request(), cm_ref.create_infer_request()
+        ir_main.start_async(inputs)
+        ir_ref.start_async(inputs)
+
+        # Wait for completion
+        ir_main.wait()
+        ir_ref.wait()
+
+        # Collect results
+        results = [{"main": ir_main.results[m_key], "ref": ir_ref.results[r_key]}
+                  for m_key, r_key in zip(ir_main.results.keys(), ir_ref.results.keys())]
+
+        # Save results
+        with open(results_file, 'wb') as f:
+            pickle.dump({'status': 'success', 'results': results}, f)
+
+    except Exception as e:
+        # Save the error
+        error_info = {
+            'status': 'error',
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }
+        with open(results_file, 'wb') as f:
+            pickle.dump(error_info, f)
+
+
 def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_plugin, model_inputs, seed,
                           plugins_config, cancel_event):
-    ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, model_inputs, model_xml,
-                                                                       openvino_bin, seed)
+    """
+    Run partial inference using a subprocess to isolate OpenVINO execution and catch segfaults.
+    """
+    # Create temporary files for parameter passing and result retrieval
+    with tempfile.NamedTemporaryFile(delete=False) as params_file, \
+         tempfile.NamedTemporaryFile(delete=False) as results_file:
+        params_path = params_file.name
+        results_path = results_file.name
 
-    # Compile models for both plugins
-    cm_main = core.compile_model(preprocessed_model, main_plugin,
-                                 config=clean_empty_values(plugins_config.get(main_plugin, {})))
-    cm_ref = core.compile_model(preprocessed_model, ref_plugin,
-                                config=clean_empty_values(plugins_config.get(ref_plugin, {})))
+    try:
+        # Prepare parameters
+        params = {
+            'openvino_bin': openvino_bin,
+            'model_xml': model_xml,
+            'layer_name': layer_name,
+            'ref_plugin': ref_plugin,
+            'main_plugin': main_plugin,
+            'model_inputs': model_inputs,
+            'seed': seed,
+            'plugins_config': plugins_config
+        }
 
-    # Create and start async inference requests
-    ir_main, ir_ref = cm_main.create_infer_request(), cm_ref.create_infer_request()
-    ir_main.start_async(inputs)
-    ir_ref.start_async(inputs)
+        # Save parameters to file
+        with open(params_path, 'wb') as f:
+            pickle.dump(params, f)
 
-    # Poll in small intervals to allow cancellation
-    while not (ir_main.wait_for(10) and ir_ref.wait_for(10)):  # 10 ms
-        if cancel_event.is_set():
-            cancel_event.clear()
-            ir_main.cancel()
-            ir_ref.cancel()
-            raise RuntimeError("Inference cancelled")
+        # Run the inference in a subprocess
+        cmd = [sys.executable, __file__, params_path, results_path]
+        process = subprocess.Popen(cmd)
 
-    # Collect results
-    return [{"main": ir_main.results[m_key], "ref": ir_ref.results[r_key]}
-            for m_key, r_key in zip(ir_main.results.keys(), ir_ref.results.keys())]
+        # Set a maximum timeout for the subprocess (adjust as needed)
+        start_time = time.time()
+        max_execution_time = 300  # 5 minutes
+
+        # Poll in small intervals to allow cancellation
+        while process.poll() is None:
+            # Check for cancellation
+            if cancel_event.is_set():
+                cancel_event.clear()
+                process.terminate()
+                try:
+                    process.wait(timeout=3)  # Give it a chance to terminate gracefully
+                except subprocess.TimeoutExpired:
+                    process.kill()  # Force kill if it doesn't terminate
+                raise RuntimeError("Inference cancelled")
+
+            # Check for timeout
+            if time.time() - start_time > max_execution_time:
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                raise RuntimeError(f"Inference timed out after {max_execution_time} seconds")
+
+            # Sleep a small amount to avoid busy waiting
+            time.sleep(0.1)  # 100ms
+
+        # Check if the process exited with an error
+        if process.returncode != 0:
+            raise RuntimeError(f"Subprocess exited with code {process.returncode}. This might indicate a segfault in OpenVINO.")
+
+        # Load results
+        with open(results_path, 'rb') as f:
+            result_data = pickle.load(f)
+
+        if result_data['status'] == 'error':
+            raise RuntimeError(f"Error in subprocess: {result_data['error']}\n{result_data['traceback']}")
+
+        return result_data['results']
+
+    finally:
+        # Clean up temporary files
+        try:
+            os.unlink(params_path)
+            os.unlink(results_path)
+        except:
+            pass
 
 
 def prepare_submodel_and_inputs(layer_name, model_inputs, model_xml, openvino_bin, seed):
@@ -217,3 +344,12 @@ def prepare_submodel_and_inputs(layer_name, model_inputs, model_xml, openvino_bi
     # Configure inputs and return everything needed for inference
     inputs, preprocessed_model = configure_inputs_for_submodel(sub_model, model.get_rt_info(), model_inputs, seed)
     return ov, core, inputs, preprocessed_model
+
+
+# This block is executed when the script is run directly as a subprocess
+if __name__ == "__main__":
+    if len(sys.argv) == 3:
+        params_file = sys.argv[1]
+        results_file = sys.argv[2]
+        _run_inference_in_subprocess(params_file, results_file)
+        sys.exit(0)
