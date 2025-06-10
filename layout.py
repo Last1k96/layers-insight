@@ -321,7 +321,7 @@ def create_layout(openvino_path, model_path, inputs_path):
         html.Div([
             Keyboard(id="keyboard", captureKeys=["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]),
             html.Div(
-                html.Ul(id='layer-panel-list', style={'padding': '2px'}),
+                html.Ul(id='left-panel-content', style={'padding': '2px'}),
                 style={'overflowY': 'auto', 'flex': '1'}
             ),
         ], style={'flex': '1', 'display': 'flex', 'flexDirection': 'column', 'overflow': 'hidden'}),

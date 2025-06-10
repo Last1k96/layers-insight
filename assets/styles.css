@@ -25,7 +25,7 @@ html, body {
     color: black !important;
 }
 
-#layer-panel-list li:hover {
+#left-panel-content li:hover {
     background-color: #333;
     cursor: pointer;
 }

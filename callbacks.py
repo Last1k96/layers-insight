@@ -583,11 +583,11 @@ def register_callbacks(app):
         return layer_list_out, clicked_graph_node_id, new_metrics_store
 
     @app.callback(
-        Output('layer-panel-list', 'children'),
+        Output('left-panel-content', 'children'),
         Input('selected-layer-index-store', 'data'),
         Input('layers-store', 'data'),
         Input('factorio-grayed-out-operations', 'data'),
-        State('layer-panel-list', 'children'),
+        State('left-panel-content', 'children'),
         prevent_initial_call=True
     )
     def render_layers(selected_index, layers_list, grayed_out_operations, rendered_layers):
