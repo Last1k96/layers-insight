@@ -385,7 +385,21 @@ def register_callbacks(app):
         if any(trigger.startswith('ir-graph') for trigger in triggers):
             node_id = tap_node['data'].get('id')
 
-            if node_id not in cache.result_cache and not any(task[0] == node_id for task in cache.task_queue.queue):
+            # Check if the layer already exists in the list
+            existing_layer = next((layer for layer in cache.layers_status_store_data if layer["node_id"] == node_id), None)
+
+            if existing_layer:
+                # If the layer exists, update its status to running
+                existing_layer["status"] = "running"
+                # Remove metrics when restarting a layer
+                if "metrics" in existing_layer:
+                    del existing_layer["metrics"]
+
+                # Add to task queue if not already in result_cache and not in queue
+                if node_id not in cache.result_cache and not any(task[0] == node_id for task in cache.task_queue.queue):
+                    cache.task_queue.put((node_id, existing_layer["layer_name"], existing_layer["layer_type"], config_data, plugins_config))
+                    update_border_color(new_elements, node_id, BorderColor.PROCESSING.value)
+            elif node_id not in cache.result_cache and not any(task[0] == node_id for task in cache.task_queue.queue):
                 layer_name = tap_node['data'].get('layer_name')
                 layer_type = tap_node['data'].get('type')
 
@@ -563,7 +577,18 @@ def register_callbacks(app):
         if any(trigger.startswith('ir-graph') for trigger in triggers):
             node_id = tap_node['data'].get('id')
             clicked_graph_node_id = node_id  # To trigger layer selection after new layer was added to the list
-            if node_id not in cache.result_cache and not any(layer["node_id"] == node_id for layer in layer_list_out):
+
+            # Check if the layer already exists in the list
+            existing_layer = next((layer for layer in layer_list_out if layer["node_id"] == node_id), None)
+
+            if existing_layer:
+                # If the layer exists, update its status to running
+                existing_layer["status"] = "running"
+                # Remove metrics when restarting a layer
+                if "metrics" in existing_layer:
+                    del existing_layer["metrics"]
+            elif node_id not in cache.result_cache:
+                # If the layer doesn't exist and is not in the result cache, add it
                 layer_name = tap_node['data'].get('layer_name')
                 layer_type = tap_node['data'].get('type')
 
