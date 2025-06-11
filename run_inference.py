@@ -306,7 +306,7 @@ def run_partial_inference(openvino_bin, model_xml, layer_name, ref_plugin, main_
             time.sleep(0.1)  # 100ms
 
         # Check if the process exited with an error
-        if process.returncode != 0:
+        if process.returncode != 0 and process.returncode != -11: # For some reason NPU plugin segfualts, try to ignore
             raise RuntimeError(f"Subprocess exited with code {process.returncode}. This might indicate a segfault in OpenVINO.")
 
         # Load results
