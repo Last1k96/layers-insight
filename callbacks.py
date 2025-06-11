@@ -108,6 +108,7 @@ def debug_triggers(ctx, callback_name):
         ctx: The callback_context object
         callback_name: The name of the callback function
     """
+    return # Comment out for the debug purposes
     # Use LockGuard to ensure atomicity
     lock_guard = LockGuard(debug_triggers_mutex)
 
