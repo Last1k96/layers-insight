@@ -16,7 +16,7 @@ cancel_event = threading.Event()
 
 # Global variables to avoid race conditions with Dash dcc.Store elements
 # when the same element is used as both Output and State in callbacks
-layers_store_data = []
+layers_status_store_data = []
 ir_graph_elements = {}
 
 lock = threading.Lock()

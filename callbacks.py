@@ -108,7 +108,7 @@ def register_callbacks(app):
 
         # Find nodes that are marked as "running" in layers_store_data but are now in result_cache
         finished_nodes = []
-        for layer in cache.layers_store_data:
+        for layer in cache.layers_status_store_data:
             if layer.get("status") == "running" and layer["node_id"] in cache.result_cache:
                 finished_nodes.append(layer["node_id"])
                 # Update the status to match the result
@@ -145,7 +145,7 @@ def register_callbacks(app):
             if selected_layer_index is None:
                 return None, None
 
-            selected_layer = cache.layers_store_data[selected_layer_index]
+            selected_layer = cache.layers_status_store_data[selected_layer_index]
             selected_node_id = selected_layer["node_id"]
             selected_layer_type = selected_layer["layer_type"]
 
@@ -236,7 +236,7 @@ def register_callbacks(app):
         with cache.lock:
             cache.result_cache.clear()
             cache.status_cache.clear()
-            cache.layers_store_data.clear()
+            cache.layers_status_store_data.clear()
 
         elements = parse_openvino_ir(model_after_cut)
 
@@ -343,7 +343,7 @@ def register_callbacks(app):
                         element['data']['border_color'] = BorderColor.ERROR.value
                     else:
                         element['data']['border_color'] = BorderColor.SUCCESS.value
-                elif any(layer["node_id"] == node_id and layer.get("status") == "running" for layer in cache.layers_store_data):
+                elif any(layer["node_id"] == node_id and layer.get("status") == "running" for layer in cache.layers_status_store_data):
                     element['data']['border_color'] = BorderColor.PROCESSING.value
                 else:
                     element['data']['border_color'] = BorderColor.DEFAULT.value
@@ -367,7 +367,7 @@ def register_callbacks(app):
                     "status": "running"
                 }
 
-                cache.layers_store_data.append(new_layer)
+                cache.layers_status_store_data.append(new_layer)
 
                 cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
                 update_border_color(new_elements, node_id, BorderColor.PROCESSING.value)
@@ -386,13 +386,13 @@ def register_callbacks(app):
             if selected_layer_index is None:
                 node_id = None
             else:
-                selected_layer = cache.layers_store_data[selected_layer_index]
+                selected_layer = cache.layers_status_store_data[selected_layer_index]
                 node_id = selected_layer["node_id"]
 
             set_selected_node_style(new_elements, node_id)
 
         if any(trigger.startswith('restart-layer-button') for trigger in triggers):
-            selected_layer = cache.layers_store_data[selected_layer_index]
+            selected_layer = cache.layers_status_store_data[selected_layer_index]
             node_id = selected_layer["node_id"]
 
             result = cache.result_cache.pop(node_id)
@@ -434,8 +434,8 @@ def register_callbacks(app):
 
         if any(trigger.startswith('clear-queue-store') for trigger in triggers):
             # Only remove tasks with "running" status, keep finished tasks
-            cache.layers_store_data = [layer for layer in cache.layers_store_data if layer.get("status") != "running"]
-            return cache.layers_store_data, None, metrics_store
+            cache.layers_status_store_data = [layer for layer in cache.layers_status_store_data if layer.get("status") != "running"]
+            return cache.layers_status_store_data, None, metrics_store
 
         # Function to calculate metrics for a result
         def calculate_metrics(result):
@@ -518,7 +518,7 @@ def register_callbacks(app):
 
             layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
 
-        layer_list_out = cache.layers_store_data
+        layer_list_out = cache.layers_status_store_data
         clicked_graph_node_id = no_update
         new_metrics_store = metrics_store.copy() if metrics_store else {}
 
@@ -673,10 +673,10 @@ def register_callbacks(app):
             return None
 
         if any(trigger.startswith('clear-queue-store') for trigger in triggers):
-            if selected_layer_index not in cache.layers_store_data:
+            if selected_layer_index not in cache.layers_status_store_data:
                 return None
 
-            selected_layer = cache.layers_store_data[selected_layer_index]
+            selected_layer = cache.layers_status_store_data[selected_layer_index]
             selected_node_id = selected_layer["node_id"]
             if selected_node_id in cache.result_cache:
                 return no_update
@@ -684,13 +684,13 @@ def register_callbacks(app):
             return None
 
         if any(trigger.startswith('clicked-graph-node-id-store') for trigger in triggers):
-            for index, element in enumerate(cache.layers_store_data):
+            for index, element in enumerate(cache.layers_status_store_data):
                 if element["node_id"] == clicked_graph_node_id:
                     new_index = index
                     break
 
         if any(trigger.startswith('keyboard') for trigger in triggers):
-            num_layers = len(cache.layers_store_data)
+            num_layers = len(cache.layers_status_store_data)
             if num_layers > 0:
                 pressed_key = keydown.get('key')
                 PAGE_STEP = 5
@@ -756,7 +756,7 @@ def register_callbacks(app):
         if any(trigger.startswith('selected-layer-index-store') for trigger in triggers):
             if selected_layer_index is None:
                 return "Layer's name", "", hide, hide, hide, hide
-            selected_layer = cache.layers_store_data[selected_layer_index]
+            selected_layer = cache.layers_status_store_data[selected_layer_index]
             node_id = selected_layer["node_id"]
 
         if any(trigger.startswith('just-finished-tasks-store') for trigger in triggers) and finished_nodes:
@@ -1285,7 +1285,7 @@ def register_callbacks(app):
     )
     def clear_queue(_):
         # Remove layers with "running" status from layers_store_data
-        cache.layers_store_data = [layer for layer in cache.layers_store_data if layer.get("status") != "running"]
+        cache.layers_status_store_data = [layer for layer in cache.layers_status_store_data if layer.get("status") != "running"]
         cache.cancel_event.set()
 
         while True:
