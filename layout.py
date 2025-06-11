@@ -263,11 +263,11 @@ def create_layout(openvino_path, model_path, inputs_path):
     visualization_buttons = [
         dbc.Button(label, id={"type": "visualization-btn", "index": viz_id}, className="mb-1 w-100")
         for label, viz_id in [
-            ("Volumetric", "viz1"),
-            ("Isosurfaces", "viz4"),
             ("Bubble Rings", "viz10"),
             ("Per-channel slider", "viz3"),
             ("Per-channel unrolled", "viz2"),
+            ("Volumetric", "viz1"),
+            ("Isosurfaces", "viz4"),
             ("Hierarchical View", "viz9"),
             ("Correlation", "viz12")
         ]
@@ -445,7 +445,7 @@ def create_layout(openvino_path, model_path, inputs_path):
             *visualization_stores,
             *layer_selection_stores,
             *model_update_stores,
-            dcc.Interval(id='update-interval', interval=4000, n_intervals=0),
+            dcc.Interval(id='update-interval', interval=1000, n_intervals=0),
         ],
         style={'height': '100vh', 'overflow': 'hidden', 'position': 'fixed', 'width': '100%', 'top': '0', 'left': '0'}
     )
