@@ -236,7 +236,7 @@ def register_factorio_callbacks(app):
             Input({"type": "factorio-value-input", "index": ALL}, "value"),
             Input("factorio-add-filter-btn", "n_clicks"),
             Input({"type": "factorio-remove-condition", "index": ALL}, "n_clicks"),
-            Input("layers-store", "data"),  # Add layers-store as an input to trigger on list changes
+            Input("layers-update-signal", "data"),  # Add layers-update-signal as an input to trigger on list changes
             Input("metrics-store", "data")  # Add metrics-store as an input
         ],
         [
@@ -245,7 +245,7 @@ def register_factorio_callbacks(app):
         prevent_initial_call=True
     )
     def apply_filter(logic_ops, variable_values, operator_values, input_values, add_clicks, remove_clicks,
-                     layers, metrics_store, conditions):
+                     layers_signal, metrics_store, conditions):
         # Check if callback was triggered by add/remove buttons but no conditions exist
         ctx = dash.callback_context
         if not ctx.triggered or not variable_values or not conditions:
@@ -274,6 +274,10 @@ def register_factorio_callbacks(app):
         # If no tokens, return without filtering
         if not tokens:
             return [], dash.no_update
+
+        # Get layers data from cache instead of layers-update-signal
+        from cache import layers_status_store_data
+        layers = layers_status_store_data
 
         # If no layers data, return empty list
         if not layers:

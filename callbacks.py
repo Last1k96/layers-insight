@@ -7,6 +7,7 @@ import os
 import bisect
 from pathlib import Path
 from queue import Empty
+import threading
 
 import numpy as np
 from dash import no_update, callback_context, html, dcc
@@ -24,6 +25,9 @@ from visualizations.new_cool_visualizations import animated_slices, isosurface_d
     hierarchical_diff_visualization, tensor_network_visualization, channel_correlation_matrices
 from visualizations.visualization import plot_volume_tensor
 from visualizations.viz_bin_diff import plot_diagnostics, reshape_to_3d
+
+# Mutex for debug_triggers function
+debug_triggers_mutex = threading.Lock()
 
 
 class LockGuard:
@@ -98,10 +102,15 @@ def parse_prop_id(prop_id):
 def debug_triggers(ctx, callback_name):
     """
     Debug function to print information about triggers in callbacks.
+    This function is atomic - it will finish printing before the next call is processed.
+
     Args:
         ctx: The callback_context object
         callback_name: The name of the callback function
     """
+    # Use LockGuard to ensure atomicity
+    lock_guard = LockGuard(debug_triggers_mutex)
+
     if not ctx.triggered:
         print(f"[DEBUG] {callback_name}: No triggers")
         return
@@ -428,7 +437,7 @@ def register_callbacks(app):
 
     @app.callback(
         [
-            Output('layers-store', 'data'),
+            Output('layers-update-signal', 'data'),
             Output('clicked-graph-node-id-store', 'data'),
             Output('metrics-store', 'data')
         ],
@@ -452,12 +461,13 @@ def register_callbacks(app):
         triggers = [t['prop_id'] for t in ctx.triggered]
 
         if any(trigger.startswith('model-path-after-cut') for trigger in triggers):
-            return [], None, {}
+            cache.layers_status_store_data = []
+            return 0, None, {}
 
-        if any(trigger.startswith('clear-queue-store') for trigger in triggers):
-            # Only remove tasks with "running" status, keep finished tasks
-            cache.layers_status_store_data = [layer for layer in cache.layers_status_store_data if layer.get("status") != "running"]
-            return cache.layers_status_store_data, None, metrics_store
+        # if any(trigger.startswith('clear-queue-store') for trigger in triggers):
+        #     # Only remove tasks with "running" status, keep finished tasks
+        #     cache.layers_status_store_data = [layer for layer in cache.layers_status_store_data if layer.get("status") != "running"]
+        #     return 0, None, metrics_store
 
         # Function to calculate metrics for a result
         def calculate_metrics(result):
@@ -538,8 +548,13 @@ def register_callbacks(app):
                         "metrics": layer_metrics
                     })
 
+            # Update the global cache variable
             layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
-            return layer_list_out, no_update, new_metrics_store
+            cache.layers_status_store_data = layer_list_out
+
+            # Return a signal (timestamp) instead of the actual data
+            import time
+            return time.time(), no_update, new_metrics_store
 
         layer_list_out = cache.layers_status_store_data
         clicked_graph_node_id = no_update
@@ -595,12 +610,17 @@ def register_callbacks(app):
                     if node_id in new_metrics_store:
                         del new_metrics_store[node_id]
 
-        return layer_list_out, clicked_graph_node_id, new_metrics_store
+            # Update the global cache variable
+            cache.layers_status_store_data = layer_list_out
+
+        # Return a signal (timestamp) instead of the actual data
+        import time
+        return time.time(), clicked_graph_node_id, new_metrics_store
 
     @app.callback(
         Output('left-panel-content', 'children'),
         Input('selected-layer-index-store', 'data'),
-        Input('layers-store', 'data'),
+        Input('layers-update-signal', 'data'),
         Input('factorio-grayed-out-operations', 'data'),
         State('left-panel-content', 'children'),
         prevent_initial_call=True
@@ -626,7 +646,7 @@ def register_callbacks(app):
 
         li_elements = []
 
-        for i, layer in enumerate(layers_list):
+        for i, layer in enumerate(cache.layers_status_store_data):
             if layer["status"] == "done":
                 color = '#4CAF50'
             elif layer["status"] == "error":

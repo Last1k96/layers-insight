@@ -390,7 +390,7 @@ def create_layout(openvino_path, model_path, inputs_path):
 
     layer_selection_stores = [
         dcc.Store(id='selected-layer-index-store', data=-1),
-        dcc.Store(id='layers-store', data=[]),
+        dcc.Store(id='layers-update-signal', data=[]),
         dcc.Store(id='just-finished-tasks-store', data=[]),
         dcc.Store(id='selected-layer-type-store', data=""),
         dcc.Store(id='selected-node-id-store', data=None),
