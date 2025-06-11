@@ -349,7 +349,6 @@ def register_callbacks(app):
                     element['data']['border_color'] = BorderColor.DEFAULT.value
 
             cache.ir_graph_elements = elements
-            return elements
 
         new_elements = cache.ir_graph_elements
 
@@ -518,7 +517,6 @@ def register_callbacks(app):
                     })
 
             layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
-            return layer_list_out, no_update, new_metrics_store
 
         layer_list_out = cache.layers_store_data
         clicked_graph_node_id = no_update
@@ -675,6 +673,14 @@ def register_callbacks(app):
             return None
 
         if any(trigger.startswith('clear-queue-store') for trigger in triggers):
+            if selected_layer_index not in cache.layers_store_data:
+                return None
+
+            selected_layer = cache.layers_store_data[selected_layer_index]
+            selected_node_id = selected_layer["node_id"]
+            if selected_node_id in cache.result_cache:
+                return no_update
+
             return None
 
         if any(trigger.startswith('clicked-graph-node-id-store') for trigger in triggers):
