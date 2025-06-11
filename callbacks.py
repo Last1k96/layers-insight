@@ -106,12 +106,17 @@ def register_callbacks(app):
         if not ctx.triggered:
             return no_update
 
-        finished_nodes = [node for node in cache.processing_layers if node in cache.result_cache]
+        # Find nodes that are marked as "running" in layers_store_data but are now in result_cache
+        finished_nodes = []
+        for layer in cache.layers_store_data:
+            if layer.get("status") == "running" and layer["node_id"] in cache.result_cache:
+                finished_nodes.append(layer["node_id"])
+                # Update the status to match the result
+                result = cache.result_cache[layer["node_id"]]
+                layer["status"] = "error" if "error" in result else "done"
+
         if not finished_nodes:
             return no_update
-
-        for node_id in finished_nodes:
-            cache.processing_layers.pop(node_id)
 
         return finished_nodes
 
@@ -231,7 +236,6 @@ def register_callbacks(app):
         with cache.lock:
             cache.result_cache.clear()
             cache.status_cache.clear()
-            cache.processing_layers.clear()
             cache.layers_store_data.clear()
 
         elements = parse_openvino_ir(model_after_cut)
@@ -339,7 +343,7 @@ def register_callbacks(app):
                         element['data']['border_color'] = BorderColor.ERROR.value
                     else:
                         element['data']['border_color'] = BorderColor.SUCCESS.value
-                elif node_id in cache.processing_layers:
+                elif any(layer["node_id"] == node_id and layer.get("status") == "running" for layer in cache.layers_store_data):
                     element['data']['border_color'] = BorderColor.PROCESSING.value
                 else:
                     element['data']['border_color'] = BorderColor.DEFAULT.value
@@ -356,10 +360,15 @@ def register_callbacks(app):
                 layer_name = tap_node['data'].get('layer_name')
                 layer_type = tap_node['data'].get('type')
 
-                cache.processing_layers[node_id] = {
+                # Add to layers_store_data with status "running"
+                new_layer = {
+                    "node_id": node_id,
                     "layer_name": layer_name,
-                    "layer_type": layer_type
+                    "layer_type": layer_type,
+                    "status": "running"
                 }
+
+                cache.layers_store_data.append(new_layer)
 
                 cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
                 update_border_color(new_elements, node_id, BorderColor.PROCESSING.value)
@@ -391,11 +400,6 @@ def register_callbacks(app):
 
             layer_name = result["layer_name"]
             layer_type = result["layer_type"]
-
-            cache.processing_layers[node_id] = {
-                "layer_name": layer_name,
-                "layer_type": layer_type
-            }
 
             cache.task_queue.put((node_id, layer_name, layer_type, config_data, plugins_config))
             update_border_color(new_elements, node_id, BorderColor.PROCESSING.value)
@@ -430,7 +434,6 @@ def register_callbacks(app):
             return [], None, {}
 
         if any(trigger.startswith('clear-queue-store') for trigger in triggers):
-            cache.processing_layers.clear()
             # Only remove tasks with "running" status, keep finished tasks
             cache.layers_store_data = [layer for layer in cache.layers_store_data if layer.get("status") != "running"]
             return cache.layers_store_data, None, metrics_store
@@ -512,15 +515,6 @@ def register_callbacks(app):
                         "layer_type": result["layer_type"],
                         "status": "done",
                         "metrics": layer_metrics
-                    })
-
-            if any(trigger.startswith('first-load') for trigger in triggers):
-                for node_id, result in cache.processing_layers.items():
-                    layer_list_out.append({
-                        "node_id": node_id,
-                        "layer_name": result["layer_name"],
-                        "layer_type": result["layer_type"],
-                        "status": "running"
                     })
 
             layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
@@ -1284,7 +1278,8 @@ def register_callbacks(app):
         prevent_initial_call=True,
     )
     def clear_queue(_):
-        cache.processing_layers.clear()
+        # Remove layers with "running" status from layers_store_data
+        cache.layers_store_data = [layer for layer in cache.layers_store_data if layer.get("status") != "running"]
         cache.cancel_event.set()
 
         while True:

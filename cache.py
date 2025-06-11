@@ -11,7 +11,6 @@ from run_inference import run_partial_inference
 # Shared resources
 result_cache = {}
 status_cache = {}
-processing_layers = {}
 task_queue = Queue()
 cancel_event = threading.Event()
 
