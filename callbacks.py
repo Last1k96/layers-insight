@@ -1348,7 +1348,7 @@ def register_callbacks(app):
             triggered_id = trigger_id
             index = triggered_id["index"]
         except Exception as e:
-            print(f"Error parsing trigger_id: {ctx.triggered[0]["prop_id"]}, Error: {str(e)}")
+            print(f"Error parsing trigger_id: {ctx.triggered[0]['prop_id']}, Error: {str(e)}")
             return False, no_update
 
         return True, index

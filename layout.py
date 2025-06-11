@@ -50,7 +50,7 @@ def update_config(config: dict, model_xml=None, ov_bin_path=None, plugin1=None, 
 
     p = Path(config["model_xml"])
     model_name = p.stem
-    output_path = Path(f"dump/{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}_{model_name}")
+    output_path = Path(f"dump/{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{model_name}")
     config["output_folder"] = str(output_path.resolve())
 
 
