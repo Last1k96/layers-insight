@@ -445,7 +445,7 @@ def create_layout(openvino_path, model_path, inputs_path):
             *visualization_stores,
             *layer_selection_stores,
             *model_update_stores,
-            dcc.Interval(id='update-interval', interval=1000, n_intervals=0),
+            dcc.Interval(id='update-interval', interval=4000, n_intervals=0),
         ],
         style={'height': '100vh', 'overflow': 'hidden', 'position': 'fixed', 'width': '100%', 'top': '0', 'left': '0'}
     )

@@ -95,6 +95,24 @@ def parse_prop_id(prop_id):
             return prop_id[:j], prop_id[j + 1:]
 
 
+def debug_triggers(ctx, callback_name):
+    """
+    Debug function to print information about triggers in callbacks.
+    Args:
+        ctx: The callback_context object
+        callback_name: The name of the callback function
+    """
+    if not ctx.triggered:
+        print(f"[DEBUG] {callback_name}: No triggers")
+        return
+
+    print(f"[DEBUG] {callback_name}: Triggered by:")
+    for t in ctx.triggered:
+        prop_id = t['prop_id']
+        id_value, trigger_name = parse_prop_id(prop_id)
+        print(f"  - ID: {id_value}, Trigger: {trigger_name}, Value: {t.get('value')}")
+
+
 def register_callbacks(app):
     @app.callback(
         Output('just-finished-tasks-store', 'data'),
@@ -103,6 +121,7 @@ def register_callbacks(app):
     )
     def collect_finished_tasks(n_intervals):
         ctx = callback_context
+        debug_triggers(ctx, "collect_finished_tasks")
         if not ctx.triggered:
             return no_update
 
@@ -129,6 +148,7 @@ def register_callbacks(app):
     )
     def update_selected_node_id(tap_node, selected_layer_index):
         ctx = callback_context
+        debug_triggers(ctx, "update_selected_node_id")
         if not ctx.triggered:
             return no_update
 
@@ -327,6 +347,7 @@ def register_callbacks(app):
     def update_graph_elements(_, tap_node, finished_nodes, selected_layer_index, restart_layer_btn,
                               new_model_path, clear_queue, elements, config_data, plugins_config):
         ctx = callback_context
+        debug_triggers(ctx, "update_graph_elements")
         if not ctx.triggered:
             return no_update
 
@@ -424,6 +445,7 @@ def register_callbacks(app):
     def update_layers_list(_, tap_node, finished_nodes, restart_layers_btn, model_after_cut, clear_queue_btn, 
                            selected_node_id, metrics_store):
         ctx = callback_context
+        debug_triggers(ctx, "update_layers_list")
         if not ctx.triggered:
             return no_update, no_update, no_update
 
@@ -517,6 +539,7 @@ def register_callbacks(app):
                     })
 
             layer_list_out = sorted(layer_list_out, key=lambda item: int(item["node_id"]))
+            return layer_list_out, no_update, new_metrics_store
 
         layer_list_out = cache.layers_status_store_data
         clicked_graph_node_id = no_update
@@ -584,6 +607,7 @@ def register_callbacks(app):
     )
     def render_layers(selected_index, layers_list, grayed_out_operations, rendered_layers):
         ctx = callback_context
+        debug_triggers(ctx, "render_layers")
         if not ctx.triggered:
             return no_update
 
@@ -660,6 +684,7 @@ def register_callbacks(app):
     def update_selected_layer(n_keydowns, li_n_clicks, clicked_graph_node_id, model_after_cut, clear_queue, keydown,
                               selected_layer_index, is_settings_opened, is_visualization_opened):
         ctx = callback_context
+        debug_triggers(ctx, "update_selected_layer")
         if not ctx.triggered:
             return no_update
 
@@ -738,6 +763,7 @@ def register_callbacks(app):
     )
     def update_stats(selected_node_id, selected_layer_index, finished_nodes, restart_layer_btn, selected_layer_name):
         ctx = callback_context
+        debug_triggers(ctx, "update_stats")
         if not ctx.triggered:
             return no_update, no_update, no_update, no_update, no_update, no_update
 
@@ -826,6 +852,7 @@ def register_callbacks(app):
                     ref_plugin,
                     other_plugin, all_input_values, plugins_config):
         ctx = callback_context
+        debug_triggers(ctx, "save_config")
         if not ctx.triggered:
             return no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
@@ -971,6 +998,7 @@ def register_callbacks(app):
     )
     def toggle_toast(save_outputs_btn, save_reproducer_btn, config, node_id):
         ctx = callback_context
+        debug_triggers(ctx, "toggle_toast")
         if not ctx.triggered:
             return no_update
 
@@ -1043,6 +1071,7 @@ def register_callbacks(app):
     def select_visualization_type(is_open, btn_clicks, store_figure, last_selected_visualization, config, node_id,
                                   output_id):
         ctx = callback_context
+        debug_triggers(ctx, "select_visualization_type")
         if not ctx.triggered:
             return no_update, no_update, no_update
 
@@ -1261,6 +1290,7 @@ def register_callbacks(app):
     )
     def open_visualization_modal(n_clicks_list):
         ctx = callback_context
+        debug_triggers(ctx, "open_visualization_modal")
         if not ctx.triggered:
             return no_update, no_update
 
@@ -1418,6 +1448,7 @@ def register_callbacks(app):
             is_open, current_path, target, mode, selected_file, ov_bin_path, model_path, input_paths, input_ids
     ):
         ctx = callback_context
+        debug_triggers(ctx, "handle_file_browser")
         if not ctx.triggered:
             return no_update, no_update, no_update, no_update, no_update, no_update, no_update
 
