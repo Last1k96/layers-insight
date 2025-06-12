@@ -55,7 +55,7 @@ def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
         block_col = i % n_blocks_per_row
 
         inner = gridspec.GridSpecFromSubplotSpec(
-            2, 2, subplot_spec=outer[block_row, block_col], wspace=0.08, hspace=0.1
+            2, 2, subplot_spec=outer[block_row, block_col], wspace=0.08, hspace=0.08
         )
 
         inner_axes = []
