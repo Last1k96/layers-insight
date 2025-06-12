@@ -1061,7 +1061,7 @@ def register_callbacks(app):
                 output["main"].tofile(f"{outputs_folder}/{int(node_id):04d}_{sanitized_layer_name}_{index}.bin")
                 output["ref"].tofile(f"{outputs_folder}/{int(node_id):04d}_{sanitized_layer_name}_{index}_ref.bin")
 
-            return True, f"Results are saved in {Path.cwd()}/{outputs_folder}"
+            return True, f"Results are saved in {outputs_folder}"
 
         if any(trigger.startswith('save-reproducer-button') for trigger in triggers):
             ov, core, inputs, preprocessed_model = prepare_submodel_and_inputs(layer_name, config["model_inputs"],
