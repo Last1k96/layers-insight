@@ -1,10 +1,257 @@
-from matplotlib.animation import FuncAnimation
-from skimage import measure
+import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import matplotlib.patches as patches
+from matplotlib.animation import FuncAnimation
+import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
+from skimage import measure
+import io
+import math
 
 
-from visualizations.viz_bin_diff import reshape_to_3d
+def reshape_to_3d(arr):
+    if arr.ndim == 1:
+        return arr.reshape(1, 1, 1)
+    elif arr.ndim == 2:
+        H, W = arr.shape
+        return arr.reshape(1, H, W)
+    elif arr.ndim == 3:
+        return arr
+    elif arr.ndim == 4:
+        N, C, H, W = arr.shape
+        return arr.reshape(N * C, H, W)
+    elif arr.ndim == 5:
+        N, D, C, H, W = arr.shape
+        return arr.reshape(N * D * C, H, W)
+    else:
+        raise ValueError("Unsupported tensor dimensions. Supported up to 5D tensors.")
+
+
+def plot_diagnostics(cpu, xpu, ref_plugin_name="CPU", main_plugin_name="XPU"):
+    cpu = reshape_to_3d(cpu)
+    xpu = reshape_to_3d(xpu)
+
+    np.nan_to_num(cpu, nan=0.0, posinf=0.0, neginf=0.0)
+    np.nan_to_num(xpu, nan=0.0, posinf=0.0, neginf=0.0)
+
+    diff = cpu - xpu
+    C, H, W = cpu.shape
+
+    n_blocks_per_row = max(1, min(8, math.ceil(C / int(math.sqrt(C))) // 2 * 2))
+    n_block_rows = math.ceil(C / n_blocks_per_row)
+
+    fig = plt.figure(figsize=(8 * n_blocks_per_row, 8 * n_block_rows), facecolor='#404345')
+
+    outer = gridspec.GridSpec(n_block_rows, n_blocks_per_row, wspace=0.08, hspace=0.08)
+
+    max_abs_diff = np.abs(diff).max()
+    global_vmin = -max_abs_diff
+    global_vmax = max_abs_diff
+
+    for i in range(C):
+        block_row = i // n_blocks_per_row
+        block_col = i % n_blocks_per_row
+
+        inner = gridspec.GridSpecFromSubplotSpec(
+            2, 2, subplot_spec=outer[block_row, block_col], wspace=0.08, hspace=0.1
+        )
+
+        inner_axes = []
+
+        # Top Left: CPU image with individual title.
+        ax_cpu = fig.add_subplot(inner[0, 0])
+        ax_cpu.imshow(cpu[i], cmap='gray')
+        ax_cpu.set_title(f"{ref_plugin_name}", fontsize=12, color='white')
+        ax_cpu.axis('off')
+        inner_axes.append(ax_cpu)
+
+        # Top Right: XPU image with individual title.
+        ax_xpu = fig.add_subplot(inner[0, 1])
+        ax_xpu.imshow(xpu[i], cmap='gray')
+        ax_xpu.set_title(f"{main_plugin_name}", fontsize=12, color='white')
+        ax_xpu.axis('off')
+        inner_axes.append(ax_xpu)
+
+        # Bottom Left: Difference image with individual title.
+        ax_diff = fig.add_subplot(inner[1, 0])
+        ax_diff.imshow(diff[i], cmap='bwr', vmin=global_vmin, vmax=global_vmax)
+        ax_diff.set_title(f"Diff ({ref_plugin_name} - {main_plugin_name})", fontsize=12, color='black')
+        ax_diff.axis('off')
+        inner_axes.append(ax_diff)
+
+        # Bottom Right: Density Map with individual title.
+        ch_cpu = cpu[i]
+        ch_diff = diff[i]
+        bins = 64
+        density, _, _ = np.histogram2d(ch_cpu.flatten(), ch_diff.flatten(), bins=bins)
+        density = np.power(density, 0.4) # NOTE original scale 0.25
+        ax_density = fig.add_subplot(inner[1, 1])
+        ax_density.imshow(density, cmap='gray', aspect='auto', origin='lower')
+        ax_density.set_title("Density Map", fontsize=12, color='black')
+        ax_density.axis('off')
+        inner_axes.append(ax_density)
+
+        # Compute the union of the inner axes positions in figure coordinates.
+        positions = [ax.get_position() for ax in inner_axes]
+        left = min(pos.x0 for pos in positions)
+        bottom = min(pos.y0 for pos in positions)
+        right = max(pos.x1 for pos in positions)
+        top = max(pos.y1 for pos in positions)
+        width = right - left
+        height = top - bottom
+
+        # Draw a patch covering the union so that the inner 2x2 area is white.
+        inner_patch = patches.Rectangle(
+            (left, bottom), width, height,
+            linewidth=0, edgecolor='none', facecolor='#eeffee',
+            transform=fig.transFigure, zorder=0
+        )
+        fig.add_artist(inner_patch)
+
+        # Draw a border around the union.
+        rect = patches.Rectangle(
+            (left, bottom), width, height,
+            linewidth=2, edgecolor='black', facecolor='none',
+            transform=fig.transFigure, zorder=10
+        )
+        fig.add_artist(rect)
+
+        # Add a single channel label above the top-left corner of the border.
+        overall_label_offset = 0.000  # Adjust vertical offset as needed.
+        fig.text(left, top + overall_label_offset, f"Channel {i}",
+                 va="bottom", ha="left", fontsize=13, fontweight='bold', color='#66ff66')
+
+    return fig
+
+
+def pool_dimension(volume: np.ndarray, axis: int, max_size: int) -> np.ndarray:
+    """
+    Performs an adaptive max-pool along a single axis of 'volume',
+    clamping that axis's size to 'max_size' if it's larger.
+    If the size along 'axis' <= max_size, no pooling is performed.
+
+    volume: 3D array (C, H, W) or potentially ND
+    axis: which dimension to pool
+    max_size: maximum allowed size along that axis
+
+    Returns a new volume (possibly the same if no pooling was needed).
+    """
+    current_size = volume.shape[axis]
+    if current_size <= max_size:
+        # No pooling needed, dimension is already small
+        return volume
+
+    # Build cut points: e.g., if current_size=1000, max_size=50,
+    # then cut points ~ [0, 20, 40, ..., 980, 1000] (51 points).
+    cut_points = np.linspace(0, current_size, max_size + 1, dtype=int)
+
+    # Use np.maximum.reduceat to apply chunk-wise max along the given axis
+    pooled = np.maximum.reduceat(volume, cut_points[:-1], axis=axis)
+
+    return pooled
+
+
+def pool_each_dim_individually(volume: np.ndarray, max_size: int) -> np.ndarray:
+    """
+    Pools each dimension of a 3D volume (C,H,W) individually so that
+    each dimension is at most 'max_size'. That is:
+       new_shape[i] = min(old_shape[i], max_size)
+    and we do an adaptive max over each axis that gets reduced.
+
+    volume: np.ndarray of shape (C, H, W)
+    max_size: int
+
+    Returns: pooled_volume, shape = (C_out, H_out, W_out),
+             where C_out <= max_size, H_out <= max_size, W_out <= max_size.
+    """
+    assert volume.ndim == 3, "Expected a 3D tensor (C, H, W)."
+
+    # Pool dimension 0 (channel) if needed
+    out = pool_dimension(volume, axis=0, max_size=max_size)
+    # Pool dimension 1 (height) if needed
+    out = pool_dimension(out, axis=1, max_size=max_size)
+    # Pool dimension 2 (width) if needed
+    out = pool_dimension(out, axis=2, max_size=max_size)
+
+    return out
+
+
+def plot_volume_tensor(tensor):
+    # Convert the input tensor to a volume with shape (C, H, W)
+    volume = reshape_to_3d(tensor)
+    volume = np.nan_to_num(volume, nan=0.0, posinf=0.0, neginf=0.0)
+
+    # Optionally you could reduce the number of points by "MaxPooling" the data.
+    # volume = pool_each_dim_individually(volume, 40)
+
+    # Rearrange dimensions from (C, H, W) to (C, W, H)
+    volume_swapped = volume.transpose(0, 2, 1)  # Now shape is (C, W, H)
+    C, W, H = volume_swapped.shape
+
+    # Create coordinate grids using pixel indices for the new layout.
+    # Now x corresponds to channels, y corresponds to width, and z corresponds to height.
+    c = np.arange(C)
+    w = np.arange(W)
+    h = np.arange(H)
+    X, Y, Z = np.meshgrid(c, w, h, indexing='ij')
+
+    # Create the Plotly volume figure.
+    x_coords = X.flatten()
+    y_coords = Y.flatten()
+    z_coords = Z.flatten()
+    vals = volume_swapped.flatten()
+
+    vals_abs = np.abs(vals)
+
+    val_min, val_max = vals_abs.min(), vals_abs.max()
+    range_val = val_max - val_min
+
+    if range_val == 0:
+        normalized = np.zeros_like(vals_abs)
+    else:
+        normalized = (vals_abs - val_min) / range_val
+
+    threshold = 0.2  # Define your threshold
+    clamped = np.where(normalized < threshold, 0, normalized)
+    point_sizes = 30 * clamped ** 1.5
+
+    fig = go.Figure(
+        data=go.Scatter3d(
+            x=x_coords,
+            y=y_coords,
+            z=z_coords,
+            mode='markers',
+            marker=dict(
+                size=point_sizes,  # <-- array for per-point sizes
+                color=vals,  # color by vals
+                colorscale='Viridis',
+                opacity=0.3,
+                showscale=True
+            )
+        )
+    )
+
+    # Update the layout with the new axis titles.
+    fig.update_layout(
+        scene=dict(
+            dragmode='turntable',
+            xaxis=dict(title="x (Channel)", autorange='reversed'),
+            yaxis=dict(title="y (Width)"),
+            zaxis=dict(title="z (Height)", autorange='reversed'),
+            camera=dict(
+                projection=dict(type='orthographic'),
+                eye=dict(x=3, y=0, z=0),
+                center=dict(x=0, y=0, z=0),
+            ),
+        ),
+        autosize=True,
+        margin=dict(l=0, r=0, t=0, b=0)
+    )
+
+    return fig
+
 
 responsive_css = """
         <style>
@@ -30,7 +277,6 @@ responsive_css = """
         """
 
 
-# 1. Animated Slices
 def animated_slices(tensor1, tensor2, axis=0, fps=10):
     tensor1 = reshape_to_3d(tensor1)
     tensor2 = reshape_to_3d(tensor2)
@@ -61,7 +307,6 @@ def animated_slices(tensor1, tensor2, axis=0, fps=10):
     return responsive_css + anim.to_jshtml()
 
 
-# 2. Isosurface Rendering
 def isosurface_diff(tensor1, tensor2):
     diff = np.abs(tensor1 - tensor2)
     diff = diff.transpose(0, 2, 1)
@@ -123,16 +368,6 @@ def isosurface_diff(tensor1, tensor2):
     )
 
     return fig
-
-
-# 9. Hierarchical Visualization (Tree Map)
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
-
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
 
 
 def hierarchical_diff_visualization(tensor1, tensor2, max_depth=3):
@@ -246,7 +481,6 @@ def hierarchical_diff_visualization(tensor1, tensor2, max_depth=3):
     return fig
 
 
-# 10. Tensor Network Visualization
 def tensor_network_visualization(tensor1, tensor2):
     """
     Visualize tensor structure with differences as a network.

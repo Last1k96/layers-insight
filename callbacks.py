@@ -21,10 +21,9 @@ from run_inference import get_available_plugins, prepare_submodel_and_inputs, ge
 from colors import BorderColor
 
 import cache
-from visualizations.new_cool_visualizations import animated_slices, isosurface_diff, \
-    hierarchical_diff_visualization, tensor_network_visualization, channel_correlation_matrices
-from visualizations.visualization import plot_volume_tensor
-from visualizations.viz_bin_diff import plot_diagnostics, reshape_to_3d
+from visualizations import animated_slices, isosurface_diff, \
+    hierarchical_diff_visualization, tensor_network_visualization, channel_correlation_matrices, \
+    plot_volume_tensor, plot_diagnostics, reshape_to_3d
 
 # Mutex for debug_triggers function
 debug_triggers_mutex = threading.Lock()
@@ -1133,7 +1132,7 @@ def register_callbacks(app):
             store_figure["node_id"] = node_id
 
         # Handle the modal case first
-        default_viz_name = "viz1"
+        default_viz_name = "viz10"
         if triggered_id == "visualization-modal":
             if is_open:
                 viz_name = last_selected_visualization if last_selected_visualization is not None else default_viz_name
