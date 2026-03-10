@@ -1,0 +1,188 @@
+"""Graph extraction and layout service."""
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any, Optional
+
+from backend.schemas.graph import GraphData, GraphEdge, GraphNode
+from backend.utils.op_categories import get_op_category, get_op_color
+
+# Path to ELK layout script
+ELK_SCRIPT = Path(__file__).parent.parent / "utils" / "elk_layout.js"
+
+
+def load_model(model_path: str, ov_core: Any) -> Any:
+    """Load an OpenVINO model from XML path."""
+    return ov_core.read_model(model_path)
+
+
+def extract_graph(model: Any) -> GraphData:
+    """Extract graph structure from an OpenVINO model."""
+    nodes: list[GraphNode] = []
+    edges: list[GraphEdge] = []
+    seen_nodes: set[str] = set()
+
+    for op in model.get_ordered_ops():
+        node_id = op.get_friendly_name()
+        if node_id in seen_nodes:
+            continue
+        seen_nodes.add(node_id)
+
+        op_type = op.get_type_name()
+
+        # Get output shape if available
+        shape = None
+        element_type = None
+        try:
+            if op.get_output_size() > 0:
+                pshape = op.output(0).get_partial_shape()
+                if pshape.is_static:
+                    shape = list(pshape.get_shape())
+                else:
+                    shape = [str(d) for d in pshape]
+                element_type = str(op.output(0).get_element_type())
+        except Exception:
+            pass
+
+        # Get op attributes
+        attributes = {}
+        try:
+            for attr_name in op.get_attributes():
+                val = op.get_attributes()[attr_name]
+                attributes[attr_name] = str(val) if not isinstance(val, (int, float, bool, str)) else val
+        except Exception:
+            pass
+
+        category = get_op_category(op_type)
+        color = get_op_color(op_type)
+
+        nodes.append(GraphNode(
+            id=node_id,
+            name=node_id,
+            type=op_type,
+            shape=shape,
+            element_type=element_type,
+            category=category,
+            color=color,
+            attributes=attributes,
+        ))
+
+        # Extract edges from inputs
+        for i in range(op.get_input_size()):
+            try:
+                source_output = op.input(i).get_source_output()
+                source_node = source_output.get_node()
+                source_id = source_node.get_friendly_name()
+                source_port = source_output.get_index()
+                edges.append(GraphEdge(
+                    source=source_id,
+                    target=node_id,
+                    source_port=source_port,
+                    target_port=i,
+                ))
+            except Exception:
+                pass
+
+    return GraphData(nodes=nodes, edges=edges)
+
+
+async def compute_layout(graph_data: GraphData) -> dict[str, dict[str, float]]:
+    """Compute layout using ELK via Node.js subprocess.
+
+    Returns dict mapping node_id to {x, y} positions.
+    Falls back to topological layer assignment if ELK fails.
+    """
+    import asyncio
+
+    elk_input = {
+        "nodes": [{"id": n.id, "width": 180, "height": 50} for n in graph_data.nodes],
+        "edges": [{"source": e.source, "target": e.target} for e in graph_data.edges],
+    }
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "node", str(ELK_SCRIPT),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate(json.dumps(elk_input).encode())
+
+        if proc.returncode == 0:
+            return json.loads(stdout.decode())
+        else:
+            print(f"ELK layout failed: {stderr.decode()}", file=sys.stderr)
+    except Exception as e:
+        print(f"ELK layout error: {e}", file=sys.stderr)
+
+    # Fallback: topological layer assignment
+    return _fallback_layout(graph_data)
+
+
+def _fallback_layout(graph_data: GraphData) -> dict[str, dict[str, float]]:
+    """Simple layered layout fallback using topological ordering."""
+    # Build adjacency
+    children: dict[str, list[str]] = {}
+    parents: dict[str, list[str]] = {}
+    for e in graph_data.edges:
+        children.setdefault(e.source, []).append(e.target)
+        parents.setdefault(e.target, []).append(e.source)
+
+    # Compute layers via BFS from sources
+    node_ids = {n.id for n in graph_data.nodes}
+    sources = [n.id for n in graph_data.nodes if n.id not in parents or not parents.get(n.id)]
+    if not sources:
+        sources = [graph_data.nodes[0].id] if graph_data.nodes else []
+
+    layer: dict[str, int] = {}
+    queue = list(sources)
+    for s in queue:
+        layer[s] = 0
+
+    visited = set(queue)
+    while queue:
+        current = queue.pop(0)
+        for child in children.get(current, []):
+            new_layer = layer[current] + 1
+            if child not in layer or new_layer > layer[child]:
+                layer[child] = new_layer
+            if child not in visited:
+                visited.add(child)
+                queue.append(child)
+
+    # Assign remaining nodes
+    for n in graph_data.nodes:
+        if n.id not in layer:
+            layer[n.id] = 0
+
+    # Position nodes
+    layer_nodes: dict[int, list[str]] = {}
+    for nid, l in layer.items():
+        layer_nodes.setdefault(l, []).append(nid)
+
+    positions = {}
+    y_spacing = 100
+    x_spacing = 220
+    for l, nids in sorted(layer_nodes.items()):
+        for i, nid in enumerate(nids):
+            positions[nid] = {"x": i * x_spacing, "y": l * y_spacing}
+
+    return positions
+
+
+def apply_layout(graph_data: GraphData, positions: dict[str, dict[str, float]]) -> GraphData:
+    """Apply positions to graph nodes."""
+    for node in graph_data.nodes:
+        if node.id in positions:
+            node.x = positions[node.id]["x"]
+            node.y = positions[node.id]["y"]
+    return graph_data
+
+
+def search_nodes(graph_data: GraphData, query: str) -> list[GraphNode]:
+    """Search nodes by name or type (case-insensitive substring match)."""
+    q = query.lower()
+    return [n for n in graph_data.nodes if q in n.name.lower() or q in n.type.lower()]

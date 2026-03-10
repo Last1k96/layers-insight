@@ -1,0 +1,120 @@
+import { graphStore, type NodeStatus } from '../stores/graph.svelte';
+import { queueStore } from '../stores/queue.svelte';
+import { cacheMetrics } from '../stores/metrics.svelte';
+import type { TaskStatusMessage, TaskStatus } from '../stores/types';
+
+let ws: WebSocket | null = null;
+let sessionId: string | null = null;
+let reconnectAttempts = 0;
+let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+let onDisconnect: (() => void) | null = null;
+let onReconnect: (() => void) | null = null;
+
+export function setConnectionCallbacks(
+  disconnectCb: () => void,
+  reconnectCb: () => void
+): void {
+  onDisconnect = disconnectCb;
+  onReconnect = reconnectCb;
+}
+
+export function connect(sid: string): void {
+  sessionId = sid;
+  reconnectAttempts = 0;
+  _connect();
+}
+
+export function disconnect(): void {
+  sessionId = null;
+  if (reconnectTimeout) {
+    clearTimeout(reconnectTimeout);
+    reconnectTimeout = null;
+  }
+  if (ws) {
+    ws.close();
+    ws = null;
+  }
+}
+
+export function sendMessage(data: Record<string, unknown>): void {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(data));
+  }
+}
+
+function _connect(): void {
+  if (!sessionId) return;
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  ws = new WebSocket(`${protocol}//${host}/ws/${sessionId}`);
+
+  ws.onopen = () => {
+    reconnectAttempts = 0;
+    if (onReconnect) onReconnect();
+  };
+
+  ws.onmessage = (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      handleMessage(msg);
+    } catch (e) {
+      console.error('WS message parse error:', e);
+    }
+  };
+
+  ws.onclose = () => {
+    if (sessionId) {
+      if (onDisconnect) onDisconnect();
+      _scheduleReconnect();
+    }
+  };
+
+  ws.onerror = () => {
+    // onclose will fire after this
+  };
+}
+
+function _scheduleReconnect(): void {
+  if (!sessionId) return;
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+  reconnectAttempts++;
+  reconnectTimeout = setTimeout(_connect, delay);
+}
+
+function handleMessage(msg: any): void {
+  if (msg.type === 'task_status') {
+    const tsMsg = msg as TaskStatusMessage;
+
+    // Update queue store
+    queueStore.updateTask(tsMsg.task_id, {
+      status: tsMsg.status,
+      stage: tsMsg.stage,
+      error_detail: tsMsg.error_detail,
+      metrics: tsMsg.metrics,
+      main_result: tsMsg.main_result,
+      ref_result: tsMsg.ref_result,
+    });
+
+    // Update graph node status
+    const nodeStatus: NodeStatus = {
+      status: tsMsg.status,
+      taskId: tsMsg.task_id,
+      stage: tsMsg.stage,
+      metrics: tsMsg.metrics,
+      mainResult: tsMsg.main_result,
+      refResult: tsMsg.ref_result,
+      errorDetail: tsMsg.error_detail,
+    };
+    graphStore.updateNodeStatus(tsMsg.node_id, nodeStatus);
+
+    // Cache metrics on success
+    if (tsMsg.status === 'success' && tsMsg.metrics) {
+      cacheMetrics(tsMsg.task_id, {
+        metrics: tsMsg.metrics,
+        main_result: tsMsg.main_result,
+        ref_result: tsMsg.ref_result,
+      });
+    }
+  }
+}

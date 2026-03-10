@@ -1,0 +1,8 @@
+sessions/
+node_modules/
+__pycache__/
+*.pyc
+frontend/dist/
+.venv/
+*.egg-info/
+.pytest_cache/

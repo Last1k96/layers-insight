@@ -1,0 +1,7 @@
+{
+  "name": "layers-insight-layout",
+  "private": true,
+  "dependencies": {
+    "elkjs": "^0.9.3"
+  }
+}

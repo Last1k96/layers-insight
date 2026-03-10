@@ -1,0 +1,71 @@
+export const OP_CATEGORIES: Record<string, { category: string; color: string }> = {
+  Convolution: { category: 'Convolution', color: '#4A90D9' },
+  GroupConvolution: { category: 'Convolution', color: '#4A90D9' },
+  DeformableConvolution: { category: 'Convolution', color: '#4A90D9' },
+  BatchNormInference: { category: 'Normalization', color: '#9B59B6' },
+  MVN: { category: 'Normalization', color: '#9B59B6' },
+  NormalizeL2: { category: 'Normalization', color: '#9B59B6' },
+  LRN: { category: 'Normalization', color: '#9B59B6' },
+  Relu: { category: 'Activation', color: '#E67E22' },
+  Sigmoid: { category: 'Activation', color: '#E67E22' },
+  Tanh: { category: 'Activation', color: '#E67E22' },
+  Clamp: { category: 'Activation', color: '#E67E22' },
+  Elu: { category: 'Activation', color: '#E67E22' },
+  Swish: { category: 'Activation', color: '#E67E22' },
+  PRelu: { category: 'Activation', color: '#E67E22' },
+  Mish: { category: 'Activation', color: '#E67E22' },
+  SoftMax: { category: 'Activation', color: '#E67E22' },
+  Gelu: { category: 'Activation', color: '#E67E22' },
+  MaxPool: { category: 'Pooling', color: '#1ABC9C' },
+  AvgPool: { category: 'Pooling', color: '#1ABC9C' },
+  AdaptiveAvgPool: { category: 'Pooling', color: '#1ABC9C' },
+  Add: { category: 'Elementwise', color: '#2ECC71' },
+  Multiply: { category: 'Elementwise', color: '#2ECC71' },
+  Subtract: { category: 'Elementwise', color: '#2ECC71' },
+  Divide: { category: 'Elementwise', color: '#2ECC71' },
+  Maximum: { category: 'Elementwise', color: '#2ECC71' },
+  Minimum: { category: 'Elementwise', color: '#2ECC71' },
+  Power: { category: 'Elementwise', color: '#2ECC71' },
+  MatMul: { category: 'MatMul', color: '#5C6BC0' },
+  FullyConnected: { category: 'MatMul', color: '#5C6BC0' },
+  Reshape: { category: 'DataMovement', color: '#95A5A6' },
+  Transpose: { category: 'DataMovement', color: '#95A5A6' },
+  Concat: { category: 'DataMovement', color: '#95A5A6' },
+  Split: { category: 'DataMovement', color: '#95A5A6' },
+  StridedSlice: { category: 'DataMovement', color: '#95A5A6' },
+  Gather: { category: 'DataMovement', color: '#95A5A6' },
+  Squeeze: { category: 'DataMovement', color: '#95A5A6' },
+  Unsqueeze: { category: 'DataMovement', color: '#95A5A6' },
+  ShapeOf: { category: 'DataMovement', color: '#95A5A6' },
+  Convert: { category: 'DataMovement', color: '#95A5A6' },
+  Broadcast: { category: 'DataMovement', color: '#95A5A6' },
+  Tile: { category: 'DataMovement', color: '#95A5A6' },
+  Pad: { category: 'DataMovement', color: '#95A5A6' },
+  Interpolate: { category: 'DataMovement', color: '#95A5A6' },
+  FakeQuantize: { category: 'Quantization', color: '#F39C12' },
+  Quantize: { category: 'Quantization', color: '#F39C12' },
+  Dequantize: { category: 'Quantization', color: '#F39C12' },
+  ReduceMean: { category: 'Reduce', color: '#E91E63' },
+  ReduceSum: { category: 'Reduce', color: '#E91E63' },
+  ReduceMax: { category: 'Reduce', color: '#E91E63' },
+  ReduceMin: { category: 'Reduce', color: '#E91E63' },
+  ReduceProd: { category: 'Reduce', color: '#E91E63' },
+  Parameter: { category: 'Parameter', color: '#607D8B' },
+  Result: { category: 'Parameter', color: '#607D8B' },
+  Constant: { category: 'Parameter', color: '#607D8B' },
+};
+
+export const STATUS_COLORS: Record<string, string> = {
+  waiting: '#F59E0B',
+  executing: '#3B82F6',
+  success: '#10B981',
+  failed: '#EF4444',
+};
+
+export function getOpColor(opType: string): string {
+  return OP_CATEGORIES[opType]?.color ?? '#78909C';
+}
+
+export function getStatusColor(status: string): string {
+  return STATUS_COLORS[status] ?? 'transparent';
+}
