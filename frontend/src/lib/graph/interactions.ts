@@ -25,10 +25,10 @@ export function setupInteractions(): void {
 
     if (event.original.shiftKey) {
       // Shift+click: always enqueue
-      queueStore.enqueue(sessionId, node, attrs.label as string, attrs.opType as string);
+      queueStore.enqueue(sessionId, node, (attrs.nodeName || attrs.label) as string, attrs.opType as string);
     } else if (!nodeStatus) {
       // Click un-inferred: auto-queue
-      queueStore.enqueue(sessionId, node, attrs.label as string, attrs.opType as string);
+      queueStore.enqueue(sessionId, node, (attrs.nodeName || attrs.label) as string, attrs.opType as string);
     }
     // Click inferred/queued: just select (already done above)
   });

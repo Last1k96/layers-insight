@@ -168,7 +168,8 @@ def _fallback_layout(graph_data: GraphData) -> dict[str, dict[str, float]]:
     x_spacing = 220
     for l, nids in sorted(layer_nodes.items()):
         for i, nid in enumerate(nids):
-            positions[nid] = {"x": i * x_spacing, "y": l * y_spacing}
+            # Negate Y so Sigma.js (Y-up) renders top-to-bottom
+            positions[nid] = {"x": i * x_spacing, "y": -l * y_spacing}
 
     return positions
 

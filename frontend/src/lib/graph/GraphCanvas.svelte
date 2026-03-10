@@ -27,4 +27,4 @@
   });
 </script>
 
-<div bind:this={container} class="absolute inset-0 bg-gray-900"></div>
+<div bind:this={container} class="absolute inset-0" style="background: #1a1a2e;"></div>

@@ -3,17 +3,19 @@ from __future__ import annotations
 
 # Category definitions with colors
 CATEGORIES: dict[str, str] = {
-    "Convolution": "#4A90D9",
-    "Normalization": "#9B59B6",
-    "Activation": "#E67E22",
-    "Pooling": "#1ABC9C",
-    "Elementwise": "#2ECC71",
-    "MatMul": "#5C6BC0",
-    "DataMovement": "#95A5A6",
-    "Quantization": "#F39C12",
-    "Reduce": "#E91E63",
-    "Parameter": "#607D8B",
-    "Other": "#78909C",
+    "Convolution": "#335588",    # rgb(51,85,136) — Netron "layer"
+    "Normalization": "#335544",  # rgb(51,85,68)  — Netron "normalization"
+    "Activation": "#702921",     # rgb(112,41,33) — Netron "activation"
+    "Pooling": "#335533",        # rgb(51,85,51)  — Netron "pool"
+    "Elementwise": "#335544",    # rgb(51,85,68)  — Netron "transform"
+    "MatMul": "#335588",         # rgb(51,85,136) — Netron "layer"
+    "DataMovement": "#6C4F47",   # rgb(108,79,71) — Netron "shape"
+    "Quantization": "#502800",   # rgb(80,40,0)   — Netron "quantization"
+    "Reduce": "#454770",         # rgb(69,71,112) — Netron "dropout"
+    "Parameter": "#eeeeee",      # Netron "constant" — light gray, dark text
+    "Attention": "#783C00",      # rgb(120,60,0)  — Netron "attention"
+    "Tensor": "#59423B",         # rgb(89,66,59)  — Netron "tensor"
+    "Other": "#333333",          # Default dark charcoal
 }
 
 # Op type to category mapping
