@@ -1,6 +1,8 @@
 <script lang="ts">
   import GraphCanvas from '../graph/GraphCanvas.svelte';
+  import Minimap from '../graph/Minimap.svelte';
   import GraphSearch from '../graph/GraphSearch.svelte';
+  import SubSessionNav from '../panels/SubSessionNav.svelte';
   import FloatingPanel from '../panels/FloatingPanel.svelte';
   import QueuePanel from '../panels/QueuePanel.svelte';
   import NodeStatus from '../panels/NodeStatus.svelte';
@@ -40,8 +42,14 @@
   <!-- Graph fills entire background -->
   <GraphCanvas />
 
+  <!-- Minimap -->
+  <Minimap />
+
   <!-- Search overlay -->
   <GraphSearch />
+
+  <!-- Sub-session navigation (Phase 2) -->
+  <SubSessionNav />
 
   <!-- Floating panels -->
   <FloatingPanel side="left" title="Queue">

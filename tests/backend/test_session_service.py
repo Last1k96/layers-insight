@@ -88,6 +88,43 @@ class TestSessionService:
         assert (tensor_dir / "main_output.npy").exists()
         assert (tensor_dir / "ref_output.npy").exists()
 
+    def test_create_sub_session(self, session_service, sample_config):
+        info = session_service.create_session(sample_config)
+
+        sub = session_service.create_sub_session(
+            session_id=info.id,
+            cut_type="output",
+            cut_node="conv1",
+            grayed_nodes=["relu1", "result_0"],
+        )
+
+        assert sub.id is not None
+        assert sub.parent_id == info.id
+        assert sub.cut_type == "output"
+        assert sub.cut_node == "conv1"
+        assert sub.grayed_nodes == ["relu1", "result_0"]
+
+        # Verify persisted
+        subs = session_service.list_sub_sessions(info.id)
+        assert len(subs) == 1
+        assert subs[0].id == sub.id
+
+    def test_get_tensor_path(self, session_service, sample_config):
+        info = session_service.create_session(sample_config)
+
+        # No tensor yet
+        assert session_service.get_tensor_path(info.id, "t1", "main_output") is None
+
+        # Save a tensor
+        session_service.save_task_result(
+            info.id, "t1", {"status": "success"},
+            main_output=np.zeros((1, 3)),
+        )
+
+        path = session_service.get_tensor_path(info.id, "t1", "main_output")
+        assert path is not None
+        assert path.exists()
+
     def test_task_count_update(self, session_service, sample_config):
         info = session_service.create_session(sample_config)
 

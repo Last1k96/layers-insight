@@ -19,6 +19,7 @@ class GraphStore {
   searchVisible = $state(false);
   searchIndex = $state(0);
   loading = $state(false);
+  grayedNodes = $state<Set<string>>(new Set());
 
   get selectedNode(): GraphNode | null {
     if (!this.graphData || !this.selectedNodeId) return null;
@@ -68,6 +69,14 @@ class GraphStore {
     } catch (e) {
       console.error('Search failed:', e);
     }
+  }
+
+  setGrayedNodes(nodes: string[]): void {
+    this.grayedNodes = new Set(nodes);
+  }
+
+  clearGrayedNodes(): void {
+    this.grayedNodes = new Set();
   }
 
   cycleSearchResult(direction: 1 | -1 = 1): GraphNode | null {

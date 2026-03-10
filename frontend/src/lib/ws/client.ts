@@ -83,6 +83,10 @@ function _scheduleReconnect(): void {
 }
 
 function handleMessage(msg: any): void {
+  if (msg.type === 'sub_session_created') {
+    graphStore.setGrayedNodes(msg.grayed_nodes || []);
+  }
+
   if (msg.type === 'task_status') {
     const tsMsg = msg as TaskStatusMessage;
 

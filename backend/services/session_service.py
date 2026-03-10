@@ -135,6 +135,49 @@ class SessionService:
         meta = self._read_metadata(session_id)
         return meta.get("tasks", {}).get(task_id, {})
 
+    def create_sub_session(
+        self,
+        session_id: str,
+        cut_type: str,
+        cut_node: str,
+        grayed_nodes: list[str],
+    ):
+        """Create a sub-session within an existing session."""
+        from backend.schemas.session import SubSessionInfo
+
+        sub_id = str(uuid.uuid4())[:8]
+        sub_path = self._session_path(session_id) / "sub_sessions" / sub_id
+        sub_path.mkdir(parents=True, exist_ok=True)
+        (sub_path / "tensors").mkdir(exist_ok=True)
+
+        sub_info = SubSessionInfo(
+            id=sub_id,
+            parent_id=session_id,
+            cut_type=cut_type,
+            cut_node=cut_node,
+            grayed_nodes=grayed_nodes,
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+        # Add to session metadata
+        meta = self._read_metadata(session_id)
+        meta.setdefault("sub_sessions", []).append(sub_info.model_dump())
+        meta["info"]["sub_sessions"] = meta["sub_sessions"]
+        self._write_metadata(session_id, meta)
+
+        return sub_info
+
+    def list_sub_sessions(self, session_id: str) -> list:
+        """List sub-sessions for a session."""
+        from backend.schemas.session import SubSessionInfo
+        meta = self._read_metadata(session_id)
+        return [SubSessionInfo(**s) for s in meta.get("sub_sessions", [])]
+
+    def get_tensor_path(self, session_id: str, task_id: str, output_name: str) -> Optional[Path]:
+        """Get path to a saved tensor file."""
+        path = self._session_path(session_id) / "tensors" / task_id / f"{output_name}.npy"
+        return path if path.exists() else None
+
     def _read_metadata(self, session_id: str) -> dict:
         return json.loads(self._metadata_path(session_id).read_text())
 

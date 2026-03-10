@@ -24,6 +24,7 @@ class InferenceService:
         input_path: Optional[str] = None,
         precision: str = "fp32",
         task: Optional[InferenceTask] = None,
+        input_configs: Optional[list[dict]] = None,
     ) -> InferenceTask:
         """Cut the model at target node and run inference on both devices.
 
@@ -63,7 +64,7 @@ class InferenceService:
         task.stage = "preparing_inputs"
         try:
             model_params = self._extract_params(model)
-            inputs = prepare_inputs(model_params, input_path, precision)
+            inputs = prepare_inputs(model_params, input_path, precision, input_configs)
         except Exception as e:
             task.status = TaskStatus.FAILED
             task.stage = "preparing_inputs"

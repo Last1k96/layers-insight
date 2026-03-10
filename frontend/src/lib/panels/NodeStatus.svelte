@@ -2,9 +2,15 @@
   import { graphStore } from '../stores/graph.svelte';
   import { queueStore } from '../stores/queue.svelte';
   import { sessionStore } from '../stores/session.svelte';
+  import AccuracyView from '../accuracy/AccuracyView.svelte';
+  import BatchQueue from './BatchQueue.svelte';
 
   let selectedNode = $derived(graphStore.selectedNode);
   let nodeStatus = $derived(graphStore.selectedNodeStatus);
+
+  let showAccuracyView = $state(false);
+  let showBatchQueue = $state(false);
+  let cutting = $state(false);
 
   function handleRerun() {
     if (nodeStatus?.taskId) {
@@ -15,6 +21,35 @@
   function handleCancel() {
     if (nodeStatus?.taskId) {
       queueStore.cancel(nodeStatus.taskId);
+    }
+  }
+
+  function handleDeepAccuracy() {
+    showAccuracyView = true;
+  }
+
+  async function handleCut(cutType: 'output' | 'input') {
+    const session = sessionStore.currentSession;
+    if (!session || !selectedNode) return;
+
+    cutting = true;
+    try {
+      const res = await fetch(`/api/sessions/${session.id}/cut`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          node_name: selectedNode.name,
+          cut_type: cutType,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.detail || 'Cut failed');
+      }
+    } catch (e) {
+      console.error('Cut failed:', e);
+    } finally {
+      cutting = false;
     }
   }
 
@@ -126,28 +161,31 @@
         </div>
       {/if}
 
-      <!-- Phase 2 placeholders -->
+      <!-- Phase 2 actions -->
       <div class="mt-3 space-y-2">
         <button
-          class="w-full py-1.5 bg-gray-700/50 rounded text-xs text-gray-500 cursor-not-allowed"
-          disabled
-          title="Coming in Phase 2"
+          class="w-full py-1.5 bg-indigo-700 hover:bg-indigo-600 rounded text-xs transition-colors"
+          onclick={handleDeepAccuracy}
         >
           Deep Accuracy View
         </button>
         <button
-          class="w-full py-1.5 bg-gray-700/50 rounded text-xs text-gray-500 cursor-not-allowed"
-          disabled
-          title="Coming in Phase 2"
+          class="w-full py-1.5 bg-amber-700 hover:bg-amber-600 rounded text-xs transition-colors"
+          onclick={() => handleCut('output')}
         >
           Make Output Node
         </button>
         <button
-          class="w-full py-1.5 bg-gray-700/50 rounded text-xs text-gray-500 cursor-not-allowed"
-          disabled
-          title="Coming in Phase 2"
+          class="w-full py-1.5 bg-purple-700 hover:bg-purple-600 rounded text-xs transition-colors"
+          onclick={() => handleCut('input')}
         >
           Make Input Node
+        </button>
+        <button
+          class="w-full py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs transition-colors"
+          onclick={() => showBatchQueue = true}
+        >
+          Batch Queue
         </button>
       </div>
 
@@ -195,3 +233,24 @@
     {/if}
   {/if}
 </div>
+
+<!-- Overlays rendered with fixed positioning -->
+{#if showAccuracyView && nodeStatus?.taskId && selectedNode}
+  <div class="fixed inset-0 z-50">
+    <AccuracyView
+      taskId={nodeStatus.taskId}
+      nodeId={selectedNode.name}
+      onclose={() => showAccuracyView = false}
+    />
+  </div>
+{/if}
+
+{#if showBatchQueue && selectedNode}
+  <div class="fixed inset-0 z-50 bg-black/30">
+    <BatchQueue
+      nodeId={selectedNode.id}
+      nodeName={selectedNode.name}
+      onclose={() => showBatchQueue = false}
+    />
+  </div>
+{/if}

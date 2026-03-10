@@ -2,7 +2,21 @@ import Sigma from 'sigma';
 import Graph from 'graphology';
 import type { GraphData, GraphNode } from '../stores/types';
 import { graphStore, type NodeStatus } from '../stores/graph.svelte';
+import { configStore } from '../stores/config.svelte';
 import { STATUS_COLORS } from './opColors';
+
+function getAccuracyGradientColor(mse: number): string {
+  if (configStore.gradientMode === 'threshold') {
+    return mse <= configStore.globalThreshold ? '#10B981' : '#EF4444';
+  }
+  // Auto-scale: use a log scale: green < 1e-6, yellow ~ 1e-4, red > 1e-2
+  const logMse = mse > 0 ? Math.log10(mse) : -10;
+  const t = Math.max(0, Math.min(1, (logMse + 8) / 6)); // -8 to -2 range
+  // Green -> Yellow -> Red
+  const r = Math.floor(Math.min(255, t * 2 * 255));
+  const g = Math.floor(Math.min(255, (1 - Math.max(0, t - 0.5) * 2) * 255));
+  return `rgb(${r}, ${g}, 0)`;
+}
 
 let sigma: Sigma | null = null;
 let graph: Graph | null = null;
@@ -72,10 +86,27 @@ export function initRenderer(container: HTMLElement, graphData: GraphData): void
       const selected = graphStore.selectedNodeId === node;
       const searchActive = graphStore.searchVisible && graphStore.searchResults.length > 0;
 
+      // Grayed nodes (model cutting)
+      if (graphStore.grayedNodes.has(node)) {
+        res.color = '#1f2937';
+        res.label = '';
+        res.size = 4;
+        res.borderColor = undefined;
+        res.borderSize = 0;
+        return res;  // Skip other rendering for grayed nodes
+      }
+
       // Status ring via border color
       if (nodeStatus) {
         const statusColor = STATUS_COLORS[nodeStatus.status];
-        if (statusColor) {
+        // Phase 2: Accuracy gradient for completed nodes
+        if (nodeStatus.status === 'success' && nodeStatus.metrics) {
+          const gradientColor = getAccuracyGradientColor(nodeStatus.metrics.mse);
+          if (gradientColor) {
+            res.borderColor = gradientColor;
+            res.borderSize = selected ? 3 : 2;
+          }
+        } else if (statusColor) {
           res.borderColor = statusColor;
           res.borderSize = selected ? 3 : 2;
         }

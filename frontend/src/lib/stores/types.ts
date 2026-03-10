@@ -10,6 +10,30 @@ export interface SessionInfo {
   failed_count: number;
 }
 
+export interface InputConfig {
+  name: string;
+  shape: number[];
+  element_type: string;
+  data_type: string;
+  source: 'random' | 'file';
+  path?: string;
+  layout: string;
+}
+
+export interface ModelInputInfo {
+  name: string;
+  shape: number[];
+  element_type: string;
+}
+
+export interface AppDefaults {
+  ov_path?: string;
+  model_path?: string;
+  input_path?: string;
+  main_device: string;
+  ref_device: string;
+}
+
 export interface SessionConfig {
   ov_path?: string;
   model_path: string;
@@ -18,6 +42,7 @@ export interface SessionConfig {
   ref_device: string;
   input_precision: string;
   input_layout: string;
+  inputs?: InputConfig[];
 }
 
 export interface SessionDetail {
@@ -95,4 +120,34 @@ export interface TaskStatusMessage {
   metrics?: AccuracyMetrics;
   main_result?: DeviceResult;
   ref_result?: DeviceResult;
+}
+
+export interface SubSessionInfo {
+  id: string;
+  parent_id: string;
+  cut_type: 'output' | 'input';
+  cut_node: string;
+  grayed_nodes: string[];
+  created_at: string;
+  task_count: number;
+  success_count: number;
+  failed_count: number;
+}
+
+export interface SubSessionCreatedMessage {
+  type: 'sub_session_created';
+  sub_session_id: string;
+  cut_type: string;
+  cut_node: string;
+  grayed_nodes: string[];
+}
+
+export interface TensorMeta {
+  shape: number[];
+  dtype: string;
+  size_bytes: number;
+  min: number;
+  max: number;
+  mean: number;
+  std: number;
 }

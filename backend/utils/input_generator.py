@@ -56,19 +56,36 @@ def prepare_inputs(
     model_params: list[dict[str, Any]],
     input_path: str | None = None,
     precision: str = "fp32",
+    input_configs: list[dict[str, Any]] | None = None,
 ) -> dict[str, np.ndarray]:
     """Prepare inputs for all model parameters.
 
     Args:
         model_params: List of dicts with 'name', 'shape', 'element_type' keys.
-        input_path: Path to input data or None for random.
-        precision: Default precision for random inputs.
+        input_path: Path to input data or None for random (legacy fallback).
+        precision: Default precision for random inputs (legacy fallback).
+        input_configs: Per-input config list with 'name', 'data_type', 'source', 'path'.
     """
+    # Build per-input config lookup
+    config_map: dict[str, dict[str, Any]] = {}
+    if input_configs:
+        for cfg in input_configs:
+            config_map[cfg["name"]] = cfg
+
     inputs = {}
     for param in model_params:
         name = param["name"]
         shape = param["shape"]
-        if input_path and input_path != "random":
+
+        cfg = config_map.get(name)
+        if cfg:
+            # Use per-input config
+            dt = cfg.get("data_type", precision)
+            if cfg.get("source") == "file" and cfg.get("path"):
+                inputs[name] = load_input_from_file(cfg["path"], shape)
+            else:
+                inputs[name] = generate_random_input(shape, dt)
+        elif input_path and input_path != "random":
             p = Path(input_path)
             if p.is_dir():
                 # Look for matching file by param name

@@ -27,6 +27,21 @@ async def lifespan(app: FastAPI):
     try:
         import openvino as ov
         ov_core = ov.Core()
+
+        # Register plugins from custom OV build path if provided
+        if config.ov_path:
+            ov_lib_dir = Path(config.ov_path)
+            for so_file in ov_lib_dir.glob("libopenvino_*_plugin.so"):
+                # Extract device name: libopenvino_template_plugin.so -> TEMPLATE
+                name = so_file.stem  # libopenvino_template_plugin
+                parts = name.replace("libopenvino_", "").replace("_plugin", "")
+                device_name = parts.upper().replace("INTEL_", "")
+                if device_name not in ov_core.available_devices:
+                    try:
+                        ov_core.register_plugin(str(so_file), device_name)
+                    except Exception as e:
+                        print(f"  Could not register {device_name} plugin: {e}", file=sys.stderr)
+
         print(f"OpenVINO initialized. Available devices: {ov_core.available_devices}")
     except ImportError:
         print("WARNING: OpenVINO not installed. Running in UI-only mode.", file=sys.stderr)
@@ -42,6 +57,10 @@ async def lifespan(app: FastAPI):
 
     inference_service = InferenceService(ov_core) if ov_core else None
     app.state.inference_service = inference_service
+
+    from backend.services.model_cut_service import ModelCutService
+    model_cut_service = ModelCutService(ov_core) if ov_core else None
+    app.state.model_cut_service = model_cut_service
 
     queue_service = QueueService()
     app.state.queue_service = queue_service
@@ -68,6 +87,11 @@ async def lifespan(app: FastAPI):
             task.error_detail = "Session not found"
             return task
 
+        # Pass per-input configs if available
+        input_configs = None
+        if session.config.inputs:
+            input_configs = [inp.model_dump() for inp in session.config.inputs]
+
         result = await asyncio.to_thread(
             inference_service.cut_and_infer,
             model=model,
@@ -77,6 +101,7 @@ async def lifespan(app: FastAPI):
             input_path=session.config.input_path,
             precision=session.config.input_precision,
             task=task,
+            input_configs=input_configs,
         )
 
         # Handle tuple result (task, main_output, ref_output)
@@ -102,7 +127,16 @@ async def lifespan(app: FastAPI):
     queue_service.set_callbacks(notify=on_task_notify, infer=on_infer)
     await queue_service.start_worker()
 
-    print(f"Server ready at http://{config.host}:{config.port}")
+    import socket
+    try:
+        # Connect to an external address to determine the local IP on the network
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        host_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        host_ip = "127.0.0.1"
+    print(f"\n  Open in browser: http://{host_ip}:{config.port}\n")
     yield
 
     # Shutdown

@@ -1,9 +1,18 @@
 """Inference task routes."""
 from __future__ import annotations
 
+import uuid
+
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
 
 from backend.schemas.inference import EnqueueRequest, InferenceTask, ReorderRequest
+
+
+class BatchEnqueueRequest(BaseModel):
+    """Request to enqueue multiple nodes for inference."""
+    session_id: str
+    nodes: list[dict]  # list of {node_id, node_name, node_type}
 
 router = APIRouter(prefix="/api/inference", tags=["inference"])
 
@@ -19,6 +28,25 @@ async def enqueue_task(req: EnqueueRequest, request: Request) -> InferenceTask:
         node_type=req.node_type,
     )
     return await queue_svc.enqueue(task)
+
+
+@router.post("/enqueue-batch")
+async def enqueue_batch(req: BatchEnqueueRequest, request: Request) -> list[InferenceTask]:
+    """Enqueue multiple nodes for inference."""
+    queue_svc = request.app.state.queue_service
+    batch_id = str(uuid.uuid4())[:8]
+    tasks = []
+    for node in req.nodes:
+        task = queue_svc.create_task(
+            session_id=req.session_id,
+            node_id=node["node_id"],
+            node_name=node["node_name"],
+            node_type=node["node_type"],
+        )
+        task.batch_id = batch_id
+        result = await queue_svc.enqueue(task)
+        tasks.append(result)
+    return tasks
 
 
 @router.put("/reorder")
