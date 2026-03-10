@@ -36,10 +36,13 @@
       </div>
     {:else}
       {#each queueStore.filteredTasks as task, i (task.task_id)}
-        <button
-          class="w-full text-left px-3 py-2 text-sm border-b border-gray-700/50 hover:bg-gray-700/50 flex items-center gap-2 transition-colors"
+        <div
+          class="w-full text-left px-3 py-2 text-sm border-b border-gray-700/50 hover:bg-gray-700/50 flex items-center gap-2 transition-colors cursor-pointer"
           class:bg-gray-700={i === queueStore.selectedIndex}
+          role="button"
+          tabindex="0"
           onclick={() => { queueStore.selectedIndex = i; selectTask(task); }}
+          onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedIndex = i; selectTask(task); }}}
         >
           <!-- Status dot -->
           <div
@@ -69,7 +72,7 @@
               &#x21bb;
             </button>
           {/if}
-        </button>
+        </div>
       {/each}
     {/if}
   </div>

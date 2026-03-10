@@ -4,6 +4,10 @@ cd "$(dirname "$0")"
 
 echo "=== Setting up layers-insight ==="
 
+# Source nvm if available (for WSL environments)
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
 # Python venv
 if [ ! -d .venv ]; then
     echo "Creating Python virtual environment..."
