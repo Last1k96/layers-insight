@@ -9,7 +9,7 @@
  *   - Network simplex node placement
  *
  * Input:  { nodes: [{id, width, height}], edges: [{source, target}] }
- * Output: { nodes: [{id, x, y}] }
+ * Output: { nodes: {id: {x, y}}, edges: {idx: {waypoints: [{x,y}]}} }
  */
 const ELK = require('elkjs');
 
@@ -47,12 +47,34 @@ process.stdin.on('end', async () => {
         };
 
         const result = await elk.layout(graph);
+
+        // Node positions (SVG is Y-down like ELK, no negation needed)
         const positions = {};
         for (const child of result.children || []) {
-            // Negate Y so Sigma.js (Y-up) renders the graph top-to-bottom
-            positions[child.id] = { x: child.x, y: -child.y };
+            positions[child.id] = { x: child.x, y: child.y };
         }
-        process.stdout.write(JSON.stringify(positions));
+
+        // Edge waypoints from ELK sections
+        const edgeWaypoints = {};
+        for (const edge of result.edges || []) {
+            const waypoints = [];
+            if (edge.sections) {
+                for (const section of edge.sections) {
+                    waypoints.push(section.startPoint);
+                    if (section.bendPoints) {
+                        for (const bp of section.bendPoints) {
+                            waypoints.push(bp);
+                        }
+                    }
+                    waypoints.push(section.endPoint);
+                }
+            }
+            if (waypoints.length > 0) {
+                edgeWaypoints[edge.id] = { waypoints };
+            }
+        }
+
+        process.stdout.write(JSON.stringify({ nodes: positions, edges: edgeWaypoints }));
     } catch (err) {
         process.stderr.write(`ELK layout error: ${err.message}\n`);
         process.exit(1);

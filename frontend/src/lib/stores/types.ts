@@ -70,6 +70,7 @@ export interface GraphEdge {
   target: string;
   source_port: number;
   target_port: number;
+  waypoints?: { x: number; y: number }[];
 }
 
 export interface GraphData {

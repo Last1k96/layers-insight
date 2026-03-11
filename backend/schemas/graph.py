@@ -27,6 +27,7 @@ class GraphEdge(BaseModel):
     target: str
     source_port: int = 0
     target_port: int = 0
+    waypoints: Optional[list[dict[str, float]]] = None
 
 
 class GraphData(BaseModel):

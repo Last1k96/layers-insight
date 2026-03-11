@@ -89,10 +89,11 @@ def extract_graph(model: Any) -> GraphData:
     return GraphData(nodes=nodes, edges=edges)
 
 
-async def compute_layout(graph_data: GraphData) -> dict[str, dict[str, float]]:
+async def compute_layout(graph_data: GraphData) -> dict:
     """Compute layout using ELK via Node.js subprocess.
 
-    Returns dict mapping node_id to {x, y} positions.
+    Returns dict with 'nodes' mapping node_id to {x, y} and
+    'edges' mapping edge index to {waypoints: [{x,y}]}.
     Falls back to topological layer assignment if ELK fails.
     """
     import asyncio
@@ -168,18 +169,27 @@ def _fallback_layout(graph_data: GraphData) -> dict[str, dict[str, float]]:
     x_spacing = 220
     for l, nids in sorted(layer_nodes.items()):
         for i, nid in enumerate(nids):
-            # Negate Y so Sigma.js (Y-up) renders top-to-bottom
-            positions[nid] = {"x": i * x_spacing, "y": -l * y_spacing}
+            positions[nid] = {"x": i * x_spacing, "y": l * y_spacing}
 
-    return positions
+    return {"nodes": positions, "edges": {}}
 
 
-def apply_layout(graph_data: GraphData, positions: dict[str, dict[str, float]]) -> GraphData:
-    """Apply positions to graph nodes."""
+def apply_layout(graph_data: GraphData, layout_result: dict) -> GraphData:
+    """Apply positions and edge waypoints from layout result."""
+    positions = layout_result.get("nodes", layout_result)
+    edge_waypoints = layout_result.get("edges", {})
+
     for node in graph_data.nodes:
         if node.id in positions:
             node.x = positions[node.id]["x"]
             node.y = positions[node.id]["y"]
+
+    # Apply waypoints to edges
+    for i, edge in enumerate(graph_data.edges):
+        edge_key = f"e{i}"
+        if edge_key in edge_waypoints:
+            edge.waypoints = edge_waypoints[edge_key].get("waypoints")
+
     return graph_data
 
 

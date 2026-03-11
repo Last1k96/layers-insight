@@ -161,12 +161,13 @@ class TestFallbackLayout:
         ]
         graph = GraphData(nodes=nodes, edges=edges)
 
-        positions = _fallback_layout(graph)
+        result = _fallback_layout(graph)
+        positions = result["nodes"]
 
         assert positions["a"]["y"] < positions["b"]["y"]
         assert positions["b"]["y"] < positions["c"]["y"]
 
     def test_empty_graph(self):
         graph = GraphData(nodes=[], edges=[])
-        positions = _fallback_layout(graph)
-        assert positions == {}
+        result = _fallback_layout(graph)
+        assert result == {"nodes": {}, "edges": {}}

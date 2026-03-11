@@ -1,13 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { graphStore } from '../stores/graph.svelte';
-  import { initRenderer, destroyRenderer, getCamera } from './renderer';
+  import { initRenderer, destroyRenderer } from './renderer';
   import { setupInteractions } from './interactions';
 
   let container: HTMLDivElement;
 
   onMount(() => {
-    // Wait for graph data
     const unwatch = $effect.root(() => {
       $effect(() => {
         if (graphStore.graphData && container) {

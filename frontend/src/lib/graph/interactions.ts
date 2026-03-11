@@ -1,4 +1,7 @@
-import { getSigma, getGraph, centerOnNode, refreshRenderer } from './renderer';
+/**
+ * SVG DOM-based interactions — click, keyboard navigation.
+ */
+import { getGraph, getSVGState, centerOnNode, refreshRenderer } from './renderer';
 import { graphStore } from '../stores/graph.svelte';
 import { queueStore } from '../stores/queue.svelte';
 import { sessionStore } from '../stores/session.svelte';
@@ -8,35 +11,46 @@ let cleanupFns: (() => void)[] = [];
 export function setupInteractions(): void {
   cleanupInteractions();
 
-  const sigma = getSigma();
+  const state = getSVGState();
   const graph = getGraph();
-  if (!sigma || !graph) return;
+  if (!state || !graph) return;
 
-  // Click node
-  sigma.on('clickNode', ({ node, event }) => {
+  // Click on nodes — delegated event on nodes group
+  function handleNodeClick(e: MouseEvent) {
+    const target = e.target as Element;
+    const nodeEl = target.closest('.node') as SVGGElement | null;
+
+    if (!nodeEl) {
+      // Click on background → deselect
+      graphStore.selectNode(null);
+      refreshRenderer();
+      return;
+    }
+
+    const nodeId = nodeEl.dataset.id;
+    if (!nodeId || !graph!.hasNode(nodeId)) return;
+
     const sessionId = sessionStore.currentSession?.id;
     if (!sessionId) return;
 
-    const attrs = graph.getNodeAttributes(node);
-    const nodeStatus = graphStore.nodeStatusMap.get(node);
+    const attrs = graph!.getNodeAttributes(nodeId);
+    const nodeStatus = graphStore.nodeStatusMap.get(nodeId);
 
-    graphStore.selectNode(node);
-    centerOnNode(node);
+    graphStore.selectNode(nodeId);
+    centerOnNode(nodeId);
+    refreshRenderer();
 
-    if (event.original.shiftKey) {
+    if (e.shiftKey) {
       // Shift+click: always enqueue
-      queueStore.enqueue(sessionId, node, (attrs.nodeName || attrs.label) as string, attrs.opType as string);
+      queueStore.enqueue(sessionId, nodeId, attrs.nodeName || attrs.label, attrs.opType);
     } else if (!nodeStatus) {
       // Click un-inferred: auto-queue
-      queueStore.enqueue(sessionId, node, (attrs.nodeName || attrs.label) as string, attrs.opType as string);
+      queueStore.enqueue(sessionId, nodeId, attrs.nodeName || attrs.label, attrs.opType);
     }
-    // Click inferred/queued: just select (already done above)
-  });
+  }
 
-  // Click background: deselect
-  sigma.on('clickStage', () => {
-    graphStore.selectNode(null);
-  });
+  state.svg.addEventListener('click', handleNodeClick);
+  cleanupFns.push(() => state.svg.removeEventListener('click', handleNodeClick));
 
   // Keyboard navigation
   function handleKeydown(e: KeyboardEvent) {
@@ -53,28 +67,22 @@ export function setupInteractions(): void {
       let targetId: string | null = null;
 
       if (e.key === 'ArrowUp') {
-        // Move toward inputs (predecessors)
         e.preventDefault();
         const predecessors = graph.inNeighbors(nodeId);
         if (predecessors.length > 0) targetId = predecessors[0];
       } else if (e.key === 'ArrowDown') {
-        // Move toward outputs (successors)
         e.preventDefault();
         const successors = graph.outNeighbors(nodeId);
         if (successors.length > 0) targetId = successors[0];
       } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        // Siblings: other children of the same parent
         e.preventDefault();
         const parents = graph.inNeighbors(nodeId);
         if (parents.length > 0) {
-          const siblings = graph.outNeighbors(parents[0]).filter(n => n !== nodeId);
-          if (siblings.length > 0) {
-            const currentIdx = graph.outNeighbors(parents[0]).indexOf(nodeId);
-            const dir = e.key === 'ArrowRight' ? 1 : -1;
-            const allSiblings = graph.outNeighbors(parents[0]);
-            const newIdx = (currentIdx + dir + allSiblings.length) % allSiblings.length;
-            targetId = allSiblings[newIdx];
-          }
+          const allSiblings = graph.outNeighbors(parents[0]);
+          const currentIdx = allSiblings.indexOf(nodeId);
+          const dir = e.key === 'ArrowRight' ? 1 : -1;
+          const newIdx = (currentIdx + dir + allSiblings.length) % allSiblings.length;
+          targetId = allSiblings[newIdx];
         }
       }
 

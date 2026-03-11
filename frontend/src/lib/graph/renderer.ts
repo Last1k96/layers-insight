@@ -1,61 +1,42 @@
-import Sigma from 'sigma';
-import Graph from 'graphology';
-import { EdgeCurvedArrowProgram } from '@sigma/edge-curve';
-import type { GraphData, GraphNode } from '../stores/types';
-import { graphStore, type NodeStatus } from '../stores/graph.svelte';
-import { configStore } from '../stores/config.svelte';
-import { STATUS_COLORS, isLightNodeColor } from './opColors';
-import NodeRectProgram from './nodeRectProgram';
-import { drawRectNodeLabel, drawRectNodeHover } from './drawLabel';
-
 /**
- * Netron-style sizing:
- * Netron uses dynamic node sizes based on text content.
- * In Sigma.js we use a fixed size that looks proportionally similar.
+ * Graph renderer facade — delegates to SVG renderer, GraphModel, and PanZoom.
+ * Maintains the same public API as the previous Sigma.js-based renderer.
  */
-const NODE_SIZE = 6;
-const NODE_SIZE_SELECTED = 7;
-const NODE_SIZE_ZOOMED_OUT = 3;
+import type { GraphData } from '../stores/types';
+import { graphStore } from '../stores/graph.svelte';
+import { GraphModel } from './graphModel';
+import { PanZoom } from './panZoom';
+import { createSVGStructure, renderGraph, updateNodeAppearance, getNodeSize } from './svgRenderer';
+import type { SVGRendererState } from './svgRenderer';
 
-function getAccuracyGradientColor(mse: number): string {
-  if (configStore.gradientMode === 'threshold') {
-    return mse <= configStore.globalThreshold ? '#10B981' : '#EF4444';
-  }
-  const logMse = mse > 0 ? Math.log10(mse) : -10;
-  const t = Math.max(0, Math.min(1, (logMse + 8) / 6));
-  const r = Math.floor(Math.min(255, t * 2 * 255));
-  const g = Math.floor(Math.min(255, (1 - Math.max(0, t - 0.5) * 2) * 255));
-  return `rgb(${r}, ${g}, 0)`;
+let graphModel: GraphModel | null = null;
+let panZoom: PanZoom | null = null;
+let svgState: (SVGRendererState & { viewport: SVGGElement }) | null = null;
+let refreshScheduled = false;
+
+export function getGraph(): GraphModel | null {
+  return graphModel;
 }
 
-let sigma: Sigma | null = null;
-let graph: Graph | null = null;
-
-export function getGraph(): Graph | null {
-  return graph;
+export function getCamera(): PanZoom | null {
+  return panZoom;
 }
 
-export function getSigma(): Sigma | null {
-  return sigma;
-}
-
-export function getCamera() {
-  return sigma?.getCamera() ?? null;
+export function getSVGState(): SVGRendererState | null {
+  return svgState;
 }
 
 export function initRenderer(container: HTMLElement, graphData: GraphData): void {
   destroyRenderer();
 
-  graph = new Graph();
-
+  // Build graph model
+  graphModel = new GraphModel();
   for (const node of graphData.nodes) {
-    graph.addNode(node.id, {
+    graphModel.addNode(node.id, {
       x: node.x,
       y: node.y,
-      size: NODE_SIZE,
-      label: node.type,       // Netron: show op type inside the node
+      label: node.type,
       color: node.color,
-      type: 'rect',
       opType: node.type,
       nodeName: node.name,
       category: node.category,
@@ -64,153 +45,115 @@ export function initRenderer(container: HTMLElement, graphData: GraphData): void
       attributes: node.attributes,
     });
   }
-
   for (const edge of graphData.edges) {
-    try {
-      graph.addEdge(edge.source, edge.target, {
-        color: '#000000',       // Netron: black edges
-        size: 1,                // Netron: 1px stroke
-        type: 'curvedArrow',    // Netron-style curved edges
-        sourcePort: edge.source_port,
-        targetPort: edge.target_port,
-      });
-    } catch {
-      // Skip duplicate edges
+    if (graphModel.hasNode(edge.source) && graphModel.hasNode(edge.target)) {
+      graphModel.addEdge(edge.source, edge.target);
     }
   }
 
-  sigma = new Sigma(graph, container, {
-    renderLabels: true,
-    renderEdgeLabels: false,
-    // Netron system font stack (from grapher.css)
-    labelFont: '-apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", Ubuntu, "Droid Sans", sans-serif',
-    labelSize: 11,
-    labelWeight: 'normal',
-    labelColor: { color: '#ffffff' },
-    // Edges — Netron style: black, 1px
-    defaultEdgeColor: '#000000',
-    defaultEdgeType: 'curvedArrow',
-    minEdgeThickness: 0.5,
-    // Nodes
-    defaultNodeType: 'rect',
-    allowInvalidContainer: true,
-    // Show labels generously
-    labelRenderedSizeThreshold: 1,
-    labelDensity: 3,
-    labelGridCellSize: 60,
-    // Custom programs & renderers
-    nodeProgramClasses: {
-      rect: NodeRectProgram,
-    },
-    edgeProgramClasses: {
-      curvedArrow: EdgeCurvedArrowProgram,
-    },
-    defaultDrawNodeLabel: drawRectNodeLabel,
-    defaultDrawNodeHover: drawRectNodeHover,
+  // Create SVG structure and render
+  svgState = createSVGStructure(container);
+  renderGraph(svgState, graphData);
 
-    nodeReducer: (node, data) => {
-      const res = { ...data };
-      const nodeStatus = graphStore.nodeStatusMap.get(node);
-      const selected = graphStore.selectedNodeId === node;
-      const searchActive = graphStore.searchVisible && graphStore.searchResults.length > 0;
+  // Set up pan/zoom
+  panZoom = new PanZoom(svgState.svg, svgState.viewport);
 
-      // Grayed nodes (model cutting)
-      if (graphStore.grayedNodes.has(node)) {
-        res.color = '#1f2937';
-        res.label = '';
-        res.size = NODE_SIZE_ZOOMED_OUT;
-        return res;
-      }
+  // Fit graph in view
+  fitToView(container);
 
-      // Label = op type (Netron style)
-      res.label = (data.opType as string) || '';
-
-      // Status border
-      if (nodeStatus) {
-        if (nodeStatus.status === 'success' && nodeStatus.metrics) {
-          const gradientColor = getAccuracyGradientColor(nodeStatus.metrics.mse);
-          if (gradientColor) {
-            res.borderColor = gradientColor;
-            res.borderSize = selected ? 3 : 2;
-          }
-        } else {
-          const statusColor = STATUS_COLORS[nodeStatus.status];
-          if (statusColor) {
-            res.borderColor = statusColor;
-            res.borderSize = selected ? 3 : 2;
-          }
-        }
-        if (nodeStatus.status === 'executing') {
-          res.borderSize = 3;
-        }
-      }
-
-      // Selection
-      if (selected) {
-        res.highlighted = true;
-        res.size = NODE_SIZE_SELECTED;
-        res.zIndex = 10;
-      }
-
-      // Search dimming
-      if (searchActive) {
-        const isMatch = graphStore.searchResults.some(r => r.id === node);
-        if (!isMatch) {
-          res.color = '#222';
-          res.label = '';
-        }
-      }
-
-      // LOD: simplify at low zoom
-      const camera = getCamera();
-      if (camera) {
-        const ratio = camera.ratio;
-        if (ratio > 2.5) {
-          res.label = '';
-          res.size = NODE_SIZE_ZOOMED_OUT;
-        } else if (ratio > 1.5) {
-          res.label = '';
-        }
-      }
-
-      return res;
-    },
-    edgeReducer: (edge, data) => {
-      const res = { ...data };
-      const searchActive = graphStore.searchVisible && graphStore.searchResults.length > 0;
-      if (searchActive) {
-        res.color = '#1a1a1a';
-      }
-      return res;
-    },
+  // Listen for zoom changes to update LOD
+  panZoom.on('updated', () => {
+    scheduleRefresh();
   });
+}
 
-  sigma.getCamera().on('updated', () => {
-    sigma?.refresh();
-  });
+function fitToView(container: HTMLElement): void {
+  if (!svgState || !panZoom) return;
+
+  const graphData = svgState.graphData;
+  if (graphData.nodes.length === 0) return;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const node of graphData.nodes) {
+    const size = getNodeSize(node.id);
+    minX = Math.min(minX, node.x);
+    minY = Math.min(minY, node.y);
+    maxX = Math.max(maxX, node.x + size.width);
+    maxY = Math.max(maxY, node.y + size.height);
+  }
+
+  const graphWidth = maxX - minX;
+  const graphHeight = maxY - minY;
+  const containerWidth = container.clientWidth || 800;
+  const containerHeight = container.clientHeight || 600;
+
+  const scaleX = containerWidth / (graphWidth + 100);
+  const scaleY = containerHeight / (graphHeight + 100);
+  const scale = Math.min(scaleX, scaleY, 1.5);
+
+  const tx = (containerWidth - graphWidth * scale) / 2 - minX * scale;
+  const ty = (containerHeight - graphHeight * scale) / 2 - minY * scale;
+
+  panZoom.setState({ tx, ty, scale });
 }
 
 export function destroyRenderer(): void {
-  if (sigma) {
-    sigma.kill();
-    sigma = null;
+  if (panZoom) {
+    panZoom.destroy();
+    panZoom = null;
   }
-  graph = null;
+  if (svgState) {
+    svgState.svg.remove();
+    svgState = null;
+  }
+  graphModel = null;
 }
 
 export function centerOnNode(nodeId: string, animate = true): void {
-  if (!sigma || !graph || !graph.hasNode(nodeId)) return;
+  if (!graphModel || !panZoom || !svgState || !graphModel.hasNode(nodeId)) return;
 
-  const attrs = graph.getNodeAttributes(nodeId);
-  const camera = sigma.getCamera();
+  const attrs = graphModel.getNodeAttributes(nodeId);
+  const size = getNodeSize(nodeId);
+  const svg = svgState.svg;
+  const containerWidth = svg.clientWidth || 800;
+  const containerHeight = svg.clientHeight || 600;
+
+  const targetScale = Math.max(panZoom.ratio, 0.8);
+  const cx = attrs.x + size.width / 2;
+  const cy = attrs.y + size.height / 2;
+  const tx = containerWidth / 2 - cx * targetScale;
+  const ty = containerHeight / 2 - cy * targetScale;
 
   if (animate) {
-    camera.animate({ x: attrs.x, y: attrs.y, ratio: 0.3 }, { duration: 300 });
+    panZoom.animate({ tx, ty, scale: targetScale }, 300);
   } else {
-    camera.setState({ x: attrs.x, y: attrs.y, ratio: 0.3 });
+    panZoom.setState({ tx, ty, scale: targetScale });
   }
 }
 
+function scheduleRefresh(): void {
+  if (refreshScheduled) return;
+  refreshScheduled = true;
+  requestAnimationFrame(() => {
+    refreshScheduled = false;
+    doRefresh();
+  });
+}
+
+function doRefresh(): void {
+  if (!svgState || !panZoom) return;
+
+  updateNodeAppearance(
+    svgState,
+    graphStore.nodeStatusMap,
+    graphStore.selectedNodeId,
+    graphStore.searchResults,
+    graphStore.searchVisible,
+    graphStore.grayedNodes,
+    panZoom.ratio,
+  );
+}
+
 export function refreshRenderer(): void {
-  sigma?.refresh();
+  doRefresh();
 }
