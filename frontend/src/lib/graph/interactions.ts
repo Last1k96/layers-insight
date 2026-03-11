@@ -1,7 +1,8 @@
 /**
- * SVG DOM-based interactions — click, keyboard navigation.
+ * Graph interactions — click, hover, keyboard navigation.
+ * Uses WebGPU hit testing for node detection.
  */
-import { getGraph, getSVGState, centerOnNode, refreshRenderer } from './renderer';
+import { getGraph, getGPURenderer, getCamera, centerOnNode, refreshRenderer, setHoveredNode } from './renderer';
 import { graphStore } from '../stores/graph.svelte';
 import { queueStore } from '../stores/queue.svelte';
 import { sessionStore } from '../stores/session.svelte';
@@ -11,24 +12,26 @@ let cleanupFns: (() => void)[] = [];
 export function setupInteractions(): void {
   cleanupInteractions();
 
-  const state = getSVGState();
   const graph = getGraph();
-  if (!state || !graph) return;
+  const camera = getCamera();
+  const gpu = getGPURenderer();
+  if (!graph || !camera || !gpu) return;
 
-  // Click on nodes — delegated event on nodes group
-  function handleNodeClick(e: MouseEvent) {
-    const target = e.target as Element;
-    const nodeEl = target.closest('.node') as SVGGElement | null;
+  const canvas = gpu.canvas;
 
-    if (!nodeEl) {
-      // Click on background → deselect
+  // Click handler
+  function handleClick(e: MouseEvent) {
+    if (camera!.didDrag) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const gp = camera!.viewportToGraph(e.clientX - rect.left, e.clientY - rect.top);
+    const nodeId = gpu!.hitGrid.query(gp.x, gp.y);
+
+    if (!nodeId || !graph!.hasNode(nodeId)) {
       graphStore.selectNode(null);
       refreshRenderer();
       return;
     }
-
-    const nodeId = nodeEl.dataset.id;
-    if (!nodeId || !graph!.hasNode(nodeId)) return;
 
     const sessionId = sessionStore.currentSession?.id;
     if (!sessionId) return;
@@ -41,27 +44,44 @@ export function setupInteractions(): void {
     refreshRenderer();
 
     if (e.shiftKey) {
-      // Shift+click: always enqueue
       queueStore.enqueue(sessionId, nodeId, attrs.nodeName || attrs.label, attrs.opType);
     } else if (!nodeStatus) {
-      // Click un-inferred: auto-queue
       queueStore.enqueue(sessionId, nodeId, attrs.nodeName || attrs.label, attrs.opType);
     }
   }
 
-  state.svg.addEventListener('click', handleNodeClick);
-  cleanupFns.push(() => state.svg.removeEventListener('click', handleNodeClick));
+  canvas.addEventListener('click', handleClick as EventListener);
+  cleanupFns.push(() => canvas.removeEventListener('click', handleClick as EventListener));
+
+  // Hover detection
+  let hoverThrottleId: number | null = null;
+
+  function handleMouseMove(e: MouseEvent) {
+    if (hoverThrottleId !== null) return;
+    hoverThrottleId = requestAnimationFrame(() => {
+      hoverThrottleId = null;
+      const rect = canvas.getBoundingClientRect();
+      const gp = camera!.viewportToGraph(e.clientX - rect.left, e.clientY - rect.top);
+      const hitId = gpu!.hitGrid.query(gp.x, gp.y);
+      setHoveredNode(hitId);
+      canvas.style.cursor = hitId ? 'pointer' : '';
+    });
+  }
+
+  canvas.addEventListener('mousemove', handleMouseMove);
+  cleanupFns.push(() => {
+    canvas.removeEventListener('mousemove', handleMouseMove);
+    if (hoverThrottleId !== null) cancelAnimationFrame(hoverThrottleId);
+  });
 
   // Keyboard navigation
   function handleKeydown(e: KeyboardEvent) {
-    // Ctrl+F: toggle search
     if (e.ctrlKey && e.key === 'f') {
       e.preventDefault();
       graphStore.searchVisible = !graphStore.searchVisible;
       return;
     }
 
-    // Ctrl+Arrow: navigate graph edges
     if (e.ctrlKey && graph && graphStore.selectedNodeId) {
       const nodeId = graphStore.selectedNodeId;
       let targetId: string | null = null;

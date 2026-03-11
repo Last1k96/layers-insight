@@ -1,18 +1,26 @@
 /**
- * Graph renderer facade — delegates to SVG renderer, GraphModel, and PanZoom.
- * Maintains the same public API as the previous Sigma.js-based renderer.
+ * Graph renderer facade — delegates to WebGPU renderer.
+ * Maintains the same public API for consumers.
  */
 import type { GraphData } from '../stores/types';
 import { graphStore } from '../stores/graph.svelte';
 import { GraphModel } from './graphModel';
 import { PanZoom } from './panZoom';
-import { createSVGStructure, renderGraph, updateNodeAppearance, getNodeSize } from './svgRenderer';
-import type { SVGRendererState } from './svgRenderer';
+import { WebGPURenderer } from './webgpu/WebGPURenderer';
 
 let graphModel: GraphModel | null = null;
 let panZoom: PanZoom | null = null;
-let svgState: (SVGRendererState & { viewport: SVGGElement }) | null = null;
+let gpuRenderer: WebGPURenderer | null = null;
 let refreshScheduled = false;
+let hoveredNodeId: string | null = null;
+let currentGraphData: GraphData | null = null;
+
+/** Node dimensions cache (id -> {width, height}) */
+const nodeSizes = new Map<string, { width: number; height: number }>();
+
+export function getNodeSize(nodeId: string): { width: number; height: number } {
+  return nodeSizes.get(nodeId) ?? { width: 100, height: 32 };
+}
 
 export function getGraph(): GraphModel | null {
   return graphModel;
@@ -22,15 +30,28 @@ export function getCamera(): PanZoom | null {
   return panZoom;
 }
 
-export function getSVGState(): SVGRendererState | null {
-  return svgState;
+export function getGPURenderer(): WebGPURenderer | null {
+  return gpuRenderer;
 }
 
-export function initRenderer(container: HTMLElement, graphData: GraphData): void {
-  destroyRenderer();
+export function setHoveredNode(nodeId: string | null): void {
+  if (hoveredNodeId !== nodeId) {
+    hoveredNodeId = nodeId;
+    scheduleRefresh();
+  }
+}
 
-  // Build graph model
+export function getHoveredNode(): string | null {
+  return hoveredNodeId;
+}
+
+export async function initRenderer(container: HTMLElement, graphData: GraphData): Promise<void> {
+  destroyRenderer();
+  currentGraphData = graphData;
+
+  // Build graph model and cache node sizes
   graphModel = new GraphModel();
+  nodeSizes.clear();
   for (const node of graphData.nodes) {
     graphModel.addNode(node.id, {
       x: node.x,
@@ -44,6 +65,10 @@ export function initRenderer(container: HTMLElement, graphData: GraphData): void
       elementType: node.element_type,
       attributes: node.attributes,
     });
+    nodeSizes.set(node.id, {
+      width: node.width || 100,
+      height: node.height || 32,
+    });
   }
   for (const edge of graphData.edges) {
     if (graphModel.hasNode(edge.source) && graphModel.hasNode(edge.target)) {
@@ -51,26 +76,49 @@ export function initRenderer(container: HTMLElement, graphData: GraphData): void
     }
   }
 
-  // Create SVG structure and render
-  svgState = createSVGStructure(container);
-  renderGraph(svgState, graphData);
+  // Create canvas and init WebGPU
+  const canvas = document.createElement('canvas');
+  canvas.style.width = '100%';
+  canvas.style.height = '100%';
+  canvas.style.display = 'block';
+  container.appendChild(canvas);
 
-  // Set up pan/zoom
-  panZoom = new PanZoom(svgState.svg, svgState.viewport);
+  const renderer = await WebGPURenderer.create(canvas);
+  if (!renderer) {
+    canvas.remove();
+    throw new Error('WebGPU is not available in this browser');
+  }
 
-  // Fit graph in view
-  fitToView(container);
+  gpuRenderer = renderer;
 
-  // Listen for zoom changes to update LOD
+  // Set up pan/zoom on canvas
+  panZoom = new PanZoom(canvas, {
+    isNodeHit: (cx, cy) => {
+      const rect = canvas.getBoundingClientRect();
+      const gp = panZoom!.viewportToGraph(cx - rect.left, cy - rect.top);
+      return gpuRenderer!.hitGrid.query(gp.x, gp.y) !== null;
+    },
+  });
+
+  renderer.setGraph(graphData, getNodeSize);
+
+  // Register camera listener BEFORE fitToView so the setState triggers updateCamera
   panZoom.on('updated', () => {
+    renderer.updateCamera(panZoom!.translateX, panZoom!.translateY, panZoom!.ratio);
     scheduleRefresh();
   });
+
+  fitToView(container);
+
+  // Ensure initial camera + appearance are set (in case fitToView had no nodes)
+  renderer.updateCamera(panZoom.translateX, panZoom.translateY, panZoom.ratio);
+  doRefresh();
 }
 
 function fitToView(container: HTMLElement): void {
-  if (!svgState || !panZoom) return;
+  if (!panZoom || !currentGraphData) return;
 
-  const graphData = svgState.graphData;
+  const graphData = currentGraphData;
   if (graphData.nodes.length === 0) return;
 
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -102,21 +150,24 @@ export function destroyRenderer(): void {
     panZoom.destroy();
     panZoom = null;
   }
-  if (svgState) {
-    svgState.svg.remove();
-    svgState = null;
+  if (gpuRenderer) {
+    gpuRenderer.canvas.remove();
+    gpuRenderer.destroy();
+    gpuRenderer = null;
   }
   graphModel = null;
+  currentGraphData = null;
+  hoveredNodeId = null;
+  nodeSizes.clear();
 }
 
 export function centerOnNode(nodeId: string, animate = true): void {
-  if (!graphModel || !panZoom || !svgState || !graphModel.hasNode(nodeId)) return;
+  if (!graphModel || !panZoom || !gpuRenderer || !graphModel.hasNode(nodeId)) return;
 
   const attrs = graphModel.getNodeAttributes(nodeId);
   const size = getNodeSize(nodeId);
-  const svg = svgState.svg;
-  const containerWidth = svg.clientWidth || 800;
-  const containerHeight = svg.clientHeight || 600;
+  const containerWidth = gpuRenderer.canvas.clientWidth || 800;
+  const containerHeight = gpuRenderer.canvas.clientHeight || 600;
 
   const targetScale = Math.max(panZoom.ratio, 0.8);
   const cx = attrs.x + size.width / 2;
@@ -141,12 +192,12 @@ function scheduleRefresh(): void {
 }
 
 function doRefresh(): void {
-  if (!svgState || !panZoom) return;
+  if (!panZoom || !gpuRenderer) return;
 
-  updateNodeAppearance(
-    svgState,
+  gpuRenderer.updateAppearance(
     graphStore.nodeStatusMap,
     graphStore.selectedNodeId,
+    hoveredNodeId,
     graphStore.searchResults,
     graphStore.searchVisible,
     graphStore.grayedNodes,

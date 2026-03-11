@@ -1,9 +1,13 @@
 /**
- * Pan/zoom handler for SVG viewport — same approach as Netron.
- * Applies CSS transform on a <g> element.
+ * Pan/zoom handler for the WebGPU canvas.
  */
 
 export type PanZoomListener = () => void;
+
+export interface PanZoomOptions {
+  /** Returns true if the click point hits a node (prevents drag) */
+  isNodeHit?: (clientX: number, clientY: number) => boolean;
+}
 
 export class PanZoom {
   private tx = 0;
@@ -12,10 +16,13 @@ export class PanZoom {
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
-  private viewport: SVGGElement;
-  private svg: SVGSVGElement;
+  private dragStartX = 0;
+  private dragStartY = 0;
+  private _didDrag = false;
+  private canvas: HTMLCanvasElement;
   private listeners: PanZoomListener[] = [];
   private animationId: number | null = null;
+  private isNodeHit: ((clientX: number, clientY: number) => boolean) | null;
 
   // Bound handlers for cleanup
   private onWheel: (e: WheelEvent) => void;
@@ -23,28 +30,31 @@ export class PanZoom {
   private onMouseMove: (e: MouseEvent) => void;
   private onMouseUp: (e: MouseEvent) => void;
 
-  constructor(svg: SVGSVGElement, viewport: SVGGElement) {
-    this.svg = svg;
-    this.viewport = viewport;
+  constructor(canvas: HTMLCanvasElement, options?: PanZoomOptions) {
+    this.canvas = canvas;
+    this.isNodeHit = options?.isNodeHit ?? null;
 
     this.onWheel = this._handleWheel.bind(this);
     this.onMouseDown = this._handleMouseDown.bind(this);
     this.onMouseMove = this._handleMouseMove.bind(this);
     this.onMouseUp = this._handleMouseUp.bind(this);
 
-    svg.addEventListener('wheel', this.onWheel, { passive: false });
-    svg.addEventListener('mousedown', this.onMouseDown);
+    canvas.addEventListener('wheel', this.onWheel as EventListener, { passive: false });
+    canvas.addEventListener('mousedown', this.onMouseDown as EventListener);
     window.addEventListener('mousemove', this.onMouseMove);
     window.addEventListener('mouseup', this.onMouseUp);
   }
 
-  /** Current zoom level (higher = more zoomed in) */
+  /** Current zoom level */
   get ratio(): number {
     return this.scale;
   }
 
   get translateX(): number { return this.tx; }
   get translateY(): number { return this.ty; }
+
+  /** True if the last mousedown->mouseup sequence involved dragging */
+  get didDrag(): boolean { return this._didDrag; }
 
   on(_event: string, fn: PanZoomListener): void {
     this.listeners.push(fn);
@@ -58,14 +68,9 @@ export class PanZoom {
     for (const fn of this.listeners) fn();
   }
 
-  private applyTransform(): void {
-    this.viewport.setAttribute('transform', `translate(${this.tx},${this.ty}) scale(${this.scale})`);
-    this.emit();
-  }
-
   private _handleWheel(e: WheelEvent): void {
     e.preventDefault();
-    const rect = this.svg.getBoundingClientRect();
+    const rect = this.canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
@@ -76,36 +81,46 @@ export class PanZoom {
     this.tx = mx - (mx - this.tx) * (newScale / this.scale);
     this.ty = my - (my - this.ty) * (newScale / this.scale);
     this.scale = newScale;
-    this.applyTransform();
+    this.emit();
   }
 
   private _handleMouseDown(e: MouseEvent): void {
     if (e.button !== 0) return;
-    // Only drag on background (svg itself or viewport group)
-    const target = e.target as Element;
-    if (target !== this.svg && !target.closest('#viewport')) return;
-    // Don't drag if clicking a node
-    if (target.closest('.node')) return;
+
+    // Don't start drag if clicking a node
+    if (this.isNodeHit && this.isNodeHit(e.clientX, e.clientY)) return;
 
     this.dragging = true;
+    this._didDrag = false;
+    this.dragStartX = e.clientX;
+    this.dragStartY = e.clientY;
     this.lastX = e.clientX;
     this.lastY = e.clientY;
-    this.svg.style.cursor = 'grabbing';
+    this.canvas.style.cursor = 'grabbing';
   }
 
   private _handleMouseMove(e: MouseEvent): void {
     if (!this.dragging) return;
+
+    // Drag threshold to distinguish clicks from drags
+    if (!this._didDrag) {
+      const dx = Math.abs(e.clientX - this.dragStartX);
+      const dy = Math.abs(e.clientY - this.dragStartY);
+      if (dx + dy < 3) return;
+      this._didDrag = true;
+    }
+
     this.tx += e.clientX - this.lastX;
     this.ty += e.clientY - this.lastY;
     this.lastX = e.clientX;
     this.lastY = e.clientY;
-    this.applyTransform();
+    this.emit();
   }
 
   private _handleMouseUp(_e: MouseEvent): void {
     if (this.dragging) {
       this.dragging = false;
-      this.svg.style.cursor = '';
+      this.canvas.style.cursor = '';
     }
   }
 
@@ -124,13 +139,12 @@ export class PanZoom {
     const step = (now: number) => {
       const elapsed = now - startTime;
       const t = Math.min(1, elapsed / duration);
-      // ease-out cubic
       const ease = 1 - Math.pow(1 - t, 3);
 
       this.tx = startTx + (endTx - startTx) * ease;
       this.ty = startTy + (endTy - startTy) * ease;
       this.scale = startScale + (endScale - startScale) * ease;
-      this.applyTransform();
+      this.emit();
 
       if (t < 1) {
         this.animationId = requestAnimationFrame(step);
@@ -162,13 +176,13 @@ export class PanZoom {
     this.tx = state.tx;
     this.ty = state.ty;
     this.scale = state.scale;
-    this.applyTransform();
+    this.emit();
   }
 
   destroy(): void {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
-    this.svg.removeEventListener('wheel', this.onWheel);
-    this.svg.removeEventListener('mousedown', this.onMouseDown);
+    this.canvas.removeEventListener('wheel', this.onWheel as EventListener);
+    this.canvas.removeEventListener('mousedown', this.onMouseDown as EventListener);
     window.removeEventListener('mousemove', this.onMouseMove);
     window.removeEventListener('mouseup', this.onMouseUp);
     this.listeners = [];

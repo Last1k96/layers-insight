@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { graphStore } from '../stores/graph.svelte';
-  import { getGraph, getCamera, getSVGState } from './renderer';
-  import { getNodeSize } from './svgRenderer';
+  import { getCamera, getGPURenderer, getNodeSize } from './renderer';
 
   let canvas: HTMLCanvasElement;
   let collapsed = $state(false);
@@ -18,8 +17,8 @@
 
     const graphData = graphStore.graphData;
     const panZoom = getCamera();
-    const svgState = getSVGState();
-    if (!graphData || !panZoom || !svgState) return;
+    const gpu = getGPURenderer();
+    if (!graphData || !panZoom || !gpu) return;
 
     canvas.width = MINIMAP_WIDTH;
     canvas.height = MINIMAP_HEIGHT;
@@ -70,13 +69,12 @@
     }
 
     // Draw viewport rectangle
-    const svgRect = svgState.svg.getBoundingClientRect();
-    const svgW = svgRect.width || 800;
-    const svgH = svgRect.height || 600;
+    const elRect = gpu.canvas.getBoundingClientRect();
+    const viewW = elRect.width || 800;
+    const viewH = elRect.height || 600;
 
-    // Viewport corners in graph coords
     const topLeft = panZoom.viewportToGraph(0, 0);
-    const bottomRight = panZoom.viewportToGraph(svgW, svgH);
+    const bottomRight = panZoom.viewportToGraph(viewW, viewH);
 
     const vx = topLeft.x * scale + offsetX;
     const vy = topLeft.y * scale + offsetY;
@@ -92,9 +90,9 @@
 
   function handleClick(e: MouseEvent) {
     const panZoom = getCamera();
-    const svgState = getSVGState();
+    const gpu = getGPURenderer();
     const graphData = graphStore.graphData;
-    if (!panZoom || !svgState || !graphData) return;
+    if (!panZoom || !gpu || !graphData) return;
 
     // Compute same bounds/scale as draw()
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -117,15 +115,13 @@
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
 
-    // Convert minimap coords to graph coords
     const graphX = (clickX - offsetX) / scale;
     const graphY = (clickY - offsetY) / scale;
 
-    // Navigate main camera
-    const svgW = svgState.svg.clientWidth || 800;
-    const svgH = svgState.svg.clientHeight || 600;
-    const tx = svgW / 2 - graphX * panZoom.ratio;
-    const ty = svgH / 2 - graphY * panZoom.ratio;
+    const viewW = gpu.canvas.clientWidth || 800;
+    const viewH = gpu.canvas.clientHeight || 600;
+    const tx = viewW / 2 - graphX * panZoom.ratio;
+    const ty = viewH / 2 - graphY * panZoom.ratio;
 
     panZoom.animate({ tx, ty }, 200);
   }
@@ -134,7 +130,6 @@
     const unwatch = $effect.root(() => {
       $effect(() => {
         if (graphStore.graphData && canvas && !collapsed) {
-          // Set up redraw on pan/zoom changes
           const cam = getCamera();
           if (cam) {
             const handler = () => draw();

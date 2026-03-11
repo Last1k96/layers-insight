@@ -10,8 +10,13 @@
     const unwatch = $effect.root(() => {
       $effect(() => {
         if (graphStore.graphData && container) {
-          initRenderer(container, graphStore.graphData);
-          setupInteractions();
+          initRenderer(container, graphStore.graphData)
+            .then(() => {
+              setupInteractions();
+            })
+            .catch((err) => {
+              console.error('[GraphCanvas] Failed to init renderer:', err);
+            });
         }
       });
     });

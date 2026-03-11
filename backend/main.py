@@ -127,16 +127,7 @@ async def lifespan(app: FastAPI):
     queue_service.set_callbacks(notify=on_task_notify, infer=on_infer)
     await queue_service.start_worker()
 
-    import socket
-    try:
-        # Connect to an external address to determine the local IP on the network
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        host_ip = s.getsockname()[0]
-        s.close()
-    except Exception:
-        host_ip = "127.0.0.1"
-    print(f"\n  Open in browser: http://{host_ip}:{config.port}\n")
+    print(f"\n  Open in browser: http://localhost:{config.port}\n")
     yield
 
     # Shutdown
