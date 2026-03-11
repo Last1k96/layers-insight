@@ -19,6 +19,9 @@ class GraphNode(BaseModel):
     # Layout positions (set after ELK layout)
     x: float = 0.0
     y: float = 0.0
+    # Node dimensions for layout/rendering consistency
+    width: float = 0.0
+    height: float = 0.0
 
 
 class GraphEdge(BaseModel):

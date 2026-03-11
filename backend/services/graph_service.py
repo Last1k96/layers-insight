@@ -13,6 +13,19 @@ from backend.utils.op_categories import get_op_category, get_op_color
 # Path to ELK layout script
 ELK_SCRIPT = Path(__file__).parent.parent / "utils" / "elk_layout.js"
 
+# Node sizing constants (must match frontend svgRenderer.ts)
+NODE_HEIGHT = 32
+NODE_MIN_WIDTH = 100
+NODE_PADDING = 20
+CHAR_WIDTH = 7  # approximate average char width for 11px sans-serif
+
+
+def _compute_node_size(op_type: str) -> tuple[float, float]:
+    """Compute node width/height from op type label, matching frontend text measurement."""
+    text_width = len(op_type) * CHAR_WIDTH
+    width = max(NODE_MIN_WIDTH, text_width + NODE_PADDING * 2)
+    return (width, NODE_HEIGHT)
+
 
 def load_model(model_path: str, ov_core: Any) -> Any:
     """Load an OpenVINO model from XML path."""
@@ -58,6 +71,7 @@ def extract_graph(model: Any) -> GraphData:
 
         category = get_op_category(op_type)
         color = get_op_color(op_type)
+        w, h = _compute_node_size(op_type)
 
         nodes.append(GraphNode(
             id=node_id,
@@ -68,6 +82,8 @@ def extract_graph(model: Any) -> GraphData:
             category=category,
             color=color,
             attributes=attributes,
+            width=w,
+            height=h,
         ))
 
         # Extract edges from inputs
@@ -99,7 +115,7 @@ async def compute_layout(graph_data: GraphData) -> dict:
     import asyncio
 
     elk_input = {
-        "nodes": [{"id": n.id, "width": 180, "height": 50} for n in graph_data.nodes],
+        "nodes": [{"id": n.id, "width": n.width or 100, "height": n.height or NODE_HEIGHT} for n in graph_data.nodes],
         "edges": [{"source": e.source, "target": e.target} for e in graph_data.edges],
     }
 

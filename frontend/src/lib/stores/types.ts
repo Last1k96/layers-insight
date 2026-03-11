@@ -63,6 +63,8 @@ export interface GraphNode {
   attributes: Record<string, any>;
   x: number;
   y: number;
+  width: number;
+  height: number;
 }
 
 export interface GraphEdge {

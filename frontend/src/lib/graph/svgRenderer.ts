@@ -10,23 +10,9 @@ import { configStore } from '../stores/config.svelte';
 import { STATUS_COLORS, isLightNodeColor } from './opColors';
 
 const NS = 'http://www.w3.org/2000/svg';
-const NODE_HEIGHT = 32;
-const NODE_MIN_WIDTH = 100;
-const NODE_PADDING = 20;
 const NODE_RADIUS = 5;
 const FONT = '-apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", Ubuntu, "Droid Sans", sans-serif';
 const FONT_SIZE = 11;
-
-// Offscreen canvas for text measurement
-let measureCtx: CanvasRenderingContext2D | null = null;
-function measureText(text: string): number {
-  if (!measureCtx) {
-    const canvas = document.createElement('canvas');
-    measureCtx = canvas.getContext('2d')!;
-    measureCtx.font = `${FONT_SIZE}px ${FONT}`;
-  }
-  return measureCtx.measureText(text).width;
-}
 
 function getAccuracyGradientColor(mse: number): string {
   if (configStore.gradientMode === 'threshold') {
@@ -43,7 +29,7 @@ function getAccuracyGradientColor(mse: number): string {
 const nodeSizes = new Map<string, { width: number; height: number }>();
 
 export function getNodeSize(nodeId: string): { width: number; height: number } {
-  return nodeSizes.get(nodeId) ?? { width: NODE_MIN_WIDTH, height: NODE_HEIGHT };
+  return nodeSizes.get(nodeId) ?? { width: 100, height: 32 };
 }
 
 /**
@@ -184,9 +170,9 @@ export function renderGraph(state: SVGRendererState, graphData: GraphData): void
   // Create nodes
   for (const node of graphData.nodes) {
     const label = node.type;
-    const textWidth = measureText(label);
-    const nodeWidth = Math.max(NODE_MIN_WIDTH, textWidth + NODE_PADDING * 2);
-    nodeSizes.set(node.id, { width: nodeWidth, height: NODE_HEIGHT });
+    const w = node.width || 100;
+    const h = node.height || 32;
+    nodeSizes.set(node.id, { width: w, height: h });
 
     const g = document.createElementNS(NS, 'g');
     g.classList.add('node');
@@ -196,8 +182,6 @@ export function renderGraph(state: SVGRendererState, graphData: GraphData): void
     // Rounded rect
     const rect = document.createElementNS(NS, 'path');
     const r = NODE_RADIUS;
-    const w = nodeWidth;
-    const h = NODE_HEIGHT;
     rect.setAttribute('d', `M ${r} 0 H ${w - r} Q ${w} 0 ${w} ${r} V ${h - r} Q ${w} ${h} ${w - r} ${h} H ${r} Q 0 ${h} 0 ${h - r} V ${r} Q 0 0 ${r} 0 Z`);
     rect.setAttribute('fill', node.color);
     rect.setAttribute('stroke', '#333');
@@ -207,8 +191,8 @@ export function renderGraph(state: SVGRendererState, graphData: GraphData): void
 
     // Text label
     const text = document.createElementNS(NS, 'text');
-    text.setAttribute('x', String(nodeWidth / 2));
-    text.setAttribute('y', String(NODE_HEIGHT / 2));
+    text.setAttribute('x', String(w / 2));
+    text.setAttribute('y', String(h / 2));
     text.setAttribute('text-anchor', 'middle');
     text.setAttribute('dominant-baseline', 'central');
     text.setAttribute('font-family', FONT);
