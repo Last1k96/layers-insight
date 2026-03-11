@@ -52,6 +52,14 @@ export interface SessionDetail {
   tasks: InferenceTask[];
 }
 
+export interface NodeInput {
+  name: string;
+  port: number;
+  shape?: (number | string)[];
+  element_type?: string;
+  is_const: boolean;
+}
+
 export interface GraphNode {
   id: string;
   name: string;
@@ -61,6 +69,7 @@ export interface GraphNode {
   category: string;
   color: string;
   attributes: Record<string, any>;
+  inputs?: NodeInput[];
   x: number;
   y: number;
   width: number;

@@ -143,14 +143,15 @@ export function buildEdgeGeometry(
   const nodeMap = new Map<string, GraphNode>();
   for (const n of nodes) nodeMap.set(n.id, n);
 
-  // Estimate vertex count.  Each line segment = quad = 6 verts, + 3 for arrowhead.
-  // Waypoint edges are simplified polylines; fallback S-curves use SEGMENTS_PER_CURVE.
+  // Estimate vertex count.  Each B-spline span produces SEGMENTS_PER_CURVE line
+  // segments (each = quad = 6 verts), + 3 for arrowhead.
+  // Dense waypoints (>20) are simplified first, but use raw count as upper bound.
   let estimatedVertices = 0;
   for (const edge of edges) {
     const wp = edge.waypoints?.length ?? 0;
-    // After Douglas-Peucker, polylines keep ~10-30% of points; use raw count as upper bound
-    const segs = wp >= 2 ? wp : SEGMENTS_PER_CURVE;
-    estimatedVertices += segs * 6 + 3;
+    // B-spline with N control points → (N-1) spans × SEGMENTS_PER_CURVE segments
+    const spans = wp >= 2 ? (wp - 1) : 1;
+    estimatedVertices += spans * SEGMENTS_PER_CURVE * 6 + 3;
   }
   const buf = new Float32Array(estimatedVertices * 2);
   let offset = 0;
@@ -221,9 +222,12 @@ function evaluateEdgeCurve(
   nodeSize: (id: string) => { width: number; height: number },
 ): Point[] {
   if (edge.waypoints && edge.waypoints.length >= 2) {
-    // ELK SPLINE routing returns dense polyline points (points ON the curve),
-    // not B-spline control points.  Simplify with Douglas-Peucker and use directly.
-    return simplifyPolyline(edge.waypoints, 1.0);
+    // ELK SPLINE routing can produce hundreds of near-collinear waypoints for
+    // long-distance edges.  Simplify first, then evaluate as B-spline.
+    const pts = edge.waypoints.length > 20
+      ? simplifyPolyline(edge.waypoints, 2.0)
+      : edge.waypoints;
+    return evaluateBSpline(pts);
   }
 
   // Fallback S-curve
@@ -249,11 +253,64 @@ function evaluateEdgeCurve(
   );
 }
 
-/** Douglas-Peucker polyline simplification.  Removes near-collinear points. */
+function evaluateBSpline(waypoints: Point[]): Point[] {
+  const pts = waypoints;
+  if (pts.length < 2) return [];
+
+  if (pts.length === 2) {
+    const midY = (pts[0].y + pts[1].y) / 2;
+    return evaluateCubicBezier(
+      pts[0],
+      { x: pts[0].x, y: midY },
+      { x: pts[1].x, y: midY },
+      pts[1],
+      SEGMENTS_PER_CURVE,
+    );
+  }
+
+  if (pts.length === 3) {
+    return evaluateQuadBezier(pts[0], pts[1], pts[2], SEGMENTS_PER_CURVE);
+  }
+
+  // Cubic B-spline
+  const result: Point[] = [pts[0]];
+
+  result.push({
+    x: (2 * pts[0].x + pts[1].x) / 3,
+    y: (2 * pts[0].y + pts[1].y) / 3,
+  });
+
+  for (let i = 1; i < pts.length - 2; i++) {
+    const p0 = pts[i];
+    const p1 = pts[i + 1];
+    const cp1 = { x: (2 * p0.x + p1.x) / 3, y: (2 * p0.y + p1.y) / 3 };
+    const cp2 = { x: (p0.x + 2 * p1.x) / 3, y: (p0.y + 2 * p1.y) / 3 };
+    const end = { x: (p0.x + 4 * p1.x + pts[i + 2].x) / 6, y: (p0.y + 4 * p1.y + pts[i + 2].y) / 6 };
+    const start = result[result.length - 1];
+    const bezierPts = evaluateCubicBezier(start, cp1, cp2, end, SEGMENTS_PER_CURVE);
+    for (let j = 1; j < bezierPts.length; j++) result.push(bezierPts[j]);
+  }
+
+  const n = pts.length;
+  const pn2 = pts[n - 2];
+  const pn1 = pts[n - 1];
+  const lastStart = result[result.length - 1];
+  const lastBezier = evaluateCubicBezier(
+    lastStart,
+    { x: (2 * pn2.x + pn1.x) / 3, y: (2 * pn2.y + pn1.y) / 3 },
+    { x: (pn2.x + 2 * pn1.x) / 3, y: (pn2.y + 2 * pn1.y) / 3 },
+    pn1,
+    SEGMENTS_PER_CURVE,
+  );
+  for (let j = 1; j < lastBezier.length; j++) result.push(lastBezier[j]);
+
+  return result;
+}
+
+/** Douglas-Peucker polyline simplification. */
 function simplifyPolyline(pts: Point[], epsilon: number): Point[] {
   if (pts.length <= 2) return pts.slice();
 
-  // Find the point farthest from the line between first and last
   let maxDist = 0;
   let maxIdx = 0;
   const first = pts[0];
@@ -285,6 +342,19 @@ function simplifyPolyline(pts: Point[], epsilon: number): Point[] {
   }
 
   return [first, last];
+}
+
+function evaluateQuadBezier(p0: Point, p1: Point, p2: Point, segments: number): Point[] {
+  const points: Point[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const mt = 1 - t;
+    points.push({
+      x: mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x,
+      y: mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y,
+    });
+  }
+  return points;
 }
 
 function evaluateCubicBezier(p0: Point, p1: Point, p2: Point, p3: Point, segments: number): Point[] {

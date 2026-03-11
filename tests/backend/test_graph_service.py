@@ -55,7 +55,28 @@ def _make_mock_op(name, op_type, outputs=None, inputs=None, output_shape=None):
 
 
 def _make_mock_model(ops):
-    """Create a mock OV model."""
+    """Create a mock OV model.
+
+    Wires up input mocks so that source_node references point back to the
+    actual op mock objects, allowing shape/type lookups to work correctly.
+    """
+    op_by_name = {op.get_friendly_name(): op for op in ops}
+
+    # Rewire input source nodes to point to actual op mocks
+    for op in ops:
+        if op.get_input_size() == 0:
+            continue
+        original_input = op.input
+        def make_input_fn(orig_fn, lookup):
+            def get_input(idx):
+                inp = orig_fn(idx)
+                src_name = inp.get_source_output().get_node().get_friendly_name()
+                if src_name in lookup:
+                    inp.get_source_output().get_node.return_value = lookup[src_name]
+                return inp
+            return get_input
+        op.input = make_input_fn(original_input, op_by_name)
+
     model = MagicMock()
     model.get_ordered_ops.return_value = ops
     return model
@@ -107,7 +128,7 @@ class TestExtractGraph:
         assert colors["unknown_op"] == "#78909C"  # Other/default
 
     def test_constants_filtered(self):
-        """Constant nodes should be excluded from the graph."""
+        """Constant nodes should be excluded from the graph but tracked as inputs."""
         ops = [
             _make_mock_op("input", "Parameter", output_shape=[1, 3, 224, 224]),
             _make_mock_op("weights", "Constant", output_shape=[64, 3, 3, 3]),
@@ -123,6 +144,17 @@ class TestExtractGraph:
         assert "conv1" in node_names
         # Only input->conv1 and conv1->output (weights->conv1 filtered)
         assert len(graph.edges) == 2
+
+        # conv1 should have 2 inputs: one visible, one const
+        conv1 = next(n for n in graph.nodes if n.name == "conv1")
+        assert len(conv1.inputs) == 2
+        visible = [i for i in conv1.inputs if not i.is_const]
+        const = [i for i in conv1.inputs if i.is_const]
+        assert len(visible) == 1
+        assert visible[0].name == "input"
+        assert len(const) == 1
+        assert const[0].name == "weights"
+        assert const[0].shape == [64, 3, 3, 3]
 
     def test_constant_convert_chain_filtered(self):
         """Constant -> Convert chains (weight prep) should also be filtered."""

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-from backend.schemas.graph import GraphData, GraphEdge, GraphNode
+from backend.schemas.graph import GraphData, GraphEdge, GraphNode, NodeInput
 from backend.utils.op_categories import get_op_category, get_op_color
 
 # Path to ELK layout script
@@ -93,6 +93,52 @@ def extract_graph(model: Any) -> GraphData:
         color = get_op_color(op_type)
         w, h = _compute_node_size(op_type)
 
+        # Collect input info and build edges
+        node_inputs: list[NodeInput] = []
+        for i in range(op.get_input_size()):
+            try:
+                source_output = op.input(i).get_source_output()
+                source_node = source_output.get_node()
+                source_id = source_node.get_friendly_name()
+                source_port = source_output.get_index()
+
+                # Get source shape/type info
+                src_shape = None
+                src_etype = None
+                try:
+                    if source_node.get_output_size() > 0:
+                        ps = source_node.output(0).get_partial_shape()
+                        if ps.is_static:
+                            src_shape = list(ps.get_shape())
+                        else:
+                            src_shape = [str(d) for d in ps]
+                        src_etype = str(source_node.output(0).get_element_type())
+                except Exception:
+                    pass
+
+                if source_id in seen_nodes:
+                    # Visible edge
+                    edges.append(GraphEdge(
+                        source=source_id,
+                        target=node_id,
+                        source_port=source_port,
+                        target_port=i,
+                    ))
+                    node_inputs.append(NodeInput(
+                        name=source_id, port=i,
+                        shape=src_shape, element_type=src_etype,
+                        is_const=False,
+                    ))
+                else:
+                    # Filtered (constant/weight-prep) input
+                    node_inputs.append(NodeInput(
+                        name=source_id, port=i,
+                        shape=src_shape, element_type=src_etype,
+                        is_const=True,
+                    ))
+            except Exception:
+                pass
+
         nodes.append(GraphNode(
             id=node_id,
             name=node_id,
@@ -102,27 +148,10 @@ def extract_graph(model: Any) -> GraphData:
             category=category,
             color=color,
             attributes=attributes,
+            inputs=node_inputs,
             width=w,
             height=h,
         ))
-
-        # Extract edges from inputs
-        for i in range(op.get_input_size()):
-            try:
-                source_output = op.input(i).get_source_output()
-                source_node = source_output.get_node()
-                source_id = source_node.get_friendly_name()
-                source_port = source_output.get_index()
-                if source_id not in seen_nodes:
-                    continue
-                edges.append(GraphEdge(
-                    source=source_id,
-                    target=node_id,
-                    source_port=source_port,
-                    target_port=i,
-                ))
-            except Exception:
-                pass
 
     return GraphData(nodes=nodes, edges=edges)
 

@@ -6,6 +6,15 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 
+class NodeInput(BaseModel):
+    """Describes one input port of a node."""
+    name: str  # source node/constant name
+    port: int = 0  # target port index
+    shape: Optional[list] = None
+    element_type: Optional[str] = None
+    is_const: bool = False  # True when source is a filtered constant/weight-prep chain
+
+
 class GraphNode(BaseModel):
     """A node in the computational graph."""
     id: str
@@ -16,6 +25,7 @@ class GraphNode(BaseModel):
     category: str = "Other"
     color: str = "#78909C"
     attributes: dict[str, Any] = {}
+    inputs: list[NodeInput] = []
     # Layout positions (set after ELK layout)
     x: float = 0.0
     y: float = 0.0

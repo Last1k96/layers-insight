@@ -212,6 +212,33 @@
       </button>
     {/if}
 
+    <!-- Inputs -->
+    {#if selectedNode.inputs && selectedNode.inputs.length > 0}
+      <details class="mt-4" open>
+        <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+          Inputs ({selectedNode.inputs.length})
+        </summary>
+        <div class="mt-1 space-y-1">
+          {#each selectedNode.inputs as inp, idx}
+            <div class="bg-gray-900/50 rounded p-2 text-xs">
+              <div class="flex items-center gap-1.5">
+                <span class="text-gray-600 font-mono w-4 shrink-0">{idx}</span>
+                {#if inp.is_const}
+                  <span class="px-1 py-0.5 bg-amber-900/40 text-amber-400 rounded text-[10px] leading-none">const</span>
+                {/if}
+                <span class="text-gray-300 font-mono truncate" title={inp.name}>{inp.name}</span>
+              </div>
+              {#if inp.shape}
+                <div class="text-gray-500 ml-5 mt-0.5">
+                  [{inp.shape.join(', ')}]{#if inp.element_type} <span class="text-gray-600">{inp.element_type}</span>{/if}
+                </div>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </details>
+    {/if}
+
     <!-- Attributes -->
     {#if selectedNode.attributes && Object.keys(selectedNode.attributes).length > 0}
       <details class="mt-4">
