@@ -24,8 +24,10 @@ class ModelCutService:
         if target_op is None:
             raise ValueError(f"Node '{target_node_name}' not found in model")
 
-        new_outputs = [target_op.output(i) for i in range(target_op.get_output_size())]
-        cut_model = ov.Model(new_outputs, model.get_parameters(), f"output_at_{target_node_name}")
+        new_outputs = target_op.outputs()
+        reachable_params = self._get_reachable_params(model, new_outputs)
+        cut_model = ov.Model(new_outputs, reachable_params, f"output_at_{target_node_name}")
+        cut_model.validate_nodes_and_infer_types()
 
         # Determine grayed-out nodes (in original but not in cut model)
         cut_node_names = {op.get_friendly_name() for op in cut_model.get_ordered_ops()}
@@ -97,6 +99,31 @@ class ModelCutService:
         grayed_nodes = sorted(all_node_names - cut_node_names)
 
         return cut_model, input_data, grayed_nodes
+
+    def _get_reachable_params(self, model: Any, target_outputs) -> list:
+        """Walk backward from target outputs to find only reachable Parameter nodes."""
+        param_set = {id(p) for p in model.get_parameters()}
+        visited = set()
+        params = []
+        stack = list(target_outputs)
+
+        while stack:
+            output = stack.pop()
+            node = output.get_node()
+            node_id = id(node)
+            if node_id in visited:
+                continue
+            visited.add(node_id)
+
+            if node_id in param_set:
+                params.append(node)
+                continue
+
+            for i in range(node.get_input_size()):
+                source_output = node.input(i).get_source_output()
+                stack.append(source_output)
+
+        return params
 
     def _find_op(self, model: Any, name: str) -> Any:
         """Find an operation by friendly name."""

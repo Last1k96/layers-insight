@@ -1,6 +1,7 @@
 import { graphStore, type NodeStatus } from '../stores/graph.svelte';
 import { queueStore } from '../stores/queue.svelte';
 import { cacheMetrics } from '../stores/metrics.svelte';
+import { logStore } from '../stores/log.svelte';
 import type { TaskStatusMessage, TaskStatus } from '../stores/types';
 
 let ws: WebSocket | null = null;
@@ -120,5 +121,16 @@ function handleMessage(msg: any): void {
         ref_result: tsMsg.ref_result,
       });
     }
+  }
+
+  if (msg.type === 'inference_log') {
+    console.log('[WS] inference_log:', msg.level, msg.message);
+    logStore.addEntry({
+      task_id: msg.task_id,
+      node_name: msg.node_name,
+      level: msg.level,
+      message: msg.message,
+      timestamp: msg.timestamp,
+    });
   }
 }

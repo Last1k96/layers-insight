@@ -92,6 +92,32 @@ async def lifespan(app: FastAPI):
         if session.config.inputs:
             input_configs = [inp.model_dump() for inp in session.config.inputs]
 
+        # Set up real-time log streaming via WebSocket
+        loop = asyncio.get_running_loop()
+
+        def log_callback(task_id: str, level: str, message: str) -> None:
+            from datetime import datetime, timezone
+            asyncio.run_coroutine_threadsafe(
+                ws_manager.broadcast(task.session_id, {
+                    "type": "inference_log",
+                    "task_id": task_id,
+                    "node_name": task.node_name,
+                    "level": level,
+                    "message": message,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }),
+                loop,
+            )
+
+        def stage_callback(stage: str) -> None:
+            """Send a task_status update when the inference stage changes."""
+            asyncio.run_coroutine_threadsafe(
+                ws_manager.send_task_status(task),
+                loop,
+            )
+
+        log_callback(task.task_id, "info", f"Task started for node '{task.node_name}'")
+
         result = await asyncio.to_thread(
             inference_service.cut_and_infer,
             model=model,
@@ -103,6 +129,8 @@ async def lifespan(app: FastAPI):
             precision=session.config.input_precision,
             task=task,
             input_configs=input_configs,
+            log_callback=log_callback,
+            stage_callback=stage_callback,
         )
 
         # Handle tuple result (task, main_output, ref_output)
@@ -115,6 +143,7 @@ async def lifespan(app: FastAPI):
                 main_output=main_output,
                 ref_output=ref_output,
             )
+            log_callback(task.task_id, "info", f"Task completed for node '{task.node_name}'")
             return updated_task
         else:
             # Error case — result is just the task
@@ -123,6 +152,7 @@ async def lifespan(app: FastAPI):
                 task_id=task.task_id,
                 task_data=result.model_dump(),
             )
+            log_callback(task.task_id, "error", f"Task failed for node '{task.node_name}': {result.error_detail}")
             return result
 
     queue_service.set_callbacks(notify=on_task_notify, infer=on_infer)

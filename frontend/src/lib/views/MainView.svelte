@@ -7,6 +7,7 @@
   import QueuePanel from '../panels/QueuePanel.svelte';
   import NodeStatus from '../panels/NodeStatus.svelte';
   import ErrorBanner from '../panels/ErrorBanner.svelte';
+  import BottomLogPanel from '../panels/BottomLogPanel.svelte';
   import { sessionStore } from '../stores/session.svelte';
   import { graphStore } from '../stores/graph.svelte';
   import { connect, disconnect, setConnectionCallbacks } from '../ws/client';
@@ -66,3 +67,6 @@
     </div>
   {/if}
 </div>
+
+<!-- Bottom log panel — outside relative container so z-index works against sigma canvases -->
+<BottomLogPanel />
