@@ -124,6 +124,28 @@ class TestExtractGraph:
         # Only input->conv1 and conv1->output (weights->conv1 filtered)
         assert len(graph.edges) == 2
 
+    def test_constant_convert_chain_filtered(self):
+        """Constant -> Convert chains (weight prep) should also be filtered."""
+        ops = [
+            _make_mock_op("input", "Parameter", output_shape=[1, 3, 224, 224]),
+            _make_mock_op("w_const", "Constant", output_shape=[64, 3, 3, 3]),
+            _make_mock_op("w_convert", "Convert", inputs=["w_const"], output_shape=[64, 3, 3, 3]),
+            _make_mock_op("scale_const", "Constant", output_shape=[64]),
+            _make_mock_op("w_multiply", "Multiply", inputs=["w_convert", "scale_const"], output_shape=[64, 3, 3, 3]),
+            _make_mock_op("conv1", "Convolution", inputs=["input", "w_multiply"], output_shape=[1, 64, 112, 112]),
+            _make_mock_op("output", "Result", inputs=["conv1"]),
+        ]
+        model = _make_mock_model(ops)
+        graph = extract_graph(model)
+
+        node_names = {n.name for n in graph.nodes}
+        assert "w_const" not in node_names
+        assert "w_convert" not in node_names
+        assert "w_multiply" not in node_names
+        assert "input" in node_names
+        assert "conv1" in node_names
+        assert len(graph.edges) == 2  # input->conv1, conv1->output
+
     def test_deduplication(self):
         op = _make_mock_op("same_name", "Relu")
         ops = [op, op]  # Same op appears twice

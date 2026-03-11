@@ -47,6 +47,23 @@ def extract_graph(model: Any) -> GraphData:
 
         if node_id in seen_nodes:
             continue
+
+        # Skip nodes whose ALL inputs come from filtered nodes (Constants
+        # or other weight-prep ops).  Parameters have 0 inputs and are kept.
+        input_count = op.get_input_size()
+        if input_count > 0:
+            has_visible_input = False
+            for i in range(input_count):
+                try:
+                    src = op.input(i).get_source_output().get_node()
+                    if src.get_friendly_name() in seen_nodes:
+                        has_visible_input = True
+                        break
+                except Exception:
+                    pass
+            if not has_visible_input:
+                continue
+
         seen_nodes.add(node_id)
 
         # Get output shape if available
