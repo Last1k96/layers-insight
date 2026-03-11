@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
     session_service = SessionService(config.sessions_dir)
     app.state.session_service = session_service
 
-    inference_service = InferenceService(ov_core) if ov_core else None
+    inference_service = InferenceService(ov_core, ov_path=config.ov_path) if ov_core else None
     app.state.inference_service = inference_service
 
     from backend.services.model_cut_service import ModelCutService
@@ -98,6 +98,7 @@ async def lifespan(app: FastAPI):
             target_node_name=task.node_name,
             main_device=session.config.main_device,
             ref_device=session.config.ref_device,
+            model_path=session.config.model_path,
             input_path=session.config.input_path,
             precision=session.config.input_precision,
             task=task,

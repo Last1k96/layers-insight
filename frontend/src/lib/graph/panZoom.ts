@@ -87,11 +87,12 @@ export class PanZoom {
   private _handleMouseDown(e: MouseEvent): void {
     if (e.button !== 0) return;
 
+    this._didDrag = false;
+
     // Don't start drag if clicking a node
     if (this.isNodeHit && this.isNodeHit(e.clientX, e.clientY)) return;
 
     this.dragging = true;
-    this._didDrag = false;
     this.dragStartX = e.clientX;
     this.dragStartY = e.clientY;
     this.lastX = e.clientX;
