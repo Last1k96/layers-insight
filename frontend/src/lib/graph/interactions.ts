@@ -19,19 +19,47 @@ export function setupInteractions(): void {
 
   const canvas = gpu.canvas;
 
-  // Click handler
-  function handleClick(e: MouseEvent) {
-    if (camera!.didDrag) return;
+  // Click/dblclick timer to distinguish single from double click
+  let clickTimer: ReturnType<typeof setTimeout> | null = null;
 
+  function hitTestNode(e: MouseEvent): string | null {
     const rect = canvas.getBoundingClientRect();
     const gp = camera!.viewportToGraph(e.clientX - rect.left, e.clientY - rect.top);
     const nodeId = gpu!.hitGrid.query(gp.x, gp.y);
+    return (nodeId && graph!.hasNode(nodeId)) ? nodeId : null;
+  }
 
-    if (!nodeId || !graph!.hasNode(nodeId)) {
+  // Single click: select node, show info. Ctrl+click also centers.
+  function handleClick(e: MouseEvent) {
+    if (camera!.didDrag) return;
+
+    const nodeId = hitTestNode(e);
+
+    if (!nodeId) {
+      // Clicked on empty space — deselect immediately (no timer needed)
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
       graphStore.selectNode(null);
       refreshRenderer();
       return;
     }
+
+    // Delay single-click action so dblclick can cancel it
+    const ctrlKey = e.ctrlKey;
+    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+    clickTimer = setTimeout(() => {
+      clickTimer = null;
+      graphStore.selectNode(nodeId);
+      if (ctrlKey) centerOnNode(nodeId);
+      refreshRenderer();
+    }, 250);
+  }
+
+  // Double click: select node + enqueue inference. Shift+dblclick re-enqueues.
+  function handleDblClick(e: MouseEvent) {
+    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+
+    const nodeId = hitTestNode(e);
+    if (!nodeId) return;
 
     const sessionId = sessionStore.currentSession?.id;
     if (!sessionId) return;
@@ -40,18 +68,21 @@ export function setupInteractions(): void {
     const nodeStatus = graphStore.nodeStatusMap.get(nodeId);
 
     graphStore.selectNode(nodeId);
-    centerOnNode(nodeId);
+    if (e.ctrlKey) centerOnNode(nodeId);
     refreshRenderer();
 
-    if (e.shiftKey) {
-      queueStore.enqueue(sessionId, nodeId, attrs.nodeName || attrs.label, attrs.opType);
-    } else if (!nodeStatus) {
+    if (e.shiftKey || !nodeStatus) {
       queueStore.enqueue(sessionId, nodeId, attrs.nodeName || attrs.label, attrs.opType);
     }
   }
 
   canvas.addEventListener('click', handleClick as EventListener);
-  cleanupFns.push(() => canvas.removeEventListener('click', handleClick as EventListener));
+  canvas.addEventListener('dblclick', handleDblClick as EventListener);
+  cleanupFns.push(() => {
+    canvas.removeEventListener('click', handleClick as EventListener);
+    canvas.removeEventListener('dblclick', handleDblClick as EventListener);
+    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+  });
 
   // Hover detection
   let hoverThrottleId: number | null = null;

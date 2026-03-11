@@ -83,10 +83,7 @@
     </div>
 
     {#if !nodeStatus}
-      <!-- Not inferred (already queued by click) -->
-      <div class="text-gray-400 text-xs">
-        Queued for inference...
-      </div>
+      <div class="text-gray-500 text-xs">Not yet inferred</div>
 
     {:else if nodeStatus.status === 'waiting'}
       <div class="flex items-center gap-2 text-amber-400">

@@ -17,10 +17,6 @@ class LogStore {
     if (this.entries.length > MAX_ENTRIES) {
       this.entries = this.entries.slice(-MAX_ENTRIES);
     }
-    // Auto-show panel on first log entry
-    if (!this.visible) {
-      this.visible = true;
-    }
   }
 
   clear() {

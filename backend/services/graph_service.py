@@ -40,11 +40,14 @@ def extract_graph(model: Any) -> GraphData:
 
     for op in model.get_ordered_ops():
         node_id = op.get_friendly_name()
+        op_type = op.get_type_name()
+
+        if op_type == "Constant":
+            continue
+
         if node_id in seen_nodes:
             continue
         seen_nodes.add(node_id)
-
-        op_type = op.get_type_name()
 
         # Get output shape if available
         shape = None
@@ -93,6 +96,8 @@ def extract_graph(model: Any) -> GraphData:
                 source_node = source_output.get_node()
                 source_id = source_node.get_friendly_name()
                 source_port = source_output.get_index()
+                if source_id not in seen_nodes:
+                    continue
                 edges.append(GraphEdge(
                     source=source_id,
                     target=node_id,

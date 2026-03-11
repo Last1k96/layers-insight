@@ -91,11 +91,6 @@
   onclick={() => logStore.toggle()}
 >
   {logStore.visible ? 'Hide' : 'Show'} Logs
-  {#if logStore.entries.length > 0}
-    <span class="ml-1 px-1.5 py-0.5 text-[10px] bg-blue-600 text-white rounded-full">
-      {logStore.entries.length}
-    </span>
-  {/if}
 </button>
 
 {#if logStore.visible}

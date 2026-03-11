@@ -106,6 +106,24 @@ class TestExtractGraph:
         assert colors["conv"] == "#4A90D9"
         assert colors["unknown_op"] == "#78909C"  # Other/default
 
+    def test_constants_filtered(self):
+        """Constant nodes should be excluded from the graph."""
+        ops = [
+            _make_mock_op("input", "Parameter", output_shape=[1, 3, 224, 224]),
+            _make_mock_op("weights", "Constant", output_shape=[64, 3, 3, 3]),
+            _make_mock_op("conv1", "Convolution", inputs=["input", "weights"], output_shape=[1, 64, 112, 112]),
+            _make_mock_op("output", "Result", inputs=["conv1"]),
+        ]
+        model = _make_mock_model(ops)
+        graph = extract_graph(model)
+
+        node_names = {n.name for n in graph.nodes}
+        assert "weights" not in node_names
+        assert "input" in node_names
+        assert "conv1" in node_names
+        # Only input->conv1 and conv1->output (weights->conv1 filtered)
+        assert len(graph.edges) == 2
+
     def test_deduplication(self):
         op = _make_mock_op("same_name", "Relu")
         ops = [op, op]  # Same op appears twice
