@@ -32,6 +32,27 @@ def load_model(model_path: str, ov_core: Any) -> Any:
     return ov_core.read_model(model_path)
 
 
+def _find_root_constant(op: Any) -> str | None:
+    """Walk backwards through a weight-prep chain to find the root Constant node name."""
+    visited = set()
+    current = op
+    while current is not None:
+        name = current.get_friendly_name()
+        if name in visited:
+            return None
+        visited.add(name)
+        if current.get_type_name() == "Constant":
+            return name
+        # Follow first input upstream
+        if current.get_input_size() == 0:
+            return None
+        try:
+            current = current.input(0).get_source_output().get_node()
+        except Exception:
+            return None
+    return None
+
+
 def extract_graph(model: Any) -> GraphData:
     """Extract graph structure from an OpenVINO model."""
     nodes: list[GraphNode] = []
@@ -130,11 +151,13 @@ def extract_graph(model: Any) -> GraphData:
                         is_const=False,
                     ))
                 else:
-                    # Filtered (constant/weight-prep) input
+                    # Filtered (constant/weight-prep) input — trace to root Constant
+                    root_name = _find_root_constant(source_node)
                     node_inputs.append(NodeInput(
                         name=source_id, port=i,
                         shape=src_shape, element_type=src_etype,
                         is_const=True,
+                        const_node_name=root_name,
                     ))
             except Exception:
                 pass

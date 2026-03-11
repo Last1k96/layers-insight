@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 
+import numpy as np
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -66,3 +67,45 @@ async def search_graph(session_id: str, q: str, request: Request) -> list[dict]:
     graph_data = GraphData(**cached)
     results = search_nodes(graph_data, q)
     return [r.model_dump() for r in results[:50]]  # Limit results
+
+
+MAX_PREVIEW_ELEMENTS = 1000
+
+
+@router.get("/constant/{node_name:path}")
+async def get_constant_data(
+    session_id: str, node_name: str, request: Request,
+) -> JSONResponse:
+    """Get data from a Constant node by name."""
+    model = request.app.state.models.get(session_id)
+    if model is None:
+        raise HTTPException(status_code=404, detail="Model not loaded")
+
+    for op in model.get_ordered_ops():
+        if op.get_friendly_name() == node_name and op.get_type_name() == "Constant":
+            try:
+                data: np.ndarray = op.get_data()
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to read data: {e}")
+
+            flat = data.flatten()
+            total = int(flat.size)
+            truncated = total > MAX_PREVIEW_ELEMENTS
+            preview = flat[:MAX_PREVIEW_ELEMENTS]
+
+            return JSONResponse(content={
+                "name": node_name,
+                "shape": list(data.shape),
+                "dtype": str(data.dtype),
+                "total_elements": total,
+                "truncated": truncated,
+                "stats": {
+                    "min": float(np.min(data)),
+                    "max": float(np.max(data)),
+                    "mean": float(np.mean(data)),
+                    "std": float(np.std(data)),
+                },
+                "data": preview.tolist(),
+            })
+
+    raise HTTPException(status_code=404, detail=f"Constant node '{node_name}' not found")

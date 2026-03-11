@@ -58,6 +58,17 @@ export interface NodeInput {
   shape?: (number | string)[];
   element_type?: string;
   is_const: boolean;
+  const_node_name?: string;
+}
+
+export interface ConstantData {
+  name: string;
+  shape: number[];
+  dtype: string;
+  total_elements: number;
+  truncated: boolean;
+  stats: { min: number; max: number; mean: number; std: number };
+  data: number[];
 }
 
 export interface GraphNode {

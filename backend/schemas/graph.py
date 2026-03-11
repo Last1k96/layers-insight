@@ -13,6 +13,7 @@ class NodeInput(BaseModel):
     shape: Optional[list] = None
     element_type: Optional[str] = None
     is_const: bool = False  # True when source is a filtered constant/weight-prep chain
+    const_node_name: Optional[str] = None  # root Constant node name for data lookup
 
 
 class GraphNode(BaseModel):

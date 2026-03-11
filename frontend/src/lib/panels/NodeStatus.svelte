@@ -4,9 +4,48 @@
   import { sessionStore } from '../stores/session.svelte';
   import AccuracyView from '../accuracy/AccuracyView.svelte';
   import BatchQueue from './BatchQueue.svelte';
+  import type { ConstantData } from '../stores/types';
 
   let selectedNode = $derived(graphStore.selectedNode);
   let nodeStatus = $derived(graphStore.selectedNodeStatus);
+
+  // Constant data cache: const_node_name -> data
+  let constDataCache = $state(new Map<string, ConstantData>());
+  let constDataLoading = $state(new Set<string>());
+  let constDataExpanded = $state(new Set<string>());
+
+  async function toggleConstData(constNodeName: string) {
+    const key = constNodeName;
+    if (constDataExpanded.has(key)) {
+      constDataExpanded = new Set([...constDataExpanded].filter(k => k !== key));
+      return;
+    }
+    constDataExpanded = new Set([...constDataExpanded, key]);
+
+    if (constDataCache.has(key)) return;
+
+    const session = sessionStore.currentSession;
+    if (!session) return;
+
+    constDataLoading = new Set([...constDataLoading, key]);
+    try {
+      const res = await fetch(`/api/sessions/${session.id}/graph/constant/${encodeURIComponent(key)}`);
+      if (res.ok) {
+        const data: ConstantData = await res.json();
+        constDataCache = new Map([...constDataCache, [key, data]]);
+      }
+    } catch (e) {
+      console.error('Failed to fetch constant data:', e);
+    } finally {
+      constDataLoading = new Set([...constDataLoading].filter(k => k !== key));
+    }
+  }
+
+  function formatFloat(v: number): string {
+    if (v === 0) return '0';
+    if (Math.abs(v) < 0.0001 || Math.abs(v) >= 1e6) return v.toExponential(3);
+    return v.toPrecision(4);
+  }
 
   let showAccuracyView = $state(false);
   let showBatchQueue = $state(false);
@@ -232,6 +271,41 @@
                 <div class="text-gray-500 ml-5 mt-0.5">
                   [{inp.shape.join(', ')}]{#if inp.element_type} <span class="text-gray-600">{inp.element_type}</span>{/if}
                 </div>
+              {/if}
+              {#if inp.is_const && inp.const_node_name}
+                <button
+                  class="ml-5 mt-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+                  onclick={() => toggleConstData(inp.const_node_name!)}
+                >
+                  {constDataExpanded.has(inp.const_node_name) ? 'Hide data' : 'View data'}
+                </button>
+                {#if constDataExpanded.has(inp.const_node_name)}
+                  {#if constDataLoading.has(inp.const_node_name)}
+                    <div class="ml-5 mt-1 text-gray-500 text-[10px]">Loading...</div>
+                  {:else if constDataCache.has(inp.const_node_name)}
+                    {@const cd = constDataCache.get(inp.const_node_name)!}
+                    <div class="ml-5 mt-1 space-y-1">
+                      <div class="grid grid-cols-2 gap-x-3 text-[10px]">
+                        <span class="text-gray-600">dtype</span>
+                        <span class="text-gray-400 font-mono text-right">{cd.dtype}</span>
+                        <span class="text-gray-600">min</span>
+                        <span class="text-gray-400 font-mono text-right">{formatFloat(cd.stats.min)}</span>
+                        <span class="text-gray-600">max</span>
+                        <span class="text-gray-400 font-mono text-right">{formatFloat(cd.stats.max)}</span>
+                        <span class="text-gray-600">mean</span>
+                        <span class="text-gray-400 font-mono text-right">{formatFloat(cd.stats.mean)}</span>
+                        <span class="text-gray-600">std</span>
+                        <span class="text-gray-400 font-mono text-right">{formatFloat(cd.stats.std)}</span>
+                      </div>
+                      <details>
+                        <summary class="text-[10px] text-gray-600 cursor-pointer hover:text-gray-500">
+                          Values ({cd.total_elements}{cd.truncated ? ', truncated' : ''})
+                        </summary>
+                        <pre class="mt-1 bg-gray-950 rounded p-1.5 text-[9px] text-gray-400 font-mono overflow-x-auto max-h-40 whitespace-pre-wrap leading-tight">{cd.data.map(v => formatFloat(v)).join(', ')}</pre>
+                      </details>
+                    </div>
+                  {/if}
+                {/if}
               {/if}
             </div>
           {/each}
