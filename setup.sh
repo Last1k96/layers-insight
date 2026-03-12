@@ -26,6 +26,7 @@ echo "Installing frontend dependencies..."
 cd frontend && npm ci --quiet 2>/dev/null || npm install --quiet
 echo "Building frontend..."
 npm run build
+touch dist/.build_marker
 cd ..
 
 echo ""

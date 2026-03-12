@@ -31,8 +31,8 @@ process.stdin.on('end', async () => {
                 'elk.spacing.nodeNode': '20',
                 'elk.layered.nodePlacement.strategy': 'NETWORK_SIMPLEX',
                 'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
-                // Spline edge routing for Netron-style curved edges
-                'elk.edgeRouting': 'SPLINES',
+                // Polyline routing gives sparse bend points, ideal for B-spline smoothing
+                'elk.edgeRouting': 'POLYLINE',
             },
             children: data.nodes.map(n => ({
                 id: n.id,

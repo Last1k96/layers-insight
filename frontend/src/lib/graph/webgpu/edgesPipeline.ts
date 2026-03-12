@@ -166,7 +166,9 @@ export function drawEdges(pass: GPURenderPassEncoder, state: EdgesPipelineState)
 interface Point { x: number; y: number }
 
 const LINE_HALF_WIDTH = 0.6;
-const SEGMENTS_PER_CURVE = 12;
+const MIN_SEGMENTS = 8;
+const MAX_SEGMENTS = 64;
+const PIXELS_PER_SEGMENT = 8; // one segment per ~8 pixels of arc length
 const ARROW_LENGTH = 8;
 const ARROW_HALF_WIDTH = 3;
 
@@ -182,13 +184,13 @@ export function buildEdgeGeometry(
   const nodeMap = new Map<string, GraphNode>();
   for (const n of nodes) nodeMap.set(n.id, n);
 
-  // Estimate vertex count.  Each B-spline span produces SEGMENTS_PER_CURVE line
+  // Estimate vertex count.  Each B-spline span produces up to MAX_SEGMENTS line
   // segments (each = quad = 6 verts), + 3 for arrowhead.
   let estimatedVertices = 0;
   for (const edge of edges) {
     const wp = edge.waypoints?.length ?? 0;
     const spans = wp >= 2 ? (wp - 1) : 1;
-    estimatedVertices += spans * SEGMENTS_PER_CURVE * 6 + 3;
+    estimatedVertices += spans * MAX_SEGMENTS * 6 + 3;
   }
   const buf = new Float32Array(estimatedVertices * 4);
   let offset = 0;
@@ -203,36 +205,72 @@ export function buildEdgeGeometry(
 
   function pushQuad(
     p0x: number, p0y: number, p1x: number, p1y: number,
-    nx: number, ny: number,
+    n0x: number, n0y: number,
+    n1x?: number, n1y?: number,
   ): void {
-    // Two triangles forming a quad: vertices store center + signed normal
-    // Triangle 1: (p0,+n), (p1,+n), (p1,-n)
-    pushVertex(p0x, p0y, +nx, +ny);
-    pushVertex(p1x, p1y, +nx, +ny);
-    pushVertex(p1x, p1y, -nx, -ny);
-    // Triangle 2: (p0,+n), (p1,-n), (p0,-n)
-    pushVertex(p0x, p0y, +nx, +ny);
-    pushVertex(p1x, p1y, -nx, -ny);
-    pushVertex(p0x, p0y, -nx, -ny);
+    // Two triangles forming a quad: vertices store center + signed normal.
+    // Supports per-endpoint normals for miter joins.
+    const nx1 = n1x ?? n0x;
+    const ny1 = n1y ?? n0y;
+    // Triangle 1: (p0,+n0), (p1,+n1), (p1,-n1)
+    pushVertex(p0x, p0y, +n0x, +n0y);
+    pushVertex(p1x, p1y, +nx1, +ny1);
+    pushVertex(p1x, p1y, -nx1, -ny1);
+    // Triangle 2: (p0,+n0), (p1,-n1), (p0,-n0)
+    pushVertex(p0x, p0y, +n0x, +n0y);
+    pushVertex(p1x, p1y, -nx1, -ny1);
+    pushVertex(p0x, p0y, -n0x, -n0y);
   }
 
   for (const edge of edges) {
     const points = evaluateEdgeCurve(edge, nodeMap, nodeSize);
     if (points.length < 2) continue;
 
-    // Generate thick line segments
+    // Generate thick line strip with miter joins for seamless bends.
+    // Precompute per-segment normals.
+    const segNormals: { nx: number; ny: number }[] = [];
     for (let i = 0; i < points.length - 1; i++) {
-      const p0 = points[i];
-      const p1 = points[i + 1];
-      const dx = p1.x - p0.x;
-      const dy = p1.y - p0.y;
+      const dx = points[i + 1].x - points[i].x;
+      const dy = points[i + 1].y - points[i].y;
       const len = Math.sqrt(dx * dx + dy * dy);
-      if (len < 0.001) continue;
+      if (len < 0.001) {
+        segNormals.push({ nx: 0, ny: 0 });
+      } else {
+        segNormals.push({ nx: -dy / len * LINE_HALF_WIDTH, ny: dx / len * LINE_HALF_WIDTH });
+      }
+    }
 
-      const nx = -dy / len * LINE_HALF_WIDTH;
-      const ny = dx / len * LINE_HALF_WIDTH;
+    // Compute miter normal at each point (average of adjacent segment normals).
+    const ptNormals: { nx: number; ny: number }[] = [];
+    for (let i = 0; i < points.length; i++) {
+      if (i === 0) {
+        ptNormals.push(segNormals[0]);
+      } else if (i === points.length - 1) {
+        ptNormals.push(segNormals[segNormals.length - 1]);
+      } else {
+        const n0 = segNormals[i - 1];
+        const n1 = segNormals[i];
+        let mx = (n0.nx + n1.nx) * 0.5;
+        let my = (n0.ny + n1.ny) * 0.5;
+        const mLen = Math.sqrt(mx * mx + my * my);
+        if (mLen > 0.001) {
+          // Scale miter to preserve LINE_HALF_WIDTH perpendicular thickness
+          const scale = LINE_HALF_WIDTH / mLen;
+          mx *= scale;
+          my *= scale;
+        }
+        ptNormals.push({ nx: mx, ny: my });
+      }
+    }
 
-      pushQuad(p0.x, p0.y, p1.x, p1.y, nx, ny);
+    for (let i = 0; i < points.length - 1; i++) {
+      const sn = segNormals[i];
+      if (sn.nx === 0 && sn.ny === 0) continue;
+      pushQuad(
+        points[i].x, points[i].y, points[i + 1].x, points[i + 1].y,
+        ptNormals[i].nx, ptNormals[i].ny,
+        ptNormals[i + 1].nx, ptNormals[i + 1].ny,
+      );
     }
 
     // Arrowhead at the endpoint — use normal=(0,0) so vertices stay fixed
@@ -266,10 +304,7 @@ function evaluateEdgeCurve(
   nodeSize: (id: string) => { width: number; height: number },
 ): Point[] {
   if (edge.waypoints && edge.waypoints.length >= 2) {
-    const pts = edge.waypoints.length > 20
-      ? simplifyPolyline(edge.waypoints, 2.0)
-      : edge.waypoints;
-    return evaluateBSpline(pts);
+    return evaluateBSpline(edge.waypoints);
   }
 
   // Fallback S-curve
@@ -286,13 +321,11 @@ function evaluateEdgeCurve(
 
   // S-curve via cubic bezier
   const midY = (startY + endY) / 2;
-  return evaluateCubicBezier(
-    { x: startX, y: startY },
-    { x: startX, y: midY },
-    { x: endX, y: midY },
-    { x: endX, y: endY },
-    SEGMENTS_PER_CURVE,
-  );
+  const sp = { x: startX, y: startY };
+  const c1 = { x: startX, y: midY };
+  const c2 = { x: endX, y: midY };
+  const ep = { x: endX, y: endY };
+  return evaluateCubicBezier(sp, c1, c2, ep, adaptiveSegments(sp, c1, c2, ep));
 }
 
 function evaluateBSpline(waypoints: Point[]): Point[] {
@@ -301,26 +334,26 @@ function evaluateBSpline(waypoints: Point[]): Point[] {
 
   if (pts.length === 2) {
     const midY = (pts[0].y + pts[1].y) / 2;
-    return evaluateCubicBezier(
-      pts[0],
-      { x: pts[0].x, y: midY },
-      { x: pts[1].x, y: midY },
-      pts[1],
-      SEGMENTS_PER_CURVE,
-    );
+    const cp1 = { x: pts[0].x, y: midY };
+    const cp2 = { x: pts[1].x, y: midY };
+    return evaluateCubicBezier(pts[0], cp1, cp2, pts[1], adaptiveSegments(pts[0], cp1, cp2, pts[1]));
   }
 
   if (pts.length === 3) {
-    return evaluateQuadBezier(pts[0], pts[1], pts[2], SEGMENTS_PER_CURVE);
+    return evaluateQuadBezier(pts[0], pts[1], pts[2], adaptiveSegments(pts[0], pts[1], pts[2]));
   }
 
   // Cubic B-spline
   const result: Point[] = [pts[0]];
 
-  result.push({
-    x: (2 * pts[0].x + pts[1].x) / 3,
-    y: (2 * pts[0].y + pts[1].y) / 3,
-  });
+  // First segment: proper cubic Bezier from pts[0] to first interior knot
+  {
+    const cp1 = { x: (2 * pts[0].x + pts[1].x) / 3, y: (2 * pts[0].y + pts[1].y) / 3 };
+    const cp2 = { x: (pts[0].x + 2 * pts[1].x) / 3, y: (pts[0].y + 2 * pts[1].y) / 3 };
+    const firstEnd = { x: (pts[0].x + 4 * pts[1].x + pts[2].x) / 6, y: (pts[0].y + 4 * pts[1].y + pts[2].y) / 6 };
+    const firstBezier = evaluateCubicBezier(pts[0], cp1, cp2, firstEnd, adaptiveSegments(pts[0], cp1, cp2, firstEnd));
+    for (let j = 1; j < firstBezier.length; j++) result.push(firstBezier[j]);
+  }
 
   for (let i = 1; i < pts.length - 2; i++) {
     const p0 = pts[i];
@@ -329,7 +362,7 @@ function evaluateBSpline(waypoints: Point[]): Point[] {
     const cp2 = { x: (p0.x + 2 * p1.x) / 3, y: (p0.y + 2 * p1.y) / 3 };
     const end = { x: (p0.x + 4 * p1.x + pts[i + 2].x) / 6, y: (p0.y + 4 * p1.y + pts[i + 2].y) / 6 };
     const start = result[result.length - 1];
-    const bezierPts = evaluateCubicBezier(start, cp1, cp2, end, SEGMENTS_PER_CURVE);
+    const bezierPts = evaluateCubicBezier(start, cp1, cp2, end, adaptiveSegments(start, cp1, cp2, end));
     for (let j = 1; j < bezierPts.length; j++) result.push(bezierPts[j]);
   }
 
@@ -337,53 +370,22 @@ function evaluateBSpline(waypoints: Point[]): Point[] {
   const pn2 = pts[n - 2];
   const pn1 = pts[n - 1];
   const lastStart = result[result.length - 1];
-  const lastBezier = evaluateCubicBezier(
-    lastStart,
-    { x: (2 * pn2.x + pn1.x) / 3, y: (2 * pn2.y + pn1.y) / 3 },
-    { x: (pn2.x + 2 * pn1.x) / 3, y: (pn2.y + 2 * pn1.y) / 3 },
-    pn1,
-    SEGMENTS_PER_CURVE,
-  );
+  const lastCp1 = { x: (2 * pn2.x + pn1.x) / 3, y: (2 * pn2.y + pn1.y) / 3 };
+  const lastCp2 = { x: (pn2.x + 2 * pn1.x) / 3, y: (pn2.y + 2 * pn1.y) / 3 };
+  const lastBezier = evaluateCubicBezier(lastStart, lastCp1, lastCp2, pn1, adaptiveSegments(lastStart, lastCp1, lastCp2, pn1));
   for (let j = 1; j < lastBezier.length; j++) result.push(lastBezier[j]);
 
   return result;
 }
 
-/** Douglas-Peucker polyline simplification. */
-function simplifyPolyline(pts: Point[], epsilon: number): Point[] {
-  if (pts.length <= 2) return pts.slice();
-
-  let maxDist = 0;
-  let maxIdx = 0;
-  const first = pts[0];
-  const last = pts[pts.length - 1];
-  const dx = last.x - first.x;
-  const dy = last.y - first.y;
-  const lenSq = dx * dx + dy * dy;
-
-  for (let i = 1; i < pts.length - 1; i++) {
-    let dist: number;
-    if (lenSq < 0.001) {
-      const ex = pts[i].x - first.x;
-      const ey = pts[i].y - first.y;
-      dist = Math.sqrt(ex * ex + ey * ey);
-    } else {
-      const cross = Math.abs(dx * (pts[i].y - first.y) - dy * (pts[i].x - first.x));
-      dist = cross / Math.sqrt(lenSq);
-    }
-    if (dist > maxDist) {
-      maxDist = dist;
-      maxIdx = i;
-    }
+function adaptiveSegments(...pts: Point[]): number {
+  let dist = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dx = pts[i].x - pts[i - 1].x;
+    const dy = pts[i].y - pts[i - 1].y;
+    dist += Math.sqrt(dx * dx + dy * dy);
   }
-
-  if (maxDist > epsilon) {
-    const left = simplifyPolyline(pts.slice(0, maxIdx + 1), epsilon);
-    const right = simplifyPolyline(pts.slice(maxIdx), epsilon);
-    return left.slice(0, -1).concat(right);
-  }
-
-  return [first, last];
+  return Math.max(MIN_SEGMENTS, Math.min(MAX_SEGMENTS, Math.round(dist / PIXELS_PER_SEGMENT)));
 }
 
 function evaluateQuadBezier(p0: Point, p1: Point, p2: Point, segments: number): Point[] {

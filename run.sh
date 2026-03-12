@@ -7,6 +7,14 @@ export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 
 source .venv/bin/activate
 
+# Rebuild frontend if sources are newer than last build
+BUILD_MARKER="frontend/dist/.build_marker"
+if [ ! -f "$BUILD_MARKER" ] || [ -n "$(find frontend/src -newer "$BUILD_MARKER" -print -quit 2>/dev/null)" ]; then
+  echo "Frontend sources changed, rebuilding..."
+  (cd frontend && npm run build)
+  touch "$BUILD_MARKER"
+fi
+
 # Extract --ov-path value to set LD_LIBRARY_PATH (needed for libopenvino*.so)
 prev=""
 for i in "$@"; do
