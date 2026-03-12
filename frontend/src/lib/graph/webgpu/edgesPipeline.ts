@@ -1,6 +1,10 @@
 /**
  * WebGPU pipeline for rendering edges as tessellated thick line strips + arrowheads.
  * Reuses the B-spline math from svgRenderer.ts.
+ *
+ * Vertex format: 4 floats per vertex (centerX, centerY, normalX, normalY).
+ * The vertex shader expands the normal to guarantee a minimum screen-space
+ * edge width, keeping edges visible when zoomed out.
  */
 import type { GraphEdge, GraphNode } from '../../stores/types';
 import { ALPHA_BLEND } from './types';
@@ -8,15 +12,27 @@ import { ALPHA_BLEND } from './types';
 const SHADER = /* wgsl */ `
 @group(0) @binding(0) var<uniform> camera: mat4x4<f32>;
 @group(0) @binding(1) var<uniform> edgeColor: vec4<f32>;
+@group(0) @binding(2) var<uniform> viewportSize: vec2<f32>;
 
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
 };
 
 @vertex
-fn vertexMain(@location(0) pos: vec2<f32>) -> VertexOutput {
+fn vertexMain(@location(0) center: vec2<f32>, @location(1) normal: vec2<f32>) -> VertexOutput {
   var out: VertexOutput;
-  out.position = camera * vec4(pos, 0.0, 1.0);
+  // Transform center to clip space
+  let clipPos = camera * vec4(center, 0.0, 1.0);
+  // Transform normal through camera (linear part only, w=0)
+  var clipNormal = vec2(camera[0][0] * normal.x, camera[1][1] * normal.y);
+  // Measure screen-pixel length of the normal
+  let pixelNormal = clipNormal * viewportSize * 0.5;
+  let pixelLen = length(pixelNormal);
+  // Ensure minimum ~0.5 pixel half-width (1px total edge width)
+  if (pixelLen > 0.0001 && pixelLen < 0.5) {
+    clipNormal = clipNormal * (0.5 / pixelLen);
+  }
+  out.position = vec4(clipPos.xy + clipNormal, clipPos.zw);
   return out;
 }
 
@@ -30,7 +46,9 @@ export interface EdgesPipelineState {
   pipeline: GPURenderPipeline;
   vertexBuffer: GPUBuffer;
   colorBuffer: GPUBuffer;
+  zoomBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
+  bindGroupLayout: GPUBindGroupLayout;
   vertexCount: number;
   capacity: number;
 }
@@ -46,6 +64,7 @@ export function createEdgesPipeline(
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
       { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+      { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
     ],
   });
 
@@ -55,8 +74,11 @@ export function createEdgesPipeline(
       module,
       entryPoint: 'vertexMain',
       buffers: [{
-        arrayStride: 8,
-        attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' as GPUVertexFormat }],
+        arrayStride: 16,
+        attributes: [
+          { shaderLocation: 0, offset: 0, format: 'float32x2' as GPUVertexFormat },
+          { shaderLocation: 1, offset: 8, format: 'float32x2' as GPUVertexFormat },
+        ],
       }],
     },
     fragment: {
@@ -65,11 +87,12 @@ export function createEdgesPipeline(
       targets: [{ format, blend: ALPHA_BLEND }],
     },
     primitive: { topology: 'triangle-list' },
+    multisample: { count: 4 },
   });
 
   const initialCapacity = 4096;
   const vertexBuffer = device.createBuffer({
-    size: initialCapacity * 8,
+    size: initialCapacity * 16,
     usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
   });
 
@@ -77,22 +100,34 @@ export function createEdgesPipeline(
     size: 16,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
-  // Default edge color: #888
-  device.queue.writeBuffer(colorBuffer, 0, new Float32Array([0.533, 0.533, 0.533, 1.0]) as Float32Array<ArrayBuffer>);
+  // Default edge color: #aaa
+  device.queue.writeBuffer(colorBuffer, 0, new Float32Array([0.667, 0.667, 0.667, 1.0]) as Float32Array<ArrayBuffer>);
+
+  const zoomBuffer = device.createBuffer({
+    size: 8,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  // Default viewport size; updated on resize
+  device.queue.writeBuffer(zoomBuffer, 0, new Float32Array([1920, 1080]) as Float32Array<ArrayBuffer>);
 
   const bindGroup = device.createBindGroup({
     layout: bindGroupLayout,
     entries: [
       { binding: 0, resource: { buffer: cameraBuffer } },
       { binding: 1, resource: { buffer: colorBuffer } },
+      { binding: 2, resource: { buffer: zoomBuffer } },
     ],
   });
 
-  return { pipeline, vertexBuffer, colorBuffer, bindGroup, vertexCount: 0, capacity: initialCapacity };
+  return { pipeline, vertexBuffer, colorBuffer, zoomBuffer, bindGroup, bindGroupLayout, vertexCount: 0, capacity: initialCapacity };
 }
 
 export function setEdgeColor(state: EdgesPipelineState, device: GPUDevice, r: number, g: number, b: number, a: number): void {
   device.queue.writeBuffer(state.colorBuffer, 0, new Float32Array([r, g, b, a]) as Float32Array<ArrayBuffer>);
+}
+
+export function updateEdgeViewport(state: EdgesPipelineState, device: GPUDevice, width: number, height: number): void {
+  device.queue.writeBuffer(state.zoomBuffer, 0, new Float32Array([width, height]) as Float32Array<ArrayBuffer>);
 }
 
 export function updateEdgeVertices(
@@ -106,13 +141,14 @@ export function updateEdgeVertices(
     state.vertexBuffer.destroy();
     const newCapacity = Math.max(vertexCount, state.capacity * 2);
     const vertexBuffer = device.createBuffer({
-      size: newCapacity * 8,
+      size: newCapacity * 16,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
+    // Rebuild bind group since we store layout ref (vertex buffer not in bind group, but keep consistent)
     state = { ...state, vertexBuffer, capacity: newCapacity };
   }
 
-  device.queue.writeBuffer(state.vertexBuffer, 0, data as Float32Array<ArrayBuffer>, 0, vertexCount * 2);
+  device.queue.writeBuffer(state.vertexBuffer, 0, data as Float32Array<ArrayBuffer>, 0, vertexCount * 4);
   state.vertexCount = vertexCount;
   return state;
 }
@@ -134,7 +170,10 @@ const SEGMENTS_PER_CURVE = 12;
 const ARROW_LENGTH = 8;
 const ARROW_HALF_WIDTH = 3;
 
-/** Tessellate all edges into a flat Float32Array of triangle vertices */
+/** Tessellate all edges into a flat Float32Array of triangle vertices.
+ *  Each vertex is 4 floats: (centerX, centerY, normalX, normalY).
+ *  The normal encodes the perpendicular offset direction * LINE_HALF_WIDTH.
+ *  Arrowhead vertices use normal = (0,0) so they render at exact position. */
 export function buildEdgeGeometry(
   edges: GraphEdge[],
   nodes: GraphNode[],
@@ -145,26 +184,36 @@ export function buildEdgeGeometry(
 
   // Estimate vertex count.  Each B-spline span produces SEGMENTS_PER_CURVE line
   // segments (each = quad = 6 verts), + 3 for arrowhead.
-  // Dense waypoints (>20) are simplified first, but use raw count as upper bound.
   let estimatedVertices = 0;
   for (const edge of edges) {
     const wp = edge.waypoints?.length ?? 0;
-    // B-spline with N control points → (N-1) spans × SEGMENTS_PER_CURVE segments
     const spans = wp >= 2 ? (wp - 1) : 1;
     estimatedVertices += spans * SEGMENTS_PER_CURVE * 6 + 3;
   }
-  const buf = new Float32Array(estimatedVertices * 2);
+  const buf = new Float32Array(estimatedVertices * 4);
   let offset = 0;
 
-  function pushVertex(x: number, y: number): void {
-    if (offset + 2 > buf.length) return; // safety
-    buf[offset++] = x;
-    buf[offset++] = y;
+  function pushVertex(cx: number, cy: number, nx: number, ny: number): void {
+    if (offset + 4 > buf.length) return; // safety
+    buf[offset++] = cx;
+    buf[offset++] = cy;
+    buf[offset++] = nx;
+    buf[offset++] = ny;
   }
 
-  function pushQuad(a: Point, b: Point, c: Point, d: Point): void {
-    pushVertex(a.x, a.y); pushVertex(b.x, b.y); pushVertex(c.x, c.y);
-    pushVertex(a.x, a.y); pushVertex(c.x, c.y); pushVertex(d.x, d.y);
+  function pushQuad(
+    p0x: number, p0y: number, p1x: number, p1y: number,
+    nx: number, ny: number,
+  ): void {
+    // Two triangles forming a quad: vertices store center + signed normal
+    // Triangle 1: (p0,+n), (p1,+n), (p1,-n)
+    pushVertex(p0x, p0y, +nx, +ny);
+    pushVertex(p1x, p1y, +nx, +ny);
+    pushVertex(p1x, p1y, -nx, -ny);
+    // Triangle 2: (p0,+n), (p1,-n), (p0,-n)
+    pushVertex(p0x, p0y, +nx, +ny);
+    pushVertex(p1x, p1y, -nx, -ny);
+    pushVertex(p0x, p0y, -nx, -ny);
   }
 
   for (const edge of edges) {
@@ -183,15 +232,10 @@ export function buildEdgeGeometry(
       const nx = -dy / len * LINE_HALF_WIDTH;
       const ny = dx / len * LINE_HALF_WIDTH;
 
-      pushQuad(
-        { x: p0.x + nx, y: p0.y + ny },
-        { x: p1.x + nx, y: p1.y + ny },
-        { x: p1.x - nx, y: p1.y - ny },
-        { x: p0.x - nx, y: p0.y - ny },
-      );
+      pushQuad(p0.x, p0.y, p1.x, p1.y, nx, ny);
     }
 
-    // Arrowhead at the endpoint
+    // Arrowhead at the endpoint — use normal=(0,0) so vertices stay fixed
     const last = points[points.length - 1];
     const prev = points[points.length - 2];
     const adx = last.x - prev.x;
@@ -207,9 +251,9 @@ export function buildEdgeGeometry(
       const base1 = { x: tip.x - dirX * ARROW_LENGTH + perpX * ARROW_HALF_WIDTH, y: tip.y - dirY * ARROW_LENGTH + perpY * ARROW_HALF_WIDTH };
       const base2 = { x: tip.x - dirX * ARROW_LENGTH - perpX * ARROW_HALF_WIDTH, y: tip.y - dirY * ARROW_LENGTH - perpY * ARROW_HALF_WIDTH };
 
-      pushVertex(tip.x, tip.y);
-      pushVertex(base1.x, base1.y);
-      pushVertex(base2.x, base2.y);
+      pushVertex(tip.x, tip.y, 0, 0);
+      pushVertex(base1.x, base1.y, 0, 0);
+      pushVertex(base2.x, base2.y, 0, 0);
     }
   }
 
@@ -222,8 +266,6 @@ function evaluateEdgeCurve(
   nodeSize: (id: string) => { width: number; height: number },
 ): Point[] {
   if (edge.waypoints && edge.waypoints.length >= 2) {
-    // ELK SPLINE routing can produce hundreds of near-collinear waypoints for
-    // long-distance edges.  Simplify first, then evaluate as B-spline.
     const pts = edge.waypoints.length > 20
       ? simplifyPolyline(edge.waypoints, 2.0)
       : edge.waypoints;

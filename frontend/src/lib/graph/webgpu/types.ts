@@ -21,8 +21,8 @@ export const NODE_RADIUS = 5;
 /** Background clear color (#1a1a2e) */
 export const CLEAR_COLOR: GPUColor = { r: 0.102, g: 0.102, b: 0.180, a: 1.0 };
 
-/** Default edge color (#888888) */
-export const EDGE_COLOR = { r: 0.533, g: 0.533, b: 0.533, a: 1.0 };
+/** Default edge color (#aaaaaa) */
+export const EDGE_COLOR = { r: 0.667, g: 0.667, b: 0.667, a: 1.0 };
 
 /** Dimmed edge color during search */
 export const EDGE_COLOR_DIMMED = { r: 0.267, g: 0.267, b: 0.267, a: 0.3 };

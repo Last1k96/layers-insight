@@ -9,7 +9,7 @@ import { isLightNodeColor, STATUS_COLORS } from '../opColors';
 import { buildCameraMatrix, CLEAR_COLOR, NODE_FLOATS, NODE_RADIUS, GRAPH_FONT_SIZE } from './types';
 import { createNodesPipeline, updateNodeInstances, drawNodes } from './nodesPipeline';
 import type { NodesPipelineState } from './nodesPipeline';
-import { createEdgesPipeline, updateEdgeVertices, setEdgeColor, drawEdges, buildEdgeGeometry } from './edgesPipeline';
+import { createEdgesPipeline, updateEdgeVertices, setEdgeColor, updateEdgeViewport, drawEdges, buildEdgeGeometry } from './edgesPipeline';
 import type { EdgesPipelineState } from './edgesPipeline';
 import { createTextPipeline, updateGlyphInstances, drawText } from './textPipeline';
 import type { TextPipelineState } from './textPipeline';
@@ -32,6 +32,8 @@ export class WebGPURenderer {
   private dirty = true;
   private animFrameId: number | null = null;
   private resizeObserver: ResizeObserver;
+  private msaaTexture: GPUTexture | null = null;
+  private msaaView: GPUTextureView | null = null;
   private currentZoom = 1;
   private graphData: GraphData | null = null;
   private nodeSizeFn: ((id: string) => { width: number; height: number }) | null = null;
@@ -148,12 +150,13 @@ export class WebGPURenderer {
       height: nodeSize(n.id).height,
     })));
 
-    // Build edge geometry
+    // Build edge geometry (4 floats per vertex: centerX, centerY, normalX, normalY)
     const edgeVerts = buildEdgeGeometry(graphData.edges, graphData.nodes, nodeSize);
     this.edgesPipeline = updateEdgeVertices(
       this.edgesPipeline, this.device, this.cameraBuffer,
-      edgeVerts, edgeVerts.length / 2,
+      edgeVerts, edgeVerts.length / 4,
     );
+    updateEdgeViewport(this.edgesPipeline, this.device, this.canvas.width, this.canvas.height);
 
     this.markDirty();
   }
@@ -272,7 +275,7 @@ export class WebGPURenderer {
     if (searchActive) {
       setEdgeColor(this.edgesPipeline, this.device, 0.267, 0.267, 0.267, 0.3);
     } else {
-      setEdgeColor(this.edgesPipeline, this.device, 0.533, 0.533, 0.533, 1.0);
+      setEdgeColor(this.edgesPipeline, this.device, 0.667, 0.667, 0.667, 1.0);
     }
 
     // Build text glyph instances (skip if zoomed out)
@@ -282,13 +285,18 @@ export class WebGPURenderer {
   }
 
   private rebuildText(grayedNodes: Set<string>, zoomRatio: number): void {
-    if (!this.graphData || zoomRatio < 0.4) {
+    if (!this.graphData || zoomRatio < 0.05) {
       this.textPipeline = updateGlyphInstances(
         this.textPipeline, this.device, this.cameraBuffer, this.atlas,
         new Float32Array(0), 0,
       );
       return;
     }
+
+    // Alpha fade: fully opaque above 0.3, linear fade to 0 between 0.3 and 0.1
+    const textAlpha = zoomRatio >= 0.3 ? 1.0
+      : zoomRatio <= 0.1 ? 0.0
+      : (zoomRatio - 0.1) / 0.2;
 
     const nodes = this.graphData.nodes;
     const atlas = this.atlas;
@@ -349,7 +357,7 @@ export class WebGPURenderer {
         glyphData[off + 8] = textColor.r;
         glyphData[off + 9] = textColor.g;
         glyphData[off + 10] = textColor.b;
-        glyphData[off + 11] = 1.0;
+        glyphData[off + 11] = textAlpha;
 
         curX += g.advance * scale;
         glyphCount++;
@@ -391,17 +399,18 @@ export class WebGPURenderer {
     const encoder = this.device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
-        view: textureView,
+        view: this.msaaView!,
+        resolveTarget: textureView,
         clearValue: CLEAR_COLOR,
         loadOp: 'clear',
-        storeOp: 'store',
+        storeOp: 'discard',
       }],
     });
 
     // Draw order: edges → nodes → text
     drawEdges(pass, this.edgesPipeline);
     drawNodes(pass, this.nodesPipeline);
-    if (this.currentZoom >= 0.4) {
+    if (this.currentZoom >= 0.05) {
       drawText(pass, this.textPipeline);
     }
 
@@ -429,6 +438,18 @@ export class WebGPURenderer {
       format: this.format,
       alphaMode: 'opaque',
     });
+
+    // Recreate MSAA texture at new size
+    if (this.msaaTexture) this.msaaTexture.destroy();
+    this.msaaTexture = this.device.createTexture({
+      size: { width: physW, height: physH },
+      format: this.format,
+      sampleCount: 4,
+      usage: GPUTextureUsage.RENDER_ATTACHMENT,
+    });
+    this.msaaView = this.msaaTexture.createView();
+
+    updateEdgeViewport(this.edgesPipeline, this.device, physW, physH);
   }
 
   destroy(): void {
@@ -440,9 +461,11 @@ export class WebGPURenderer {
     this.nodesPipeline.storageBuffer.destroy();
     this.edgesPipeline.vertexBuffer.destroy();
     this.edgesPipeline.colorBuffer.destroy();
+    this.edgesPipeline.zoomBuffer.destroy();
     this.textPipeline.storageBuffer.destroy();
     this.atlas.texture.destroy();
     this.cameraBuffer.destroy();
+    if (this.msaaTexture) this.msaaTexture.destroy();
     this.device.destroy();
   }
 }

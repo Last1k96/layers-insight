@@ -115,6 +115,7 @@ export function createNodesPipeline(
       targets: [{ format, blend: ALPHA_BLEND }],
     },
     primitive: { topology: 'triangle-list' },
+    multisample: { count: 4 },
   });
 
   // Initial empty storage buffer (will be resized on first update)

@@ -90,6 +90,7 @@ export function createTextPipeline(
       targets: [{ format, blend: ALPHA_BLEND }],
     },
     primitive: { topology: 'triangle-list' },
+    multisample: { count: 4 },
   });
 
   const sampler = device.createSampler({
