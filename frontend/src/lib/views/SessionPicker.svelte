@@ -10,6 +10,23 @@
     onnewsession: () => void;
   } = $props();
 
+  let confirmingDelete: string | null = $state(null);
+
+  function handleDelete(e: MouseEvent, sessionId: string) {
+    e.stopPropagation();
+    if (confirmingDelete === sessionId) {
+      sessionStore.deleteSession(sessionId);
+      confirmingDelete = null;
+    } else {
+      confirmingDelete = sessionId;
+    }
+  }
+
+  function cancelDelete(e: MouseEvent) {
+    e.stopPropagation();
+    confirmingDelete = null;
+  }
+
   onMount(() => {
     sessionStore.fetchSessions();
   });
@@ -33,26 +50,54 @@
         </button>
       </div>
     {:else}
-      <div class="space-y-3 mb-6">
+      <div class="space-y-3 mb-6 max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin">
         {#each sessionStore.sessions as session (session.id)}
           <button
-            class="w-full text-left p-4 bg-gray-800 hover:bg-gray-750 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors"
+            class="group w-full text-left p-4 bg-gray-800 hover:bg-gray-750 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors"
             onclick={() => onsessionselected(session.id)}
           >
             <div class="flex justify-between items-start">
-              <div>
+              <div class="min-w-0 flex-1">
                 <div class="font-medium">{session.model_name}</div>
                 <div class="text-sm text-gray-400 mt-1">
                   {session.main_device} vs {session.ref_device}
                 </div>
               </div>
-              <div class="text-right">
-                <div class="text-sm text-gray-400">
-                  {session.success_count}/{session.task_count} tasks
+              <div class="text-right flex-shrink-0 flex items-start gap-2">
+                <div>
+                  <div class="text-sm text-gray-400">
+                    {session.success_count}/{session.task_count} tasks
+                  </div>
+                  <div class="text-xs text-gray-500 mt-1">
+                    {new Date(session.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                  </div>
                 </div>
-                <div class="text-xs text-gray-500 mt-1">
-                  {new Date(session.created_at).toLocaleDateString()}
-                </div>
+                {#if confirmingDelete === session.id}
+                  <div class="flex gap-1">
+                    <button
+                      class="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                      onclick={(e) => handleDelete(e, session.id)}
+                    >
+                      Confirm
+                    </button>
+                    <button
+                      class="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-500 text-gray-200 rounded transition-colors"
+                      onclick={cancelDelete}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                {:else}
+                  <button
+                    class="opacity-0 group-hover:opacity-100 p-1 text-gray-500 hover:text-red-400 transition-all"
+                    onclick={(e) => handleDelete(e, session.id)}
+                    title="Delete session"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                  </button>
+                {/if}
               </div>
             </div>
           </button>
@@ -74,3 +119,19 @@
     {/if}
   </div>
 </div>
+
+<style>
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #4b5563;
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+  }
+</style>
