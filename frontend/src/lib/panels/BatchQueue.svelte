@@ -43,7 +43,7 @@
           const attrs = graph.getNodeAttributes(current);
           result.push({
             id: current,
-            name: attrs.label as string || current,
+            name: attrs.nodeName as string || current,
             type: attrs.opType as string || '',
           });
         }

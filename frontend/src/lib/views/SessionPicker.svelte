@@ -11,6 +11,22 @@
   } = $props();
 
   let confirmingDelete: string | null = $state(null);
+  let selectedIndex = $state(-1);
+
+  function handleKeydown(e: KeyboardEvent) {
+    const len = sessionStore.sessions.length;
+    if (len === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      selectedIndex = Math.min(selectedIndex + 1, len - 1);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      selectedIndex = Math.max(selectedIndex - 1, 0);
+    } else if (e.key === 'Enter' && selectedIndex >= 0 && selectedIndex < len) {
+      e.preventDefault();
+      onsessionselected(sessionStore.sessions[selectedIndex].id);
+    }
+  }
 
   function handleDelete(e: MouseEvent, sessionId: string) {
     e.stopPropagation();
@@ -28,7 +44,15 @@
   }
 
   onMount(() => {
-    sessionStore.fetchSessions();
+    sessionStore.fetchSessions().then(() => {
+      const sessions = sessionStore.sessions;
+      if (sessions.length === 0) return;
+      const lastId = sessionStore.lastSessionId;
+      const idx = lastId ? sessions.findIndex(s => s.id === lastId) : -1;
+      selectedIndex = idx >= 0 ? idx : 0;
+    });
+    document.addEventListener('keydown', handleKeydown);
+    return () => document.removeEventListener('keydown', handleKeydown);
   });
 </script>
 
@@ -51,9 +75,9 @@
       </div>
     {:else}
       <div class="space-y-3 mb-6 max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin">
-        {#each sessionStore.sessions as session (session.id)}
+        {#each sessionStore.sessions as session, i (session.id)}
           <button
-            class="group w-full text-left p-4 bg-gray-800 hover:bg-gray-750 rounded-lg border border-gray-700 hover:border-gray-600 transition-colors"
+            class="group w-full text-left p-4 bg-gray-800 hover:bg-gray-750 rounded-lg border transition-colors {i === selectedIndex ? 'border-blue-500 bg-gray-750' : 'border-gray-700 hover:border-gray-600'}"
             onclick={() => onsessionselected(session.id)}
           >
             <div class="flex justify-between items-start">

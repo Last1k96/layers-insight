@@ -12,7 +12,9 @@ class SessionStore {
     try {
       const res = await fetch('/api/sessions');
       if (!res.ok) throw new Error(`Failed to fetch sessions: ${res.statusText}`);
-      this.sessions = await res.json();
+      const data: SessionInfo[] = await res.json();
+      data.sort((a, b) => b.created_at.localeCompare(a.created_at));
+      this.sessions = data;
     } catch (e: any) {
       this.error = e.message;
     } finally {
@@ -48,11 +50,16 @@ class SessionStore {
       const res = await fetch(`/api/sessions/${sessionId}`);
       if (!res.ok) throw new Error(`Failed to load session: ${res.statusText}`);
       this.currentSession = await res.json();
+      localStorage.setItem('lastSessionId', sessionId);
     } catch (e: any) {
       this.error = e.message;
     } finally {
       this.loading = false;
     }
+  }
+
+  get lastSessionId(): string | null {
+    return localStorage.getItem('lastSessionId');
   }
 
   async deleteSession(sessionId: string): Promise<void> {
