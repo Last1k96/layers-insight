@@ -1,4 +1,5 @@
 import type { InferenceTask, TaskStatus } from './types';
+import { graphStore } from './graph.svelte';
 
 class QueueStore {
   tasks = $state<InferenceTask[]>([]);
@@ -21,12 +22,22 @@ class QueueStore {
   }
 
   get sortedTasks(): InferenceTask[] {
-    const success = this.tasks.filter(t => t.status === 'success');
-    const failed = this.tasks.filter(t => t.status === 'failed');
+    const nodes = graphStore.graphData?.nodes;
+    const orderMap = new Map<string, number>();
+    if (nodes) {
+      nodes.forEach((n, i) => orderMap.set(n.id, i));
+    }
+
+    const done = this.tasks
+      .filter(t => t.status === 'success' || t.status === 'failed')
+      .sort((a, b) => (orderMap.get(a.node_id) ?? 0) - (orderMap.get(b.node_id) ?? 0));
+
     const executing = this.tasks.filter(t => t.status === 'executing');
     const waiting = this.tasks.filter(t => t.status === 'waiting');
-    return [...success, ...failed, ...executing, ...waiting];
+
+    return [...done, ...executing, ...waiting];
   }
+
 
   addTask(task: InferenceTask): void {
     const existing = this.tasks.findIndex(t => t.task_id === task.task_id);

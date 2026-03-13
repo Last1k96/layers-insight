@@ -36,6 +36,13 @@
       </div>
     {:else}
       {#each queueStore.filteredTasks as task, i (task.task_id)}
+        {#if i > 0 && (task.status === 'executing' || task.status === 'waiting') && (queueStore.filteredTasks[i - 1].status === 'success' || queueStore.filteredTasks[i - 1].status === 'failed')}
+          <div class="flex items-center gap-2 px-3 py-1 bg-gray-800/50">
+            <div class="flex-1 h-px bg-gray-600"></div>
+            <span class="text-[10px] text-gray-500 uppercase tracking-wider shrink-0">Pending</span>
+            <div class="flex-1 h-px bg-gray-600"></div>
+          </div>
+        {/if}
         <div
           class="w-full text-left px-3 py-2 text-sm border-b border-gray-700/50 hover:bg-gray-700/50 flex items-center gap-2 transition-colors cursor-pointer"
           class:bg-gray-700={i === queueStore.selectedIndex}
