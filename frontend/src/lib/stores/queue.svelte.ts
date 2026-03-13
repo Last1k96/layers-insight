@@ -99,6 +99,12 @@ class QueueStore {
     this.selectedIndex = -1;
   }
 
+  selectByNodeId(nodeId: string | null): void {
+    if (!nodeId) { this.selectedIndex = -1; return; }
+    const idx = this.filteredTasks.findIndex(t => t.node_id === nodeId);
+    this.selectedIndex = idx;
+  }
+
   moveSelection(direction: 1 | -1): InferenceTask | null {
     const tasks = this.filteredTasks;
     if (tasks.length === 0) return null;

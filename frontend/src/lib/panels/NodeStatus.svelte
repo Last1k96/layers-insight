@@ -109,6 +109,17 @@
     if (Math.abs(v) < 0.0001 && v !== 0) return v.toExponential(4);
     return v.toFixed(6);
   }
+
+  function fmt4(v: number | undefined | null): string {
+    if (v === undefined || v === null) return '-';
+    if (Math.abs(v) < 0.0001 && v !== 0) return v.toExponential(4);
+    return v.toFixed(4);
+  }
+
+  function diff(a: number | undefined | null, b: number | undefined | null): number | null {
+    if (a == null || b == null) return null;
+    return a - b;
+  }
 </script>
 
 <div class="p-3 overflow-y-auto h-full text-sm">
@@ -177,25 +188,43 @@
 
       <!-- Per-device results -->
       {#if nodeStatus.mainResult || nodeStatus.refResult}
-        <div class="mt-3 space-y-2">
-          <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Device Outputs</h4>
-          {#each [nodeStatus.mainResult, nodeStatus.refResult].filter(Boolean) as result}
-            {#if result}
-              <div class="bg-gray-900/50 rounded p-2">
-                <div class="font-medium text-xs text-gray-300 mb-1">{result.device}</div>
-                <div class="grid grid-cols-2 gap-x-3 text-xs">
-                  <span class="text-gray-500">Min</span>
-                  <span class="font-mono text-right">{formatValue(result.min_val)}</span>
-                  <span class="text-gray-500">Max</span>
-                  <span class="font-mono text-right">{formatValue(result.max_val)}</span>
-                  <span class="text-gray-500">Mean</span>
-                  <span class="font-mono text-right">{formatValue(result.mean_val)}</span>
-                  <span class="text-gray-500">Std</span>
-                  <span class="font-mono text-right">{formatValue(result.std_val)}</span>
-                </div>
-              </div>
-            {/if}
-          {/each}
+        {@const main = nodeStatus.mainResult}
+        {@const ref = nodeStatus.refResult}
+        <div class="mt-3">
+          <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Device Outputs</h4>
+          <table class="w-full text-xs table-fixed">
+            <colgroup>
+              <col class="w-[20%]" />
+              <col class="w-[26.6%]" />
+              <col class="w-[26.6%]" />
+              {#if main && ref}<col class="w-[26.6%]" />{/if}
+            </colgroup>
+            <thead>
+              <tr class="text-gray-500">
+                <th class="py-1 text-left font-normal"></th>
+                {#if main}<th class="py-1 text-right font-normal">{main.device}</th>{/if}
+                {#if ref}<th class="py-1 text-right font-normal">{ref.device}</th>{/if}
+                {#if main && ref}<th class="py-1 text-right font-normal">Diff</th>{/if}
+              </tr>
+            </thead>
+            <tbody>
+              {#each [
+                { label: 'Min', key: 'min_val' as const },
+                { label: 'Max', key: 'max_val' as const },
+                { label: 'Mean', key: 'mean_val' as const },
+                { label: 'Std', key: 'std_val' as const },
+              ] as row}
+                <tr class="border-t border-gray-700/50">
+                  <td class="py-1 text-gray-400">{row.label}</td>
+                  {#if main}<td class="py-1 text-right font-mono truncate">{fmt4(main[row.key])}</td>{/if}
+                  {#if ref}<td class="py-1 text-right font-mono truncate">{fmt4(ref[row.key])}</td>{/if}
+                  {#if main && ref}
+                    <td class="py-1 text-right font-mono text-yellow-400 truncate">{fmt4(diff(main[row.key], ref[row.key]))}</td>
+                  {/if}
+                </tr>
+              {/each}
+            </tbody>
+          </table>
         </div>
       {/if}
 

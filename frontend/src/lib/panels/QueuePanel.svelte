@@ -55,7 +55,7 @@
           <span class="flex-1 truncate font-mono text-xs">{task.node_name}</span>
 
           <!-- Op type -->
-          <span class="text-gray-500 text-xs truncate max-w-[80px]">{task.node_type}</span>
+          <span class="text-gray-500 text-xs shrink-0">{task.node_type}</span>
 
           <!-- MSE for completed -->
           {#if task.status === 'success' && task.metrics}

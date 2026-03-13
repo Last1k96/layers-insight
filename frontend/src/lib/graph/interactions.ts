@@ -113,6 +113,18 @@ export function setupInteractions(): void {
       return;
     }
 
+    // Plain arrow up/down: navigate queue list
+    if (!e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      const task = queueStore.moveSelection(e.key === 'ArrowDown' ? 1 : -1);
+      if (task) {
+        graphStore.selectNode(task.node_id);
+        centerOnNode(task.node_id);
+        refreshRenderer();
+      }
+      return;
+    }
+
     if (e.ctrlKey && graph && graphStore.selectedNodeId) {
       const nodeId = graphStore.selectedNodeId;
       let targetId: string | null = null;

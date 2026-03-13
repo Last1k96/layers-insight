@@ -1,4 +1,5 @@
 import type { GraphData, GraphNode, TaskStatus, AccuracyMetrics, DeviceResult } from './types';
+import { queueStore } from './queue.svelte';
 
 export interface NodeStatus {
   status: TaskStatus;
@@ -46,6 +47,7 @@ class GraphStore {
 
   selectNode(nodeId: string | null): void {
     this.selectedNodeId = nodeId;
+    queueStore.selectByNodeId(nodeId);
   }
 
   updateNodeStatus(nodeId: string, status: NodeStatus): void {
