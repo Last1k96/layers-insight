@@ -3,9 +3,19 @@ import { graphStore } from './graph.svelte';
 
 class QueueStore {
   tasks = $state<InferenceTask[]>([]);
-  selectedIndex = $state(-1);
+  selectedTaskId = $state<string | null>(null);
   filterText = $state('');
   filterStatus = $state<TaskStatus | 'all'>('all');
+
+  get selectedIndex(): number {
+    if (!this.selectedTaskId) return -1;
+    return this.filteredTasks.findIndex(t => t.task_id === this.selectedTaskId);
+  }
+
+  set selectedIndex(idx: number) {
+    const tasks = this.filteredTasks;
+    this.selectedTaskId = idx >= 0 && idx < tasks.length ? tasks[idx].task_id : null;
+  }
 
   get filteredTasks(): InferenceTask[] {
     let result = this.sortedTasks;
@@ -73,6 +83,7 @@ class QueueStore {
       if (!res.ok) throw new Error(`Enqueue failed: ${res.statusText}`);
       const task: InferenceTask = await res.json();
       this.addTask(task);
+      this.selectedTaskId = task.task_id;
       return task;
     } catch (e) {
       console.error('Enqueue failed:', e);
@@ -102,25 +113,29 @@ class QueueStore {
 
   loadTasks(tasks: InferenceTask[]): void {
     this.tasks = tasks;
-    this.selectedIndex = -1;
+    this.selectedTaskId = null;
   }
 
   clear(): void {
     this.tasks = [];
-    this.selectedIndex = -1;
+    this.selectedTaskId = null;
   }
 
   selectByNodeId(nodeId: string | null): void {
-    if (!nodeId) { this.selectedIndex = -1; return; }
-    const idx = this.filteredTasks.findIndex(t => t.node_id === nodeId);
-    this.selectedIndex = idx;
+    if (!nodeId) { this.selectedTaskId = null; return; }
+    const task = this.filteredTasks.find(t => t.node_id === nodeId);
+    this.selectedTaskId = task?.task_id ?? null;
   }
 
   moveSelection(direction: 1 | -1): InferenceTask | null {
     const tasks = this.filteredTasks;
     if (tasks.length === 0) return null;
-    this.selectedIndex = Math.max(0, Math.min(tasks.length - 1, this.selectedIndex + direction));
-    return tasks[this.selectedIndex];
+    const currentIdx = this.selectedTaskId
+      ? tasks.findIndex(t => t.task_id === this.selectedTaskId)
+      : -1;
+    const newIdx = Math.max(0, Math.min(tasks.length - 1, currentIdx + direction));
+    this.selectedTaskId = tasks[newIdx].task_id;
+    return tasks[newIdx];
   }
 }
 
