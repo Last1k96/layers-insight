@@ -26,23 +26,27 @@ async def get_graph(session_id: str, request: Request) -> JSONResponse:
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    # Ensure model is loaded for inference (even if graph is cached)
+    ov_core = request.app.state.ov_core
+    if session_id not in request.app.state.models and ov_core is not None:
+        try:
+            model = load_model(session.config.model_path, ov_core)
+            request.app.state.models[session_id] = model
+        except Exception as e:
+            if not session_svc.load_graph_cache(session_id):
+                raise HTTPException(status_code=400, detail=f"Failed to load model: {e}")
+
     # Check for cached graph
     cached = session_svc.load_graph_cache(session_id)
     if cached:
         return JSONResponse(content=cached)
 
-    # Load model and extract graph
-    ov_core = request.app.state.ov_core
     if ov_core is None:
         raise HTTPException(status_code=503, detail="OpenVINO not available")
 
-    try:
-        model = load_model(session.config.model_path, ov_core)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to load model: {e}")
-
-    # Store model in app state for inference
-    request.app.state.models[session_id] = model
+    model = request.app.state.models.get(session_id)
+    if model is None:
+        raise HTTPException(status_code=400, detail="Failed to load model")
 
     graph_data = extract_graph(model)
     positions = await compute_layout(graph_data)

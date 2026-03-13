@@ -4,6 +4,7 @@
   import { centerOnNode, refreshRenderer } from './renderer';
 
   let inputEl: HTMLInputElement;
+  let listEl: HTMLDivElement;
   let query = $state('');
   let debounceTimer: ReturnType<typeof setTimeout>;
 
@@ -21,7 +22,15 @@
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter') {
       e.preventDefault();
-      const node = graphStore.cycleSearchResult(e.shiftKey ? -1 : 1);
+      const current = graphStore.searchResults[graphStore.searchIndex];
+      if (current) {
+        graphStore.selectNode(current.id);
+        centerOnNode(current.id);
+        close();
+      }
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const node = graphStore.cycleSearchResult(e.key === 'ArrowDown' ? 1 : -1);
       if (node) {
         centerOnNode(node.id);
         refreshRenderer();
@@ -41,6 +50,15 @@
   $effect(() => {
     if (graphStore.searchVisible && inputEl) {
       inputEl.focus();
+    }
+  });
+
+  $effect(() => {
+    // Scroll the active result into view
+    const idx = graphStore.searchIndex;
+    if (idx >= 0 && listEl) {
+      const item = listEl.children[idx] as HTMLElement | undefined;
+      item?.scrollIntoView({ block: 'nearest' });
     }
   });
 </script>
@@ -69,8 +87,8 @@
       </div>
 
       {#if graphStore.searchResults.length > 0}
-        <div class="border-t border-gray-700 max-h-48 overflow-y-auto">
-          {#each graphStore.searchResults.slice(0, 10) as result, i (result.id)}
+        <div bind:this={listEl} class="border-t border-gray-700 max-h-48 overflow-y-auto">
+          {#each graphStore.searchResults as result, i (result.id)}
             <button
               class="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-700 flex justify-between"
               class:bg-gray-700={i === graphStore.searchIndex}

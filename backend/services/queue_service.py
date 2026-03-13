@@ -43,6 +43,7 @@ class QueueService:
 
     async def enqueue(self, task: InferenceTask) -> InferenceTask:
         """Add a task to the queue."""
+        self._ensure_worker_alive()
         self._tasks[task.task_id] = task
         self._task_order.append(task.task_id)
         await self._queue.put(task)
@@ -124,6 +125,11 @@ class QueueService:
         if session_id:
             tasks = [t for t in tasks if t.session_id == session_id]
         return tasks
+
+    def _ensure_worker_alive(self) -> None:
+        """Restart the worker if it died unexpectedly."""
+        if self._worker_task is None or self._worker_task.done():
+            self._worker_task = asyncio.create_task(self._worker_loop())
 
     async def _worker_loop(self) -> None:
         """Sequential worker: process one task at a time."""
