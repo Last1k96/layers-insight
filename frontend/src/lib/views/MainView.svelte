@@ -9,17 +9,47 @@
   import ErrorBanner from '../panels/ErrorBanner.svelte';
   import BottomLogPanel from '../panels/BottomLogPanel.svelte';
   import { sessionStore } from '../stores/session.svelte';
-  import { graphStore } from '../stores/graph.svelte';
+  import { graphStore, type NodeStatus as NodeStatusData } from '../stores/graph.svelte';
+  import { queueStore } from '../stores/queue.svelte';
+  import { cacheMetrics } from '../stores/metrics.svelte';
   import { connect, disconnect, setConnectionCallbacks } from '../ws/client';
   import { onMount, onDestroy } from 'svelte';
 
   let wsDisconnected = $state(false);
+
+  function restoreSessionTasks(): void {
+    const session = sessionStore.currentSession;
+    if (!session || !session.tasks || session.tasks.length === 0) return;
+
+    queueStore.loadTasks(session.tasks);
+
+    for (const task of session.tasks) {
+      const nodeStatus: NodeStatusData = {
+        status: task.status,
+        taskId: task.task_id,
+        metrics: task.metrics,
+        mainResult: task.main_result,
+        refResult: task.ref_result,
+        errorDetail: task.error_detail,
+      };
+      graphStore.updateNodeStatus(task.node_id, nodeStatus);
+
+      if (task.status === 'success' && task.metrics) {
+        cacheMetrics(task.task_id, {
+          metrics: task.metrics,
+          main_result: task.main_result,
+          ref_result: task.ref_result,
+        });
+      }
+    }
+  }
 
   onMount(() => {
     const session = sessionStore.currentSession;
     if (session) {
       graphStore.fetchGraph(session.id);
       connect(session.id);
+      restoreSessionTasks();
 
       setConnectionCallbacks(
         () => { wsDisconnected = true; },
@@ -30,6 +60,7 @@
 
   onDestroy(() => {
     disconnect();
+    queueStore.clear();
   });
 </script>
 

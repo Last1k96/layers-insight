@@ -89,6 +89,16 @@ class QueueStore {
     }
   }
 
+  loadTasks(tasks: InferenceTask[]): void {
+    this.tasks = tasks;
+    this.selectedIndex = -1;
+  }
+
+  clear(): void {
+    this.tasks = [];
+    this.selectedIndex = -1;
+  }
+
   moveSelection(direction: 1 | -1): InferenceTask | null {
     const tasks = this.filteredTasks;
     if (tasks.length === 0) return null;
