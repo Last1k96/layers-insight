@@ -12,8 +12,8 @@ export const GLYPH_FLOATS = 12;
 /** Bytes per glyph instance */
 export const GLYPH_BYTES = GLYPH_FLOATS * 4;
 
-/** Graph-space font size (matches SVG renderer's FONT_SIZE = 11) */
-export const GRAPH_FONT_SIZE = 11;
+/** Graph-space font size */
+export const GRAPH_FONT_SIZE = 16;
 
 /** Node corner radius in graph units */
 export const NODE_RADIUS = 5;

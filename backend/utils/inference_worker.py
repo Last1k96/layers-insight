@@ -83,37 +83,21 @@ def main() -> None:
         cut_model.validate_nodes_and_infer_types()
         _log("info", f"Cut model created: {len(reachable_params)} parameters, {len(new_outputs)} outputs")
 
-        # Fold Constant→Convert and all-constant subexpressions to avoid
-        # crashes in plugins that don't handle Convert(f16→f32) / Convert(i8→f32).
-        n_folded = _fold_constant_subexpressions(cut_model)
-        if n_folded > 0:
-            _log("info", f"Folded {n_folded} constant subexpressions")
-
-        # Rebuild FakeQuantize nodes — IR-deserialized FQ nodes crash some
-        # plugins (e.g. TEMPLATE).  Fresh opset13 FQ nodes work fine.
-        n_fq = _rebuild_fakequantize_nodes(cut_model)
-        if n_fq > 0:
-            _log("info", f"Rebuilt {n_fq} FakeQuantize nodes")
-
-        if n_folded > 0 or n_fq > 0:
-            cut_model = ov.Model(
-                cut_model.get_results(), cut_model.get_parameters(),
-                cut_model.get_friendly_name(),
-            )
-            cut_model.validate_nodes_and_infer_types()
-
-        # Extract clean graph as pure numpy/python data, then destroy
-        # the read Core to avoid Core-corruption issues with plugins
-        # like TEMPLATE that crash when compile_model is called on a
-        # Core that previously called read_model on FP16-INT8 IR.
-        ops_data, result_target = _extract_graph_data(cut_model, node_name)
+        # Serialize cut model as-is to temp files, then destroy the read Core
+        # to avoid Core-corruption issues with plugins like TEMPLATE that
+        # crash when compile_model is called on a Core that previously
+        # called read_model on FP16-INT8 IR.
+        import tempfile
+        tmp_model_dir = tempfile.mkdtemp(prefix="ov_cut_")
+        tmp_xml = str(Path(tmp_model_dir) / "cut_model.xml")
+        ov.save_model(cut_model, tmp_xml)
         model_params = _extract_params(cut_model)
-        _log("info", f"Extracted {len(ops_data)} ops as pure data")
+        _log("info", f"Serialized cut model to {tmp_xml}")
 
         del cut_model, model, target_op, read_core
         gc.collect()
 
-        # --- Phase 2: Rebuild model with fresh Core ---
+        # --- Phase 2: Reload model with fresh Core ---
         core = ov.Core()
 
         if ov_path:
@@ -130,8 +114,12 @@ def main() -> None:
 
         _log("info", f"Fresh core devices: {core.available_devices}")
 
-        cut_model = _rebuild_model_from_data(ov, ops_data, result_target)
-        _log("info", f"Rebuilt model: {len(list(cut_model.get_ordered_ops()))} ops")
+        cut_model = core.read_model(tmp_xml)
+        _log("info", f"Reloaded cut model: {len(list(cut_model.get_ordered_ops()))} ops")
+
+        # Clean up temp files
+        import shutil
+        shutil.rmtree(tmp_model_dir, ignore_errors=True)
 
         # Prepare inputs (use cut_model's params, not original model's)
         _log("info", "Preparing inputs...")
@@ -142,7 +130,8 @@ def main() -> None:
 
         # Infer on main device
         _log("info", f"Compiling model for {main_device}...")
-        main_out, main_result, main_err = _run_on_device(core, cut_model, main_device, inputs)
+        main_model = _prepare_model_for_device(ov, cut_model, main_device)
+        main_out, main_result, main_err = _run_on_device(core, main_model, main_device, inputs)
         if main_err:
             _log("error", main_err)
             _emit({"error": main_err})
@@ -151,7 +140,8 @@ def main() -> None:
 
         # Infer on reference device
         _log("info", f"Compiling model for {ref_device}...")
-        ref_out, ref_result, ref_err = _run_on_device(core, cut_model, ref_device, inputs)
+        ref_model = _prepare_model_for_device(ov, cut_model, ref_device)
+        ref_out, ref_result, ref_err = _run_on_device(core, ref_model, ref_device, inputs)
         if ref_err:
             _log("error", ref_err)
             _emit({"error": ref_err})
@@ -180,140 +170,36 @@ def main() -> None:
         _emit({"error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()})
 
 
-def _fold_constant_subexpressions(model):
-    """Fold Constant→Convert chains and all-constant ops to avoid plugin crashes.
 
-    Some plugins (e.g. TEMPLATE) crash on Convert(f16→f32) or Convert(i8→f32)
-    during compilation.  These always originate from Constant→Convert patterns
-    in IR-loaded FP16-INT8 models.  We pre-compute the conversion in numpy and
-    replace the Convert with a new Constant of the target type.
+def _prepare_model_for_device(ov, model, device: str):
+    """Return a model suitable for the given device.
 
-    Also folds Multiply/Add/Subtract where both inputs are Constants.
+    The TEMPLATE plugin crashes on ANY IR-deserialized node.  Only models
+    built entirely from fresh opset13 API calls work.  For TEMPLATE we
+    extract the graph as pure data and rebuild every node from scratch.
+
+    For well-behaved plugins (CPU, GPU, etc.) we return the original
+    IR-loaded model so inference sees the exact original subgraph.
     """
-    import openvino as ov
+    if device != "TEMPLATE":
+        return model
 
-    _NP_TYPES = {
-        'float32': np.float32, 'float16': np.float16,
-        'int32': np.int32, 'int64': np.int64,
-        'int8_t': np.int8, 'uint8_t': np.uint8,
-    }
-
-    def _np_type(ov_et):
-        s = str(ov_et)
-        for k, v in _NP_TYPES.items():
-            if k in s:
-                return v
-        return np.float32
-
-    changed = True
-    total = 0
-    while changed:
-        changed = False
-        for op in list(model.get_ordered_ops()):
-            t = op.get_type_name()
-            if t in ('Parameter', 'Result', 'Constant'):
-                continue
-            n_in = op.get_input_size()
-            if n_in == 0:
-                continue
-            all_const = all(
-                op.input(i).get_source_output().get_node().get_type_name() == 'Constant'
-                for i in range(n_in)
-            )
-            if not all_const:
-                continue
-            inputs_data = [
-                op.input(i).get_source_output().get_node().get_data()
-                for i in range(n_in)
-            ]
-            out_et = op.get_output_element_type(0)
-            np_t = _np_type(out_et)
-            try:
-                if t == 'Convert':
-                    r = inputs_data[0].astype(np_t)
-                elif t == 'Multiply':
-                    r = (inputs_data[0].astype(np.float64) * inputs_data[1].astype(np.float64)).astype(np_t)
-                elif t == 'Add':
-                    r = (inputs_data[0].astype(np.float64) + inputs_data[1].astype(np.float64)).astype(np_t)
-                elif t == 'Subtract':
-                    r = (inputs_data[0].astype(np.float64) - inputs_data[1].astype(np.float64)).astype(np_t)
-                elif t == 'Concat':
-                    axis = op.get_attributes().get('axis', 0)
-                    r = np.concatenate(inputs_data, axis=axis).astype(np_t)
-                elif t == 'Reshape':
-                    r = inputs_data[0].reshape(inputs_data[1].tolist()).astype(np_t)
-                elif t == 'Gather':
-                    r = np.take(inputs_data[0], inputs_data[1],
-                                axis=int(inputs_data[2])).astype(np_t)
-                elif t == 'ShapeOf':
-                    ps = op.input(0).get_source_output().get_node().get_output_partial_shape(0)
-                    r = np.array(list(ps.get_shape()), dtype=np_t)
-                else:
-                    continue
-                nc = ov.opset13.constant(r, dtype=out_et)
-                for ti in list(op.output(0).get_target_inputs()):
-                    ti.replace_source_output(nc.output(0))
-                changed = True
-                total += 1
-            except Exception:
-                pass
-
-    return total
+    _log("info", f"Rebuilding model from scratch for {device}...")
+    ops_data, result_target = _extract_graph_data(model)
+    rebuilt = _rebuild_model_from_data(ov, ops_data, result_target)
+    _log("info", f"Rebuilt model: {len(list(rebuilt.get_ordered_ops()))} ops "
+         f"(original: {len(list(model.get_ordered_ops()))})")
+    return rebuilt
 
 
-def _rebuild_fakequantize_nodes(model):
-    """Rebuild FakeQuantize nodes using opset13 API.
-
-    The TEMPLATE plugin (and potentially others) crashes on FakeQuantize
-    nodes deserialized from IR.  Rebuilding them with fresh opset13 nodes
-    — along with their constant inputs — avoids the crash while keeping
-    identical semantics.
-    """
-    import openvino as ov
-
-    count = 0
-    for op in list(model.get_ordered_ops()):
-        if op.get_type_name() != 'FakeQuantize':
-            continue
-        levels = op.get_attributes()['levels']
-        data_in = op.input(0).get_source_output()
-        new_inputs = [data_in]
-        for i in range(1, 5):
-            src = op.input(i).get_source_output().get_node()
-            if src.get_type_name() == 'Constant':
-                data = src.get_data().copy()
-                # Reshape scalar (0-d) constants to [1] — some plugins
-                # crash on 0-d FakeQuantize bound constants.
-                if data.ndim == 0:
-                    data = data.reshape([1])
-                et = src.get_output_element_type(0)
-                new_c = ov.opset13.constant(data, dtype=et)
-                new_inputs.append(new_c.output(0))
-            else:
-                new_inputs.append(op.input(i).get_source_output())
-        new_fq = ov.opset13.fake_quantize(
-            new_inputs[0], new_inputs[1], new_inputs[2],
-            new_inputs[3], new_inputs[4], levels,
-        )
-        for ti in list(op.output(0).get_target_inputs()):
-            ti.replace_source_output(new_fq.output(0))
-        count += 1
-    return count
-
-
-def _extract_graph_data(model, target_name: str) -> tuple[list[dict], str]:
-    """Extract a clean OV model graph as pure python/numpy data.
-
-    Returns (ops_data, result_target_name) where ops_data is a list of dicts
-    describing each op (type, name, data/shape/attrs/inputs) and
-    result_target_name is the name of the node feeding into the Result.
-    """
+def _extract_graph_data(model) -> tuple[list[dict], str]:
+    """Extract an OV model graph as pure python/numpy data."""
     ops_data = []
-    result_target = target_name
+    result_target = ""
     for op in model.get_ordered_ops():
         t = op.get_type_name()
         name = op.get_friendly_name()
-        entry = {"type": t, "name": name}
+        entry: dict = {"type": t, "name": name}
         if t == "Constant":
             entry["data"] = op.get_data().copy()
             entry["et"] = str(op.get_output_element_type(0))
@@ -329,30 +215,97 @@ def _extract_graph_data(model, target_name: str) -> tuple[list[dict], str]:
                 op.input(i).get_source_output().get_node().get_friendly_name()
                 for i in range(op.get_input_size())
             ]
-            entry["out_et"] = str(op.get_output_element_type(0))
+            entry["n_outputs"] = op.get_output_size()
+            for oi in range(op.get_output_size()):
+                entry[f"out_et_{oi}"] = str(op.get_output_element_type(oi))
         ops_data.append(entry)
     return ops_data, result_target
 
 
 def _rebuild_model_from_data(ov, ops_data: list[dict], result_target: str):
-    """Rebuild an OV model from extracted pure data using opset13 API.
-
-    This creates entirely fresh OV nodes with no references to any
-    previously loaded IR, avoiding Core corruption issues.
-    """
-    _OV_ET_MAP = {
+    """Rebuild an OV model from extracted data using opset13 API."""
+    _OV_ET = {
         "f32": ov.Type.f32, "f16": ov.Type.f16,
         "i32": ov.Type.i32, "i64": ov.Type.i64,
         "i8": ov.Type.i8, "u8": ov.Type.u8,
+        "boolean": ov.Type.boolean,
     }
 
-    def _parse_et(et_str):
-        for k, v in _OV_ET_MAP.items():
-            if k in et_str:
+    def _et(s):
+        for k, v in _OV_ET.items():
+            if k in s:
                 return v
         return ov.Type.f32
 
-    node_map = {}
+    # First pass: fold all-constant subexpressions so they become
+    # single Constants (avoids needing to rebuild Convert, Reshape, etc.
+    # on constant-only paths).
+    _NP = {
+        'float32': np.float32, 'float16': np.float16,
+        'int32': np.int32, 'int64': np.int64,
+        'int8_t': np.int8, 'uint8_t': np.uint8,
+    }
+
+    def _npt(et_str):
+        for k, v in _NP.items():
+            if k in et_str:
+                return v
+        return np.float32
+
+    const_data: dict[str, tuple[np.ndarray, str]] = {}
+    for e in ops_data:
+        if e["type"] == "Constant":
+            const_data[e["name"]] = (e["data"], e.get("et", "f32"))
+
+    changed = True
+    while changed:
+        changed = False
+        new_ops = []
+        for e in ops_data:
+            t = e["type"]
+            if t in ("Parameter", "Constant"):
+                new_ops.append(e)
+                continue
+            inputs = e.get("inputs", [])
+            if not inputs or not all(n in const_data for n in inputs):
+                new_ops.append(e)
+                continue
+            # All inputs are constants — try to fold
+            inp = [const_data[n][0] for n in inputs]
+            out_et_str = e.get("out_et_0", "f32")
+            npt = _npt(out_et_str)
+            r = None
+            try:
+                if t == 'Convert':
+                    r = inp[0].astype(npt)
+                elif t == 'Multiply':
+                    r = (inp[0].astype(np.float64) * inp[1].astype(np.float64)).astype(npt)
+                elif t == 'Add':
+                    r = (inp[0].astype(np.float64) + inp[1].astype(np.float64)).astype(npt)
+                elif t == 'Subtract':
+                    r = (inp[0].astype(np.float64) - inp[1].astype(np.float64)).astype(npt)
+                elif t == 'Concat':
+                    r = np.concatenate(inp, axis=e["attrs"].get('axis', 0)).astype(npt)
+                elif t == 'Reshape':
+                    r = inp[0].reshape(inp[1].tolist()).astype(npt)
+                elif t == 'Gather':
+                    r = np.take(inp[0], inp[1], axis=int(inp[2])).astype(npt)
+                elif t == 'ShapeOf':
+                    src_e = next((x for x in ops_data if x["name"] == inputs[0]), None)
+                    if src_e and src_e["type"] == "Constant":
+                        r = np.array(list(src_e["data"].shape), dtype=npt)
+            except Exception:
+                pass
+            if r is not None:
+                const_data[e["name"]] = (r, out_et_str)
+                new_ops.append({"type": "Constant", "name": e["name"], "data": r, "et": out_et_str})
+                changed = True
+            else:
+                new_ops.append(e)
+        ops_data = new_ops
+
+    # Second pass: build fresh opset13 nodes
+    node_map: dict[str, object] = {}
     params = []
     skipped = []
 
@@ -360,7 +313,7 @@ def _rebuild_model_from_data(ov, ops_data: list[dict], result_target: str):
         t = e["type"]
         name = e["name"]
         if t == "Parameter":
-            et = _parse_et(e.get("et", "f32"))
+            et = _et(e.get("et", "f32"))
             p = ov.opset13.parameter(shape=e["shape"], dtype=et)
             p.set_friendly_name(name)
             node_map[name] = p.output(0)
@@ -369,18 +322,12 @@ def _rebuild_model_from_data(ov, ops_data: list[dict], result_target: str):
             data = e["data"]
             if data.ndim == 0:
                 data = data.reshape([1])
-            et = _parse_et(e.get("et", "f32"))
+            et = _et(e.get("et", "f32"))
             c = ov.opset13.constant(data, dtype=et)
             node_map[name] = c.output(0)
         else:
-            inputs = []
-            missing = False
-            for n in e["inputs"]:
-                if n not in node_map:
-                    missing = True
-                    break
-                inputs.append(node_map[n])
-            if missing:
+            inputs = [node_map[n] for n in e["inputs"] if n in node_map]
+            if len(inputs) != len(e["inputs"]):
                 skipped.append((t, name))
                 continue
             a = e.get("attrs", {})
@@ -390,69 +337,196 @@ def _rebuild_model_from_data(ov, ops_data: list[dict], result_target: str):
                     skipped.append((t, name))
                     continue
                 node_map[name] = node.output(0)
-            except Exception:
+            except Exception as exc:
+                _log("info", f"Failed to build {t} '{name}': {exc}")
                 skipped.append((t, name))
 
     if skipped:
-        _log("info", f"Skipped {len(skipped)} ops during rebuild: {skipped[:5]}")
+        _log("info", f"Skipped {len(skipped)} ops during rebuild: {skipped[:10]}")
+
+    if result_target not in node_map:
+        raise RuntimeError(
+            f"Cannot rebuild model for TEMPLATE: target node '{result_target}' "
+            f"could not be built. Skipped ops: {skipped}"
+        )
 
     m = ov.Model([node_map[result_target]], params, f"rebuilt_{result_target}")
     m.validate_nodes_and_infer_types()
     return m
 
 
+def _ensure_i64(ov, inp):
+    """If input is a float constant, cast its data to i64 and return a new constant."""
+    node = inp.get_node()
+    if node.get_type_name() == "Constant" and "int" not in str(node.get_output_element_type(0)):
+        data = node.get_data().astype(np.int64)
+        return ov.opset13.constant(data, dtype=ov.Type.i64).output(0)
+    return inp
+
+
 def _build_op(ov, op_type: str, inputs: list, attrs: dict):
     """Build a single opset13 op node from type, inputs and attributes."""
+    o = ov.opset13
     if op_type == "FakeQuantize":
-        return ov.opset13.fake_quantize(
-            inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], attrs["levels"],
-        )
+        return o.fake_quantize(inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], attrs["levels"])
     elif op_type == "Convolution":
-        return ov.opset13.convolution(
-            inputs[0], inputs[1], attrs["strides"],
-            attrs["pads_begin"], attrs["pads_end"], attrs["dilations"],
-        )
+        return o.convolution(inputs[0], inputs[1], attrs["strides"], attrs["pads_begin"], attrs["pads_end"], attrs["dilations"])
     elif op_type == "GroupConvolution":
-        return ov.opset13.group_convolution(
-            inputs[0], inputs[1], attrs["strides"],
-            attrs["pads_begin"], attrs["pads_end"], attrs["dilations"],
-        )
+        return o.group_convolution(inputs[0], inputs[1], attrs["strides"], attrs["pads_begin"], attrs["pads_end"], attrs["dilations"])
     elif op_type == "Add":
-        return ov.opset13.add(inputs[0], inputs[1])
+        return o.add(inputs[0], inputs[1])
     elif op_type == "Subtract":
-        return ov.opset13.subtract(inputs[0], inputs[1])
+        return o.subtract(inputs[0], inputs[1])
     elif op_type == "Multiply":
-        return ov.opset13.multiply(inputs[0], inputs[1])
+        return o.multiply(inputs[0], inputs[1])
+    elif op_type == "Divide":
+        return o.divide(inputs[0], inputs[1])
     elif op_type == "Relu":
-        return ov.opset13.relu(inputs[0])
+        return o.relu(inputs[0])
+    elif op_type == "PRelu":
+        return o.prelu(inputs[0], inputs[1])
     elif op_type == "Clamp":
-        return ov.opset13.clamp(inputs[0], attrs["min"], attrs["max"])
+        return o.clamp(inputs[0], attrs["min"], attrs["max"])
     elif op_type == "MaxPool":
-        return ov.opset13.max_pool(
-            inputs[0], attrs["strides"], attrs["pads_begin"],
-            attrs["pads_end"], attrs["kernel"],
-        )
+        return o.max_pool(inputs[0], attrs["strides"], attrs["pads_begin"], attrs["pads_end"], attrs["kernel"])
     elif op_type == "AvgPool":
-        return ov.opset13.avg_pool(
-            inputs[0], attrs["strides"], attrs["pads_begin"],
-            attrs["pads_end"], attrs["kernel"],
-            attrs.get("exclude-pad", True),
-        )
+        return o.avg_pool(inputs[0], attrs["strides"], attrs["pads_begin"], attrs["pads_end"], attrs["kernel"], attrs.get("exclude-pad", True))
     elif op_type == "MatMul":
-        return ov.opset13.matmul(
-            inputs[0], inputs[1],
-            attrs.get("transpose_a", False), attrs.get("transpose_b", False),
-        )
+        return o.matmul(inputs[0], inputs[1], attrs.get("transpose_a", False), attrs.get("transpose_b", False))
     elif op_type == "Reshape":
-        return ov.opset13.reshape(inputs[0], inputs[1], attrs.get("special_zero", False))
+        return o.reshape(inputs[0], _ensure_i64(ov, inputs[1]), attrs.get("special_zero", False))
     elif op_type == "Concat":
-        return ov.opset13.concat(inputs, attrs["axis"])
+        return o.concat(inputs, attrs["axis"])
     elif op_type == "Softmax":
-        return ov.opset13.softmax(inputs[0], attrs.get("axis", 1))
+        return o.softmax(inputs[0], attrs.get("axis", 1))
     elif op_type == "Sigmoid":
-        return ov.opset13.sigmoid(inputs[0])
+        return o.sigmoid(inputs[0])
     elif op_type == "Tanh":
-        return ov.opset13.tanh(inputs[0])
+        return o.tanh(inputs[0])
+    elif op_type == "Convert":
+        _OV_ET = {"f32": ov.Type.f32, "f16": ov.Type.f16, "i32": ov.Type.i32, "i64": ov.Type.i64, "i8": ov.Type.i8, "u8": ov.Type.u8}
+        dest = ov.Type.f32
+        for k, v in _OV_ET.items():
+            if k in attrs.get("destination_type", "f32"):
+                dest = v; break
+        return o.convert(inputs[0], dest)
+    elif op_type == "Interpolate":
+        mode = attrs.get("mode", "nearest")
+        return o.interpolate(inputs[0], inputs[1], inputs[2] if len(inputs) > 2 else inputs[1], mode)
+    elif op_type == "ShapeOf":
+        return o.shape_of(inputs[0])
+    elif op_type == "Squeeze":
+        return o.squeeze(inputs[0], inputs[1]) if len(inputs) > 1 else o.squeeze(inputs[0])
+    elif op_type == "Unsqueeze":
+        return o.unsqueeze(inputs[0], inputs[1])
+    elif op_type == "Transpose":
+        return o.transpose(inputs[0], _ensure_i64(ov, inputs[1]))
+    elif op_type == "Gather":
+        return o.gather(inputs[0], _ensure_i64(ov, inputs[1]), _ensure_i64(ov, inputs[2]))
+    elif op_type == "StridedSlice":
+        return o.strided_slice(
+            inputs[0], _ensure_i64(ov, inputs[1]), _ensure_i64(ov, inputs[2]),
+            _ensure_i64(ov, inputs[3]) if len(inputs) > 3 else _ensure_i64(ov, inputs[2]),
+            attrs.get("begin_mask", []), attrs.get("end_mask", []),
+        )
+    elif op_type == "ReduceMean":
+        return o.reduce_mean(inputs[0], inputs[1], attrs.get("keep_dims", False))
+    elif op_type == "ReduceMax":
+        return o.reduce_max(inputs[0], inputs[1], attrs.get("keep_dims", False))
+    elif op_type == "ReduceSum":
+        return o.reduce_sum(inputs[0], inputs[1], attrs.get("keep_dims", False))
+    elif op_type == "Power":
+        return o.power(inputs[0], inputs[1])
+    elif op_type == "Sqrt":
+        return o.sqrt(inputs[0])
+    elif op_type == "Exp":
+        return o.exp(inputs[0])
+    elif op_type == "Log":
+        return o.log(inputs[0])
+    elif op_type == "Abs":
+        return o.abs(inputs[0])
+    elif op_type == "Negative":
+        return o.negative(inputs[0])
+    elif op_type == "Floor":
+        return o.floor(inputs[0])
+    elif op_type == "Ceiling":
+        return o.ceiling(inputs[0])
+    elif op_type == "Maximum":
+        return o.maximum(inputs[0], inputs[1])
+    elif op_type == "Minimum":
+        return o.minimum(inputs[0], inputs[1])
+    elif op_type == "Pad":
+        pad_mode = attrs.get("pad_mode", "constant")
+        if len(inputs) > 3:
+            return o.pad(inputs[0], inputs[1], inputs[2], inputs[3], pad_mode)
+        return o.pad(inputs[0], inputs[1], inputs[2], pad_mode)
+    elif op_type == "Split":
+        return o.split(inputs[0], inputs[1], attrs.get("num_splits", 2))
+    elif op_type == "VariadicSplit":
+        return o.variadic_split(inputs[0], inputs[1], inputs[2])
+    elif op_type == "Broadcast":
+        return o.broadcast(inputs[0], inputs[1])
+    elif op_type == "Tile":
+        return o.tile(inputs[0], inputs[1])
+    elif op_type == "BatchNormInference":
+        return o.batch_norm_inference(inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], attrs.get("epsilon", 1e-5))
+    elif op_type == "MVN":
+        return o.mvn(inputs[0], inputs[1], attrs.get("normalize_variance", True), attrs.get("eps", 1e-9), attrs.get("eps_mode", "inside_sqrt"))
+    elif op_type == "Swish":
+        return o.swish(inputs[0])
+    elif op_type == "HSigmoid":
+        return o.hsigmoid(inputs[0])
+    elif op_type == "HSwish":
+        return o.hswish(inputs[0])
+    elif op_type == "Mish":
+        return o.mish(inputs[0])
+    elif op_type == "SoftPlus":
+        return o.softplus(inputs[0])
+    elif op_type == "DetectionOutput":
+        return o.detection_output(
+            inputs[0], inputs[1], inputs[2],
+            attrs,
+        )
+    elif op_type == "ROIPooling":
+        return o.roi_pooling(inputs[0], inputs[1], attrs["output_size"], attrs["spatial_scale"], attrs.get("method", "max"))
+    elif op_type == "PSROIPooling":
+        return o.psroi_pooling(inputs[0], inputs[1], attrs["output_dim"], attrs["group_size"], attrs["spatial_scale"], attrs.get("spatial_bins_x", 1), attrs.get("spatial_bins_y", 1), attrs.get("mode", "average"))
+    elif op_type == "RegionYolo":
+        return o.region_yolo(inputs[0], attrs["coords"], attrs["classes"], attrs["num"], attrs.get("do_softmax", True), attrs.get("mask", []), attrs.get("axis", 1), attrs.get("end_axis", 3), attrs.get("anchors", []))
+    elif op_type == "Elu":
+        return o.elu(inputs[0], attrs.get("alpha", 1.0))
+    elif op_type == "Selu":
+        return o.selu(inputs[0], inputs[1], inputs[2])
+    elif op_type == "Erf":
+        return o.erf(inputs[0])
+    elif op_type == "Equal":
+        return o.equal(inputs[0], inputs[1])
+    elif op_type == "NotEqual":
+        return o.not_equal(inputs[0], inputs[1])
+    elif op_type == "Greater":
+        return o.greater(inputs[0], inputs[1])
+    elif op_type == "GreaterEqual":
+        return o.greater_equal(inputs[0], inputs[1])
+    elif op_type == "Less":
+        return o.less(inputs[0], inputs[1])
+    elif op_type == "LessEqual":
+        return o.less_equal(inputs[0], inputs[1])
+    elif op_type == "Select":
+        return o.select(inputs[0], inputs[1], inputs[2])
+    elif op_type == "LogicalNot":
+        return o.logical_not(inputs[0])
+    elif op_type == "LogicalAnd":
+        return o.logical_and(inputs[0], inputs[1])
+    elif op_type == "LogicalOr":
+        return o.logical_or(inputs[0], inputs[1])
+    elif op_type == "PriorBox":
+        return o.prior_box(inputs[0], inputs[1], attrs)
+    elif op_type == "PriorBoxClustered":
+        return o.prior_box_clustered(inputs[0], inputs[1], attrs)
+    elif op_type == "NormalizeL2":
+        return o.normalize_l2(inputs[0], inputs[1], attrs.get("eps", 1e-10), attrs.get("eps_mode", "add"))
+    elif op_type == "Flatten":
+        return o.reshape(inputs[0], _ensure_i64(ov, inputs[1]), False) if len(inputs) > 1 else None
     return None
 
 
