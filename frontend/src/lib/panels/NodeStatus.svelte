@@ -9,6 +9,18 @@
   let selectedNode = $derived(graphStore.selectedNode);
   let nodeStatus = $derived(graphStore.selectedNodeStatus);
 
+  let outputs = $derived.by(() => {
+    if (!selectedNode || !graphStore.graphData) return [];
+    const edges = graphStore.graphData.edges.filter(e => e.source === selectedNode.id);
+    const nodeMap = new Map(graphStore.graphData.nodes.map(n => [n.id, n]));
+    return edges.map(e => ({
+      source_port: e.source_port,
+      target_port: e.target_port,
+      targetNode: nodeMap.get(e.target),
+      targetId: e.target,
+    }));
+  });
+
   // Constant data cache: const_node_name -> data
   let constDataCache = $state(new Map<string, ConstantData>());
   let constDataLoading = $state(new Set<string>());
@@ -109,16 +121,6 @@
     <div class="mb-4">
       <div class="font-mono font-medium text-gray-200 break-all">{selectedNode.name}</div>
       <div class="text-gray-400 mt-1">{selectedNode.type}</div>
-      {#if selectedNode.shape}
-        <div class="text-gray-500 text-xs mt-1">
-          Shape: [{selectedNode.shape.join(', ')}]
-        </div>
-      {/if}
-      {#if selectedNode.element_type}
-        <div class="text-gray-500 text-xs">
-          Type: {selectedNode.element_type}
-        </div>
-      {/if}
     </div>
 
     {#if !nodeStatus}
@@ -251,6 +253,23 @@
       </button>
     {/if}
 
+    <!-- Attributes -->
+    {#if selectedNode.attributes && Object.keys(selectedNode.attributes).length > 0}
+      <details class="mt-4">
+        <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+          Attributes ({Object.keys(selectedNode.attributes).length})
+        </summary>
+        <div class="mt-1 bg-gray-900/50 rounded p-2 text-xs font-mono max-h-32 overflow-y-auto">
+          {#each Object.entries(selectedNode.attributes) as [key, value]}
+            <div class="flex justify-between gap-2">
+              <span class="text-gray-500">{key}</span>
+              <span class="text-gray-300 truncate">{String(value)}</span>
+            </div>
+          {/each}
+        </div>
+      </details>
+    {/if}
+
     <!-- Inputs -->
     {#if selectedNode.inputs && selectedNode.inputs.length > 0}
       <details class="mt-4" open>
@@ -313,17 +332,31 @@
       </details>
     {/if}
 
-    <!-- Attributes -->
-    {#if selectedNode.attributes && Object.keys(selectedNode.attributes).length > 0}
-      <details class="mt-4">
+    <!-- Outputs -->
+    {#if outputs.length > 0}
+      <details class="mt-4" open>
         <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
-          Attributes ({Object.keys(selectedNode.attributes).length})
+          Outputs ({outputs.length})
         </summary>
-        <div class="mt-1 bg-gray-900/50 rounded p-2 text-xs font-mono max-h-32 overflow-y-auto">
-          {#each Object.entries(selectedNode.attributes) as [key, value]}
-            <div class="flex justify-between gap-2">
-              <span class="text-gray-500">{key}</span>
-              <span class="text-gray-300 truncate">{String(value)}</span>
+        <div class="mt-1 space-y-1">
+          {#each outputs as out}
+            <div class="bg-gray-900/50 rounded p-2 text-xs">
+              <div class="flex items-center gap-1.5">
+                <span class="text-gray-600 font-mono w-4 shrink-0">{out.source_port}</span>
+                <button
+                  class="text-blue-400 hover:text-blue-300 font-mono truncate transition-colors text-left"
+                  title={out.targetNode?.name ?? out.targetId}
+                  onclick={() => graphStore.selectNode(out.targetId)}
+                >
+                  {out.targetNode?.name ?? out.targetId}
+                </button>
+              </div>
+              {#if out.targetNode}
+                <div class="text-gray-500 ml-5 mt-0.5">
+                  {out.targetNode.type}{#if out.targetNode.shape} [{out.targetNode.shape.join(', ')}]{/if}
+                  <span class="text-gray-600">port {out.target_port}</span>
+                </div>
+              {/if}
             </div>
           {/each}
         </div>
