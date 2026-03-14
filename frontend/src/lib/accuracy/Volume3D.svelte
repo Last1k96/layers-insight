@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { getSpatialDims, formatValue } from './tensorUtils';
 	import { rangeScroll } from './rangeScroll';
+	import { VoxelRenderer } from './webgpu/VoxelRenderer';
 
 	let { main, ref, shape, mainLabel = 'Main', refLabel = 'Reference' }: {
 		main: Float32Array;
@@ -10,7 +11,8 @@
 		refLabel?: string;
 	} = $props();
 
-	let canvas: HTMLCanvasElement | undefined = $state();
+	let gpuCanvas: HTMLCanvasElement | undefined = $state();
+	let overlayCanvas: HTMLCanvasElement | undefined = $state();
 	let container: HTMLDivElement | undefined = $state();
 	let containerW = $state(800);
 	let containerH = $state(600);
@@ -247,7 +249,6 @@
 	function onMouseMove(e: MouseEvent) {
 		if (panning) {
 			// Inverse projection: screen delta → world-space pivot delta (zero depth component)
-			// Derived from: screenX = cw/2 + ((x-px)*cosY - (z-pz)*sinY)*scale, etc.
 			const sdx = e.clientX - panStartX;
 			const sdy = e.clientY - panStartY;
 			pivotX = panOriginPivotX + (-sdx * panCosY + sdy * panSinX * panSinY) / panScale;
@@ -276,10 +277,10 @@
 		}
 
 		// Hit-test for tooltip — project each voxel center, find closest to mouse
-		if (!canvas || !renderParams) return;
-		const rect = canvas.getBoundingClientRect();
-		const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
-		const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
+		if (!gpuCanvas || !renderParams) return;
+		const rect = gpuCanvas.getBoundingClientRect();
+		const mouseX = (e.clientX - rect.left) * (gpuCanvas.width / rect.width);
+		const mouseY = (e.clientY - rect.top) * (gpuCanvas.height / rect.height);
 
 		const rp = renderParams;
 		const { C, H, W, scale, cosY, sinY, cosX, sinX, centerX, centerY, depthExtent, dsC, dsH, dsW } = rp;
@@ -383,205 +384,208 @@
 		return [centerX + rx * scale, centerY + ry * scale];
 	}
 
+	// --- WebGPU renderer lifecycle ---
+	let renderer: VoxelRenderer | null = $state(null);
+
+	// Init/destroy renderer when canvas mounts
 	$effect(() => {
-		if (!canvas) return;
-		const { diff, C, H, W, minVal, maxVal } = volumeData;
+		if (!gpuCanvas) return;
+		let cancelled = false;
+		VoxelRenderer.create(gpuCanvas).then((r) => {
+			if (cancelled) {
+				r?.destroy();
+				return;
+			}
+			renderer = r;
+		});
+		return () => {
+			cancelled = true;
+			renderer?.destroy();
+			renderer = null;
+		};
+	});
+
+	// Upload volume data when it changes
+	$effect(() => {
+		if (!renderer) return;
+		const { diff, C, H, W, minVal, maxVal, dsC, dsH, dsW } = volumeData;
+		const origC = C * dsC;
+		const depthExtent = origC > 1 ? origC : 0;
+		const voxW = dsW;
+		const voxH = dsH;
+		const voxD = origC > 1 ? dsC : 1;
+		renderer.setVolumeData(diff, C, H, W, minVal, maxVal, voxW, voxH, voxD);
+	});
+
+	// Update camera when rotation/zoom/pivot/size changes
+	$effect(() => {
+		if (!renderer) return;
+		const { C, H, W, dsC, dsH, dsW } = volumeData;
 		const _rotX = rotX;
 		const _rotY = rotY;
-		const _threshold = threshold;
-		const _opacity = opacity;
-		const _colorScheme = colorScheme;
-		const _hoveredVoxel = hoveredVoxel;
+		const _userZoom = userZoom;
+		const _pivotX = pivotX;
+		const _pivotY = pivotY;
+		const _pivotZ = pivotZ;
 		const _cw = containerW;
 		const _ch = containerH;
-		// Read slice ranges to trigger re-render
-		const _sliceC = sliceC;
-		const _sliceH = sliceH;
-		const _sliceW = sliceW;
 
+		const origW2 = W * dsW;
+		const origH2 = H * dsH;
+		const origC2 = C * dsC;
+		const depthExtent = origC2 > 1 ? origC2 : 0;
+
+		const diagonal = Math.sqrt(origW2 * origW2 + origH2 * origH2 + depthExtent * depthExtent) || 1;
+		const margin = 80;
 		const cw = Math.max(1, Math.floor(_cw));
 		const ch = Math.max(1, Math.floor(_ch));
-		canvas.width = cw;
-		canvas.height = ch;
+		const baseScale = Math.min((cw - margin) / diagonal, (ch - margin) / diagonal);
+		const scale = baseScale * _userZoom;
 
-		const ctx = canvas.getContext('2d');
-		if (!ctx) return;
-
-		// Clear with dark background
-		ctx.fillStyle = '#111827';
-		ctx.fillRect(0, 0, cw, ch);
-
-		if (C === 0 || H === 0 || W === 0) return;
-
-		const span = maxVal - minVal || 1;
-		const invSpan = 1 / span;
-
-		// Projection parameters
+		// Compute renderParams for CPU hit-testing
 		const cosX = Math.cos(_rotX * Math.PI / 180);
 		const sinX = Math.sin(_rotX * Math.PI / 180);
 		const cosY = Math.cos(_rotY * Math.PI / 180);
 		const sinY = Math.sin(_rotY * Math.PI / 180);
 
-		const { dsC, dsH, dsW } = volumeData;
-
-		// World-space extents proportional to original tensor dimensions
-		const origW = W * dsW;
-		const origH = H * dsH;
-		const origC = C * dsC;
-		const depthExtent = origC > 1 ? origC : 0;
-
-		// Rotation-independent base scale (worst-case diagonal)
-		const diagonal = Math.sqrt(origW * origW + origH * origH + depthExtent * depthExtent) || 1;
-		const margin = 80;
-		const _userZoom = userZoom;
-		const baseScale = Math.min((cw - margin) / diagonal, (ch - margin) / diagonal);
-		const scale = baseScale * _userZoom;
-
-		// Compute center so that the world-space pivot maps to screen center
-		const _pivotX = pivotX;
-		const _pivotY = pivotY;
-		const _pivotZ = pivotZ;
 		const rpx = _pivotX * cosY - _pivotZ * sinY;
 		const rpz = _pivotX * sinY + _pivotZ * cosY;
 		const rpy = _pivotY * cosX - rpz * sinX;
 		const centerX = cw / 2 - rpx * scale;
 		const centerY = ch / 2 - rpy * scale;
 
-		// Store render params for mousemove hit-testing
 		renderParams = { scale, cosX, sinX, cosY, sinY, centerX, centerY, C, H, W, depthExtent, dsC, dsH, dsW };
 
-		// --- Voxel rendering ---
-		// Each voxel is 1 original-unit in each axis (dsW × dsH × dsC in downsampled grid)
+		renderer.setCamera(_rotX, _rotY, scale, _pivotX, _pivotY, _pivotZ, cw, ch);
+	});
+
+	// Update filter uniforms when threshold/opacity/slices change
+	$effect(() => {
+		if (!renderer) return;
+		const { C, H, W, minVal, maxVal, dsC, dsH, dsW } = volumeData;
+		const _threshold = threshold;
+		const _opacity = opacity;
+		const _sliceC = sliceC;
+		const _sliceH = sliceH;
+		const _sliceW = sliceW;
+
+		const origW2 = W * dsW;
+		const origH2 = H * dsH;
+		const origC2 = C * dsC;
+		const depthExtent = origC2 > 1 ? origC2 : 0;
 		const voxW = dsW;
 		const voxH = dsH;
-		const voxD = origC > 1 ? dsC : 1;
+		const voxD = origC2 > 1 ? dsC : 1;
 
-		// Determine which 3 faces are visible based on camera direction
-		// Camera looks from direction (sinY, sinX, cosX*cosY) approximately
-		const showPosX = sinY > 0;   // right face vs left face
-		const showPosY = sinX > 0;   // bottom face vs top face
-		const showPosZ = cosX * cosY > 0; // front face vs back face
+		// Convert slice ranges to downsampled coords
+		const cMin = Math.floor(_sliceC[0] / dsC);
+		const cMax = Math.min(C - 1, Math.floor(_sliceC[1] / dsC));
+		const hMin = Math.floor(_sliceH[0] / dsH);
+		const hMax = Math.min(H - 1, Math.floor(_sliceH[1] / dsH));
+		const wMin = Math.floor(_sliceW[0] / dsW);
+		const wMax = Math.min(W - 1, Math.floor(_sliceW[1] / dsW));
 
-		// Face definitions: each face is 4 corner offsets from voxel origin (0,0,0) to (voxW, voxH, voxD)
-		// We define the 3 visible faces with brightness multipliers for pseudo-lighting
-		type Face = { corners: [number,number,number][]; brightness: number };
-		const faces: Face[] = [];
+		renderer.setUniforms(
+			_threshold, _opacity,
+			[cMin, cMax], [hMin, hMax], [wMin, wMax],
+			C, H, W,
+			voxW, voxH, voxD,
+			origW2 / 2, origH2 / 2, depthExtent / 2,
+			minVal, maxVal,
+		);
+	});
 
-		// X-facing face (side)
-		const fx = showPosX ? voxW : 0;
-		faces.push({ corners: [[fx,0,0],[fx,voxH,0],[fx,voxH,voxD],[fx,0,voxD]], brightness: 0.8 });
+	// Update colormap when scheme changes
+	$effect(() => {
+		if (!renderer) return;
+		const stops = COLOR_SCHEMES[colorScheme] ?? COLOR_SCHEMES.plasma;
+		renderer.setColormap(stops);
+	});
 
-		// Y-facing face (top/bottom)
-		const fy = showPosY ? voxH : 0;
-		faces.push({ corners: [[0,fy,0],[voxW,fy,0],[voxW,fy,voxD],[0,fy,voxD]], brightness: showPosY ? 0.6 : 1.0 });
-
-		// Z-facing face (front/back)
-		const fz = showPosZ ? voxD : 0;
-		faces.push({ corners: [[0,0,fz],[voxW,0,fz],[voxW,voxH,fz],[0,0+voxH,fz]], brightness: 0.9 });
-
-		// Determine traversal order: back-to-front for painter's algorithm
-		// Depth after rotation: x*sinY + z*cosY (from project3D Y-rotation)
-		// C maps to Z-axis → sort by cosY; W maps to X-axis → sort by sinY; H maps to Y-axis → sort by sinX
-		const cStart = cosY > 0 ? 0 : C - 1, cEnd = cosY > 0 ? C : -1, cStep = cosY > 0 ? 1 : -1;
-		const hStart = sinX > 0 ? 0 : H - 1, hEnd = sinX > 0 ? H : -1, hStep = sinX > 0 ? 1 : -1;
-		const wStart = sinY > 0 ? W - 1 : 0, wEnd = sinY > 0 ? -1 : W, wStep = sinY > 0 ? -1 : 1;
-
-		// Convert slice ranges from original coords to downsampled coords
-		const cMin = Math.floor(_sliceC[0] / dsC), cMax = Math.min(C - 1, Math.floor(_sliceC[1] / dsC));
-		const hMin = Math.floor(_sliceH[0] / dsH), hMax = Math.min(H - 1, Math.floor(_sliceH[1] / dsH));
-		const wMin = Math.floor(_sliceW[0] / dsW), wMax = Math.min(W - 1, Math.floor(_sliceW[1] / dsW));
-
-		// Render voxels
-		for (let ci = cStart; ci !== cEnd; ci += cStep) {
-			if (ci < cMin || ci > cMax) continue;
-			for (let yi = hStart; yi !== hEnd; yi += hStep) {
-				if (yi < hMin || yi > hMax) continue;
-				for (let xi = wStart; xi !== wEnd; xi += wStep) {
-					if (xi < wMin || xi > wMax) continue;
-					const v = diff[ci * H * W + yi * W + xi];
-					const norm = (v - minVal) * invSpan;
-					if (norm < _threshold) continue;
-
-					// World-space origin of this voxel
-					const ox = xi * voxW - origW / 2;
-					const oy = yi * voxH - origH / 2;
-					const oz = ci * voxD - depthExtent / 2;
-
-					const [r, g, b] = sampleColormap(norm);
-					const alpha = _opacity * (0.3 + 0.7 * norm);
-
-					// Draw 3 visible faces
-					for (const face of faces) {
-						const fr = Math.round(r * face.brightness);
-						const fg = Math.round(g * face.brightness);
-						const fb = Math.round(b * face.brightness);
-
-						ctx.fillStyle = `rgba(${fr},${fg},${fb},${alpha})`;
-						ctx.beginPath();
-						const [p0x, p0y] = project3D(ox + face.corners[0][0], oy + face.corners[0][1], oz + face.corners[0][2], cosX, sinX, cosY, sinY, centerX, centerY, scale);
-						ctx.moveTo(p0x, p0y);
-						for (let fi = 1; fi < 4; fi++) {
-							const [px, py] = project3D(ox + face.corners[fi][0], oy + face.corners[fi][1], oz + face.corners[fi][2], cosX, sinX, cosY, sinY, centerX, centerY, scale);
-							ctx.lineTo(px, py);
-						}
-						ctx.closePath();
-						ctx.fill();
-					}
-				}
-			}
+	// Update hovered voxel highlight
+	$effect(() => {
+		if (!renderer) return;
+		const hv = hoveredVoxel;
+		if (!hv) {
+			renderer.clearHoveredVoxel();
+			return;
 		}
+		const { C, H, W, dsC, dsH, dsW } = volumeData;
+		const origC2 = C * dsC;
+		const depthExtent = origC2 > 1 ? origC2 : 0;
+		const voxW = dsW;
+		const voxH = dsH;
+		const voxD = origC2 > 1 ? dsC : 1;
+		const origW2 = W * dsW;
+		const origH2 = H * dsH;
 
-		// --- Draw hovered voxel outline ---
-		if (_hoveredVoxel) {
-			const hv = _hoveredVoxel;
-			const ox = hv.xi * voxW - origW / 2;
-			const oy = hv.yi * voxH - origH / 2;
-			const oz = hv.ci * voxD - depthExtent / 2;
+		const ox = hv.xi * voxW - origW2 / 2;
+		const oy = hv.yi * voxH - origH2 / 2;
+		const oz = hv.ci * voxD - depthExtent / 2;
+		renderer.setHoveredVoxel(ox, oy, oz, voxW, voxH, voxD);
+	});
 
-			// Project all 8 corners
-			const c000 = project3D(ox, oy, oz, cosX, sinX, cosY, sinY, centerX, centerY, scale);
-			const c100 = project3D(ox + voxW, oy, oz, cosX, sinX, cosY, sinY, centerX, centerY, scale);
-			const c010 = project3D(ox, oy + voxH, oz, cosX, sinX, cosY, sinY, centerX, centerY, scale);
-			const c110 = project3D(ox + voxW, oy + voxH, oz, cosX, sinX, cosY, sinY, centerX, centerY, scale);
-			const c001 = project3D(ox, oy, oz + voxD, cosX, sinX, cosY, sinY, centerX, centerY, scale);
-			const c101 = project3D(ox + voxW, oy, oz + voxD, cosX, sinX, cosY, sinY, centerX, centerY, scale);
-			const c011 = project3D(ox, oy + voxH, oz + voxD, cosX, sinX, cosY, sinY, centerX, centerY, scale);
-			const c111 = project3D(ox + voxW, oy + voxH, oz + voxD, cosX, sinX, cosY, sinY, centerX, centerY, scale);
+	// --- 2D overlay: axes, info text, colorbar ---
+	$effect(() => {
+		if (!overlayCanvas) return;
+		const { C, H, W, minVal, maxVal, dsC, dsH, dsW } = volumeData;
+		const _rotX = rotX;
+		const _rotY = rotY;
+		const _cw = containerW;
+		const _ch = containerH;
+		const _userZoom = userZoom;
+		const _pivotX = pivotX;
+		const _pivotY = pivotY;
+		const _pivotZ = pivotZ;
+		const _colorScheme = colorScheme;
 
-			// Draw all 12 edges of the cube
-			const edges: [[number,number],[number,number]][] = [
-				[c000,c100],[c010,c110],[c001,c101],[c011,c111], // X edges
-				[c000,c010],[c100,c110],[c001,c011],[c101,c111], // Y edges
-				[c000,c001],[c100,c101],[c010,c011],[c110,c111], // Z edges
-			];
+		const cw = Math.max(1, Math.floor(_cw));
+		const ch = Math.max(1, Math.floor(_ch));
+		overlayCanvas.width = cw;
+		overlayCanvas.height = ch;
 
-			ctx.strokeStyle = '#ffffff';
-			ctx.lineWidth = 2;
-			for (const [a, b] of edges) {
-				ctx.beginPath();
-				ctx.moveTo(a[0], a[1]);
-				ctx.lineTo(b[0], b[1]);
-				ctx.stroke();
-			}
-		}
+		const ctx = overlayCanvas.getContext('2d');
+		if (!ctx) return;
+		ctx.clearRect(0, 0, cw, ch);
 
-		// --- Draw axes along volume edges ---
-		// Use project3D for consistent coordinate system (world centered at origin)
-		const halfW = origW / 2;
-		const halfH = origH / 2;
-		const halfD = depthExtent / 2;
+		if (C === 0 || H === 0 || W === 0) return;
+
+		const cosX = Math.cos(_rotX * Math.PI / 180);
+		const sinX = Math.sin(_rotX * Math.PI / 180);
+		const cosY = Math.cos(_rotY * Math.PI / 180);
+		const sinY = Math.sin(_rotY * Math.PI / 180);
+
+		const origW2 = W * dsW;
+		const origH2 = H * dsH;
+		const origC2 = C * dsC;
+		const depthExtent = origC2 > 1 ? origC2 : 0;
+
+		const diagonal = Math.sqrt(origW2 * origW2 + origH2 * origH2 + depthExtent * depthExtent) || 1;
+		const margin = 80;
+		const baseScale = Math.min((cw - margin) / diagonal, (ch - margin) / diagonal);
+		const scale = baseScale * _userZoom;
+
+		const rpx = _pivotX * cosY - _pivotZ * sinY;
+		const rpz = _pivotX * sinY + _pivotZ * cosY;
+		const rpy = _pivotY * cosX - rpz * sinX;
+		const centerX = cw / 2 - rpx * scale;
+		const centerY = ch / 2 - rpy * scale;
 
 		function volToScreen(vx: number, vy: number, vz: number): [number, number] {
 			return project3D(vx, vy, vz, cosX, sinX, cosY, sinY, centerX, centerY, scale);
 		}
 
-		// Fixed axes at the (-halfW, -halfH, -halfD) corner — origin of the volume
+		// --- Draw axes along volume edges ---
+		const halfW = origW2 / 2;
+		const halfH = origH2 / 2;
+		const halfD = depthExtent / 2;
+
 		const axOrigin: [number, number, number] = [-halfW, -halfH, -halfD];
 
 		const edgeAxes: { from: [number, number, number]; to: [number, number, number]; label: string; color: string; dimSize: number }[] = [
-			{ from: axOrigin, to: [halfW, -halfH, -halfD], label: 'W', color: '#ef4444', dimSize: origW },
-			{ from: axOrigin, to: [-halfW, halfH, -halfD], label: 'H', color: '#22c55e', dimSize: origH },
-			{ from: axOrigin, to: [-halfW, -halfH, halfD], label: 'C', color: '#3b82f6', dimSize: origC },
+			{ from: axOrigin, to: [halfW, -halfH, -halfD], label: 'W', color: '#ef4444', dimSize: origW2 },
+			{ from: axOrigin, to: [-halfW, halfH, -halfD], label: 'H', color: '#22c55e', dimSize: origH2 },
+			{ from: axOrigin, to: [-halfW, -halfH, halfD], label: 'C', color: '#3b82f6', dimSize: origC2 },
 		];
 
 		for (const axis of edgeAxes) {
@@ -590,7 +594,6 @@
 			const [p1x, p1y] = volToScreen(...axis.from);
 			const [p2x, p2y] = volToScreen(...axis.to);
 
-			// Draw axis line
 			ctx.strokeStyle = axis.color;
 			ctx.lineWidth = 1.5;
 			ctx.beginPath();
@@ -598,7 +601,6 @@
 			ctx.lineTo(p2x, p2y);
 			ctx.stroke();
 
-			// Tick marks (cap at 10)
 			const numTicks = Math.min(10, axis.dimSize);
 			const tickLen = 5;
 			const dx = p2x - p1x;
@@ -619,7 +621,6 @@
 				ctx.stroke();
 			}
 
-			// Label dim size at the far end
 			ctx.fillStyle = axis.color;
 			const labelX = p2x + (p2x - p1x) * 0.06 + perpX * 12;
 			const labelY = p2y + (p2y - p1y) * 0.06 + perpY * 12;
@@ -632,7 +633,7 @@
 		ctx.font = '12px monospace';
 		ctx.textAlign = 'left';
 		ctx.textBaseline = 'top';
-		ctx.fillText(`Volume: ${origC} x ${origH} x ${origW}${dsC > 1 ? ` (ds ${dsC}x)` : ''}`, 8, 8);
+		ctx.fillText(`Volume: ${origC2} x ${origH2} x ${origW2}${dsC > 1 ? ` (ds ${dsC}x)` : ''}`, 8, 8);
 		ctx.fillText(`Diff range: ${formatValue(minVal)} - ${formatValue(maxVal)}`, 8, 24);
 
 		// Mini colorbar
@@ -767,8 +768,8 @@
 	{/if}
 	<div bind:this={container} class="flex-1 min-h-0 relative">
 		<canvas
-			bind:this={canvas}
-			class="w-full h-full rounded border border-gray-700 cursor-grab"
+			bind:this={gpuCanvas}
+			class="absolute inset-0 w-full h-full rounded border border-gray-700 cursor-grab"
 			class:cursor-grabbing={dragging}
 			onmousedown={onMouseDown}
 			onmousemove={onMouseMove}
@@ -776,6 +777,10 @@
 			onmouseleave={onMouseLeave}
 			onwheel={onWheel}
 			onauxclick={(e: MouseEvent) => e.preventDefault()}
+		></canvas>
+		<canvas
+			bind:this={overlayCanvas}
+			class="absolute inset-0 w-full h-full pointer-events-none"
 		></canvas>
 		{#if tooltip}
 			<div
