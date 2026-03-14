@@ -11,10 +11,14 @@
 		main,
 		ref,
 		shape,
+		mainLabel = 'Main',
+		refLabel = 'Reference',
 	}: {
 		main: Float32Array;
 		ref: Float32Array;
 		shape: number[];
+		mainLabel?: string;
+		refLabel?: string;
 	} = $props();
 
 	// --- Spatial dims ---
@@ -321,7 +325,7 @@
 	<!-- Canvases -->
 	<div class="grid grid-cols-3 gap-2">
 		<div class="flex flex-col gap-1">
-			<span class="text-center text-xs font-medium text-gray-400">Reference</span>
+			<span class="text-center text-xs font-medium text-gray-400">{refLabel}</span>
 			<canvas
 				bind:this={canvasRef}
 				class="h-96 w-full rounded border border-gray-700 bg-gray-900"
@@ -334,7 +338,7 @@
 		</div>
 
 		<div class="flex flex-col gap-1">
-			<span class="text-center text-xs font-medium text-gray-400">Main Device</span>
+			<span class="text-center text-xs font-medium text-gray-400">{mainLabel}</span>
 			<canvas
 				bind:this={canvasMain}
 				class="h-96 w-full rounded border border-gray-700 bg-gray-900"
@@ -371,11 +375,11 @@
 				[{hoverY}, {hoverX}]
 			</div>
 			<div>
-				<span class="text-gray-400">Ref:</span>
+				<span class="text-gray-400">{refLabel}:</span>
 				{formatValue(refSlice.data[idx])}
 			</div>
 			<div>
-				<span class="text-gray-400">Main:</span>
+				<span class="text-gray-400">{mainLabel}:</span>
 				{formatValue(mainSlice.data[idx])}
 			</div>
 			<div>

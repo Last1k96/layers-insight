@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { getSpatialDims, formatValue } from './tensorUtils';
 
-	let { main, ref, shape }: {
+	let { main, ref, shape, mainLabel = 'Main', refLabel = 'Reference' }: {
 		main: Float32Array;
 		ref: Float32Array;
 		shape: number[];
+		mainLabel?: string;
+		refLabel?: string;
 	} = $props();
 
 	let canvas: HTMLCanvasElement | undefined = $state();

@@ -88,8 +88,8 @@
     }
   });
 
-  let mainDeviceName = $derived(sessionStore.currentSession?.main_device ?? 'Main');
-  let refDeviceName = $derived(sessionStore.currentSession?.ref_device ?? 'Reference');
+  let mainDeviceName = $derived(sessionStore.currentSession?.config.main_device ?? 'Main');
+  let refDeviceName = $derived(sessionStore.currentSession?.config.ref_device ?? 'Reference');
 
   // Handle legacy tab values
   $effect(() => {
@@ -131,7 +131,7 @@
   </div>
 
   <!-- Content -->
-  <div class="flex-1 overflow-auto p-4 min-h-0">
+  <div class="flex-1 p-4 min-h-0 relative">
     {#if loadingTensors}
       <div class="flex items-center justify-center h-full text-content-secondary">
         Loading tensor data...
@@ -140,45 +140,64 @@
       <div class="flex items-center justify-center h-full text-content-secondary">
         Tensor data not available
       </div>
-    {:else if activeTab === 'heatmap'}
-      <Heatmap
-        diff={diffTensor}
-        main={mainTensor}
-        ref={refTensor}
-        shape={tensorShape}
-      />
-    {:else if activeTab === 'sidebyside'}
-      <SideBySide
-        main={mainTensor}
-        ref={refTensor}
-        shape={tensorShape}
-      />
-    {:else if activeTab === 'channel'}
-      <ChannelView
-        main={mainTensor}
-        ref={refTensor}
-        shape={tensorShape}
-        mainLabel={mainDeviceName}
-        refLabel={refDeviceName}
-      />
-    {:else if activeTab === 'treemap'}
-      <ErrorTreemap
-        main={mainTensor}
-        ref={refTensor}
-        shape={tensorShape}
-      />
-    {:else if activeTab === 'volume3d'}
-      <Volume3D
-        main={mainTensor}
-        ref={refTensor}
-        shape={tensorShape}
-      />
-    {:else if activeTab === 'diagnostics'}
-      <Diagnostics
-        main={mainTensor}
-        ref={refTensor}
-        shape={tensorShape}
-      />
+    {:else}
+      <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'heatmap' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'heatmap' ? 'auto' : 'none'}>
+        <Heatmap
+          diff={diffTensor}
+          main={mainTensor}
+          ref={refTensor}
+          shape={tensorShape}
+          mainLabel={mainDeviceName}
+          refLabel={refDeviceName}
+        />
+      </div>
+      <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'sidebyside' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'sidebyside' ? 'auto' : 'none'}>
+        <SideBySide
+          main={mainTensor}
+          ref={refTensor}
+          shape={tensorShape}
+          mainLabel={mainDeviceName}
+          refLabel={refDeviceName}
+        />
+      </div>
+      <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'channel' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'channel' ? 'auto' : 'none'}>
+        <ChannelView
+          main={mainTensor}
+          ref={refTensor}
+          shape={tensorShape}
+          mainLabel={mainDeviceName}
+          refLabel={refDeviceName}
+        />
+      </div>
+      <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'treemap' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'treemap' ? 'auto' : 'none'}>
+        <ErrorTreemap
+          main={mainTensor}
+          ref={refTensor}
+          shape={tensorShape}
+          mainLabel={mainDeviceName}
+          refLabel={refDeviceName}
+        />
+      </div>
+      {#if canShow3D}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'volume3d' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'volume3d' ? 'auto' : 'none'}>
+          <Volume3D
+            main={mainTensor}
+            ref={refTensor}
+            shape={tensorShape}
+            mainLabel={mainDeviceName}
+            refLabel={refDeviceName}
+          />
+        </div>
+      {/if}
+      <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'diagnostics' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'diagnostics' ? 'auto' : 'none'}>
+        <Diagnostics
+          main={mainTensor}
+          ref={refTensor}
+          shape={tensorShape}
+          mainLabel={mainDeviceName}
+          refLabel={refDeviceName}
+        />
+      </div>
     {/if}
   </div>
 </div>

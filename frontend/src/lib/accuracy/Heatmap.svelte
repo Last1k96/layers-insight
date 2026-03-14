@@ -14,11 +14,15 @@
     main,
     ref,
     shape,
+    mainLabel = 'Main',
+    refLabel = 'Reference',
   }: {
     diff: Float32Array | null;
     main?: Float32Array | null;
     ref?: Float32Array | null;
     shape: number[];
+    mainLabel?: string;
+    refLabel?: string;
   } = $props();
 
   let canvas: HTMLCanvasElement;
@@ -291,10 +295,10 @@
     >
       <div class="font-mono text-gray-400">[{hoverY}, {hoverX}]</div>
       {#if refSlice}
-        <div><span class="text-gray-400">Ref:</span> {formatValue(refSlice.data[idx])}</div>
+        <div><span class="text-gray-400">{refLabel}:</span> {formatValue(refSlice.data[idx])}</div>
       {/if}
       {#if mainSlice}
-        <div><span class="text-gray-400">Main:</span> {formatValue(mainSlice.data[idx])}</div>
+        <div><span class="text-gray-400">{mainLabel}:</span> {formatValue(mainSlice.data[idx])}</div>
       {/if}
       <div><span class="text-gray-400">Diff:</span> {formatValue(sliceData.data[idx])}</div>
     </div>

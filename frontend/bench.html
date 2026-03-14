@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Diagnostics Renderer Benchmark</title>
+  <style>
+    body { background: #111827; color: #e5e7eb; font-family: monospace; padding: 2rem; }
+    #log { white-space: pre; font-size: 14px; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <h2>Diagnostics Renderer Benchmark</h2>
+  <div id="log">Starting...</div>
+  <script type="module">
+    import { runBench } from './src/lib/accuracy/diagBench.ts';
+    const el = document.getElementById('log');
+    el.textContent = '';
+    runBench((msg) => { el.textContent += msg + '\n'; });
+  </script>
+</body>
+</html>
