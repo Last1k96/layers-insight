@@ -26,6 +26,36 @@
 
 	let userZoom = $state(1.0);
 
+	// World-space pivot point (maps to screen center)
+	let pivotX = $state(0);
+	let pivotY = $state(0);
+	let pivotZ = $state(0);
+	let panning = $state(false);
+	let panStartX = $state(0);
+	let panStartY = $state(0);
+	let panOriginPivotX = $state(0);
+	let panOriginPivotY = $state(0);
+	let panOriginPivotZ = $state(0);
+	// Snapshot of rotation/scale at pan-drag start
+	let panCosX = $state(1);
+	let panSinX = $state(0);
+	let panCosY = $state(1);
+	let panSinY = $state(0);
+	let panScale = $state(1);
+
+	// Axis slice ranges (in original tensor coords)
+	let sliceC = $state<[number, number]>([0, 0]);
+	let sliceH = $state<[number, number]>([0, 0]);
+	let sliceW = $state<[number, number]>([0, 0]);
+
+	// Reset slice ranges when volume data changes
+	$effect(() => {
+		const { origC, origH, origW } = volumeData;
+		sliceC = [0, origC - 1];
+		sliceH = [0, origH - 1];
+		sliceW = [0, origW - 1];
+	});
+
 	// Tooltip state
 	let tooltip = $state<{ x: number; y: number; ci: number; iy: number; ix: number; mainVal: number; refVal: number; diffVal: number } | null>(null);
 	// Hovered voxel in downsampled grid coords (for outline rendering)
@@ -185,16 +215,54 @@
 	});
 
 	function onMouseDown(e: MouseEvent) {
+		hoveredVoxel = null;
+		tooltip = null;
+		// Middle-click or shift+left-click → pan
+		if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+			e.preventDefault();
+			panning = true;
+			panStartX = e.clientX;
+			panStartY = e.clientY;
+			panOriginPivotX = pivotX;
+			panOriginPivotY = pivotY;
+			panOriginPivotZ = pivotZ;
+			const rp = renderParams;
+			if (rp) {
+				panCosX = rp.cosX; panSinX = rp.sinX;
+				panCosY = rp.cosY; panSinY = rp.sinY;
+				panScale = rp.scale;
+			}
+			return;
+		}
 		dragging = true;
 		dragStartX = e.clientX;
 		dragStartY = e.clientY;
 		rotStartX = rotX;
 		rotStartY = rotY;
-		hoveredVoxel = null;
-		tooltip = null;
 	}
 
 	function onMouseMove(e: MouseEvent) {
+		if (panning) {
+			// Inverse projection: screen delta → world-space pivot delta (zero depth component)
+			// Derived from: screenX = cw/2 + ((x-px)*cosY - (z-pz)*sinY)*scale, etc.
+			const sdx = e.clientX - panStartX;
+			const sdy = e.clientY - panStartY;
+			pivotX = panOriginPivotX + (-sdx * panCosY + sdy * panSinX * panSinY) / panScale;
+			pivotY = panOriginPivotY + (-sdy * panCosX) / panScale;
+			pivotZ = panOriginPivotZ + (sdx * panSinY + sdy * panSinX * panCosY) / panScale;
+			// Clamp pivot to volume bounding box
+			const { C, H, W, dsC, dsH, dsW } = volumeData;
+			const halfW = W * dsW / 2;
+			const halfH = H * dsH / 2;
+			const origC2 = C * dsC;
+			const halfD = origC2 > 1 ? origC2 / 2 : 0;
+			pivotX = Math.max(-halfW, Math.min(halfW, pivotX));
+			pivotY = Math.max(-halfH, Math.min(halfH, pivotY));
+			pivotZ = Math.max(-halfD, Math.min(halfD, pivotZ));
+			hoveredVoxel = null;
+			tooltip = null;
+			return;
+		}
 		if (dragging) {
 			rotY = rotStartY + (e.clientX - dragStartX) * 0.5;
 			rotX = rotStartX + (e.clientY - dragStartY) * 0.5;
@@ -228,9 +296,17 @@
 		const hitRadius = Math.max(voxW, voxH, voxD) * scale * 0.6;
 		const hitR2 = hitRadius * hitRadius;
 
+		// Convert slice ranges from original coords to downsampled coords for hit-test
+		const cMin = Math.floor(sliceC[0] / dsC), cMax = Math.min(C - 1, Math.floor(sliceC[1] / dsC));
+		const hMin = Math.floor(sliceH[0] / dsH), hMax = Math.min(H - 1, Math.floor(sliceH[1] / dsH));
+		const wMin = Math.floor(sliceW[0] / dsW), wMax = Math.min(W - 1, Math.floor(sliceW[1] / dsW));
+
 		for (let ci = cStart; ci !== cEnd; ci += cStep) {
+			if (ci < cMin || ci > cMax) continue;
 			for (let yi = hStart; yi !== hEnd; yi += hStep) {
+				if (yi < hMin || yi > hMax) continue;
 				for (let xi = wStart; xi !== wEnd; xi += wStep) {
+					if (xi < wMin || xi > wMax) continue;
 					const dsIdx = ci * H * W + yi * W + xi;
 					const v = diff[dsIdx];
 					const norm = (v - minVal) * invSpan;
@@ -274,10 +350,12 @@
 
 	function onMouseUp() {
 		dragging = false;
+		panning = false;
 	}
 
 	function onMouseLeave() {
 		dragging = false;
+		panning = false;
 		hoveredVoxel = null;
 		tooltip = null;
 	}
@@ -313,6 +391,10 @@
 		const _hoveredVoxel = hoveredVoxel;
 		const _cw = containerW;
 		const _ch = containerH;
+		// Read slice ranges to trigger re-render
+		const _sliceC = sliceC;
+		const _sliceH = sliceH;
+		const _sliceW = sliceW;
 
 		const cw = Math.max(1, Math.floor(_cw));
 		const ch = Math.max(1, Math.floor(_ch));
@@ -352,9 +434,15 @@
 		const baseScale = Math.min((cw - margin) / diagonal, (ch - margin) / diagonal);
 		const scale = baseScale * _userZoom;
 
-		// Volume is centered at origin, so centroid is always (0,0)
-		const centerX = cw / 2;
-		const centerY = ch / 2;
+		// Compute center so that the world-space pivot maps to screen center
+		const _pivotX = pivotX;
+		const _pivotY = pivotY;
+		const _pivotZ = pivotZ;
+		const rpx = _pivotX * cosY - _pivotZ * sinY;
+		const rpz = _pivotX * sinY + _pivotZ * cosY;
+		const rpy = _pivotY * cosX - rpz * sinX;
+		const centerX = cw / 2 - rpx * scale;
+		const centerY = ch / 2 - rpy * scale;
 
 		// Store render params for mousemove hit-testing
 		renderParams = { scale, cosX, sinX, cosY, sinY, centerX, centerY, C, H, W, depthExtent, dsC, dsH, dsW };
@@ -395,10 +483,18 @@
 		const hStart = sinX > 0 ? 0 : H - 1, hEnd = sinX > 0 ? H : -1, hStep = sinX > 0 ? 1 : -1;
 		const wStart = sinY > 0 ? W - 1 : 0, wEnd = sinY > 0 ? -1 : W, wStep = sinY > 0 ? -1 : 1;
 
+		// Convert slice ranges from original coords to downsampled coords
+		const cMin = Math.floor(_sliceC[0] / dsC), cMax = Math.min(C - 1, Math.floor(_sliceC[1] / dsC));
+		const hMin = Math.floor(_sliceH[0] / dsH), hMax = Math.min(H - 1, Math.floor(_sliceH[1] / dsH));
+		const wMin = Math.floor(_sliceW[0] / dsW), wMax = Math.min(W - 1, Math.floor(_sliceW[1] / dsW));
+
 		// Render voxels
 		for (let ci = cStart; ci !== cEnd; ci += cStep) {
+			if (ci < cMin || ci > cMax) continue;
 			for (let yi = hStart; yi !== hEnd; yi += hStep) {
+				if (yi < hMin || yi > hMax) continue;
 				for (let xi = wStart; xi !== wEnd; xi += wStep) {
+					if (xi < wMin || xi > wMax) continue;
 					const v = diff[ci * H * W + yi * W + xi];
 					const norm = (v - minVal) * invSpan;
 					if (norm < _threshold) continue;
@@ -593,8 +689,62 @@
 				{/each}
 			</select>
 		</label>
-		<span class="text-gray-500 italic">Drag to orbit · Scroll to zoom</span>
+		<span class="text-gray-500 italic">Drag to orbit · Shift-drag or middle-drag to pan · Scroll to zoom</span>
 	</div>
+	<!-- Axis slice range sliders -->
+	{#if volumeData}
+		<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400 shrink-0">
+			{#each [
+				{ label: 'C', color: 'blue', max: volumeData.origC - 1, slice: sliceC, set: (v: [number, number]) => sliceC = v },
+				{ label: 'H', color: 'green', max: volumeData.origH - 1, slice: sliceH, set: (v: [number, number]) => sliceH = v },
+				{ label: 'W', color: 'red', max: volumeData.origW - 1, slice: sliceW, set: (v: [number, number]) => sliceW = v },
+			] as axis}
+				{#if axis.max > 0}
+					<div class="flex items-center gap-1.5">
+						<span class="w-3 font-semibold" style="color: {axis.color === 'blue' ? '#3b82f6' : axis.color === 'green' ? '#22c55e' : '#ef4444'}">{axis.label}</span>
+						<div class="relative w-28 h-5">
+							<!-- Track background -->
+							<div class="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1 rounded bg-gray-700"></div>
+							<!-- Active range bar -->
+							<div
+								class="absolute top-1/2 -translate-y-1/2 h-1 rounded"
+								style="left: {axis.max > 0 ? (axis.slice[0] / axis.max) * 100 : 0}%; right: {axis.max > 0 ? (1 - axis.slice[1] / axis.max) * 100 : 0}%; background: {axis.color === 'blue' ? '#3b82f6' : axis.color === 'green' ? '#22c55e' : '#ef4444'};"
+							></div>
+							<!-- Min slider -->
+							<input
+								type="range"
+								min="0"
+								max={axis.max}
+								step="1"
+								value={axis.slice[0]}
+								oninput={(e: Event) => {
+									const v = parseInt((e.target as HTMLInputElement).value);
+									axis.set([Math.min(v, axis.slice[1]), axis.slice[1]]);
+								}}
+								class="dual-range-slider absolute inset-0 w-full"
+								style="--thumb-color: {axis.color === 'blue' ? '#3b82f6' : axis.color === 'green' ? '#22c55e' : '#ef4444'};"
+							/>
+							<!-- Max slider -->
+							<input
+								type="range"
+								min="0"
+								max={axis.max}
+								step="1"
+								value={axis.slice[1]}
+								oninput={(e: Event) => {
+									const v = parseInt((e.target as HTMLInputElement).value);
+									axis.set([axis.slice[0], Math.max(v, axis.slice[0])]);
+								}}
+								class="dual-range-slider absolute inset-0 w-full"
+								style="--thumb-color: {axis.color === 'blue' ? '#3b82f6' : axis.color === 'green' ? '#22c55e' : '#ef4444'};"
+							/>
+						</div>
+						<span class="font-mono text-gray-300 w-20 text-right text-[10px]">{axis.slice[0]}&ndash;{axis.slice[1]} / {axis.max + 1}</span>
+					</div>
+				{/if}
+			{/each}
+		</div>
+	{/if}
 	<div bind:this={container} class="flex-1 min-h-0 relative">
 		<canvas
 			bind:this={canvas}
@@ -605,6 +755,7 @@
 			onmouseup={onMouseUp}
 			onmouseleave={onMouseLeave}
 			onwheel={onWheel}
+			onauxclick={(e: MouseEvent) => e.preventDefault()}
 		></canvas>
 		{#if tooltip}
 			<div
@@ -619,3 +770,44 @@
 		{/if}
 	</div>
 </div>
+
+<style>
+	.dual-range-slider {
+		-webkit-appearance: none;
+		appearance: none;
+		background: transparent;
+		pointer-events: none;
+		height: 100%;
+		margin: 0;
+	}
+	.dual-range-slider::-webkit-slider-thumb {
+		-webkit-appearance: none;
+		appearance: none;
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		background: var(--thumb-color, #a855f7);
+		cursor: pointer;
+		pointer-events: auto;
+		border: 1.5px solid #1f2937;
+		box-shadow: 0 0 2px rgba(0,0,0,0.5);
+	}
+	.dual-range-slider::-moz-range-thumb {
+		width: 12px;
+		height: 12px;
+		border-radius: 50%;
+		background: var(--thumb-color, #a855f7);
+		cursor: pointer;
+		pointer-events: auto;
+		border: 1.5px solid #1f2937;
+		box-shadow: 0 0 2px rgba(0,0,0,0.5);
+	}
+	.dual-range-slider::-webkit-slider-runnable-track {
+		background: transparent;
+		height: 4px;
+	}
+	.dual-range-slider::-moz-range-track {
+		background: transparent;
+		height: 4px;
+	}
+</style>
