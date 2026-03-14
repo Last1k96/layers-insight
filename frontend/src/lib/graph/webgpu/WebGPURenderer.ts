@@ -221,7 +221,7 @@ export class WebGPURenderer {
         }
       }
 
-      const fillColor = override ? override.color : isGrayed ? '#303030' : node.color;
+      const fillColor = override ? override.color : isGrayed ? '#232636' : node.color;
       const fill = hexToRgb(fillColor);
 
       let strokeR = 0.2, strokeG = 0.2, strokeB = 0.2;
@@ -289,9 +289,9 @@ export class WebGPURenderer {
 
     // Update edge color for search dimming
     if (searchActive) {
-      setEdgeColor(this.edgesPipeline, this.device, 0.267, 0.267, 0.267, 0.3);
+      setEdgeColor(this.edgesPipeline, this.device, 0.184, 0.200, 0.255, 0.3);
     } else {
-      setEdgeColor(this.edgesPipeline, this.device, 0.667, 0.667, 0.667, 1.0);
+      setEdgeColor(this.edgesPipeline, this.device, 0.353, 0.376, 0.502, 1.0);
     }
 
     // Build text glyph instances (skip if zoomed out)
@@ -348,7 +348,7 @@ export class WebGPURenderer {
           size = { width: newWidth, height: size.height };
         }
       }
-      const fillColor = override ? override.color : isGrayed ? '#303030' : node.color;
+      const fillColor = override ? override.color : isGrayed ? '#232636' : node.color;
       const glyphAlpha = isGrayed ? textAlpha * 0.35 : textAlpha;
       const textColor = isLightNodeColor(fillColor) ? { r: 0.2, g: 0.2, b: 0.2 } : { r: 1, g: 1, b: 1 };
 

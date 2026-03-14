@@ -8,6 +8,8 @@
   import NodeStatus from '../panels/NodeStatus.svelte';
   import ErrorBanner from '../panels/ErrorBanner.svelte';
   import BottomLogPanel from '../panels/BottomLogPanel.svelte';
+  import AccuracyView from '../accuracy/AccuracyView.svelte';
+  import BatchQueue from '../panels/BatchQueue.svelte';
   import { sessionStore } from '../stores/session.svelte';
   import { graphStore, type NodeStatus as NodeStatusData } from '../stores/graph.svelte';
   import { queueStore } from '../stores/queue.svelte';
@@ -16,6 +18,8 @@
   import { onMount, onDestroy } from 'svelte';
 
   let wsDisconnected = $state(false);
+  let showAccuracyView = $state(false);
+  let showBatchQueue = $state(false);
 
   function restoreSessionTasks(): void {
     const session = sessionStore.currentSession;
@@ -89,15 +93,36 @@
   </FloatingPanel>
 
   <FloatingPanel side="right" title="Node Status">
-    <NodeStatus />
+    <NodeStatus
+      onshowaccuracy={() => showAccuracyView = true}
+      onshowbatchqueue={() => showBatchQueue = true}
+    />
   </FloatingPanel>
 
   {#if graphStore.loading}
-    <div class="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-20">
-      <div class="text-gray-400">Loading graph...</div>
+    <div class="absolute inset-0 flex items-center justify-center bg-surface-base/80 z-20">
+      <div class="text-content-secondary">Loading graph...</div>
     </div>
   {/if}
 </div>
 
 <!-- Bottom log panel — outside relative container so z-index works against sigma canvases -->
 <BottomLogPanel />
+
+<!-- Fullscreen overlays — rendered outside all containers so fixed positioning works -->
+{#if showAccuracyView && graphStore.selectedNodeStatus?.taskId && graphStore.selectedNode}
+  <AccuracyView
+    taskId={graphStore.selectedNodeStatus.taskId}
+    nodeId={graphStore.selectedNode.name}
+    onclose={() => showAccuracyView = false}
+  />
+{/if}
+
+{#if showBatchQueue && graphStore.selectedNode}
+  <div class="fixed inset-0 z-[59] bg-black/30" onclick={() => showBatchQueue = false} role="presentation"></div>
+  <BatchQueue
+    nodeId={graphStore.selectedNode.id}
+    nodeName={graphStore.selectedNode.name}
+    onclose={() => showBatchQueue = false}
+  />
+{/if}

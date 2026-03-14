@@ -54,15 +54,15 @@
   });
 </script>
 
-<div class="absolute inset-4 bg-gray-800/98 backdrop-blur border border-gray-700 rounded-xl shadow-2xl z-40 flex flex-col">
+<div class="fixed inset-0 bg-surface-panel backdrop-blur z-[60] flex flex-col">
   <!-- Header -->
-  <div class="flex items-center justify-between px-4 py-3 border-b border-gray-700 shrink-0">
+  <div class="flex items-center justify-between px-4 py-3 border-b border-edge shrink-0">
     <div>
-      <h3 class="font-medium text-gray-200">Deep Accuracy View</h3>
-      <p class="text-xs text-gray-500 mt-0.5">Node: {nodeId}</p>
+      <h3 class="font-medium text-content-primary">Deep Accuracy View</h3>
+      <p class="text-xs text-content-secondary mt-0.5">Node: {nodeId}</p>
     </div>
     <button
-      class="text-gray-400 hover:text-gray-200 px-2 py-1 text-sm"
+      class="text-content-secondary hover:text-content-primary px-2 py-1 text-sm"
       onclick={onclose}
     >
       Close
@@ -70,17 +70,17 @@
   </div>
 
   <!-- Tabs -->
-  <div class="flex border-b border-gray-700 shrink-0">
+  <div class="flex border-b border-edge shrink-0">
     {#each [
       { key: 'heatmap', label: 'Heatmap' },
       { key: 'channel', label: 'Per-Channel' },
     ] as tab (tab.key)}
       <button
         class="px-4 py-2 text-sm transition-colors"
-        class:text-blue-400={activeTab === tab.key}
+        class:text-accent={activeTab === tab.key}
         class:border-b-2={activeTab === tab.key}
-        class:border-blue-400={activeTab === tab.key}
-        class:text-gray-500={activeTab !== tab.key}
+        class:border-accent={activeTab === tab.key}
+        class:text-content-secondary={activeTab !== tab.key}
         onclick={() => activeTab = tab.key as any}
       >
         {tab.label}
@@ -91,11 +91,11 @@
   <!-- Content -->
   <div class="flex-1 overflow-auto p-4 min-h-0">
     {#if loadingTensors}
-      <div class="flex items-center justify-center h-full text-gray-400">
+      <div class="flex items-center justify-center h-full text-content-secondary">
         Loading tensor data...
       </div>
     {:else if !mainTensor || !refTensor}
-      <div class="flex items-center justify-center h-full text-gray-500">
+      <div class="flex items-center justify-center h-full text-content-secondary">
         Tensor data not available
       </div>
     {:else if activeTab === 'heatmap'}

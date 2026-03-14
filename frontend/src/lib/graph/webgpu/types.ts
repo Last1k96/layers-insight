@@ -18,14 +18,14 @@ export const GRAPH_FONT_SIZE = 16;
 /** Node corner radius in graph units */
 export const NODE_RADIUS = 5;
 
-/** Background clear color (#404040) */
-export const CLEAR_COLOR: GPUColor = { r: 0.251, g: 0.251, b: 0.251, a: 1.0 };
+/** Background clear color (#1B1E2B) */
+export const CLEAR_COLOR: GPUColor = { r: 0.106, g: 0.118, b: 0.169, a: 1.0 };
 
-/** Default edge color (#aaaaaa) */
-export const EDGE_COLOR = { r: 0.667, g: 0.667, b: 0.667, a: 1.0 };
+/** Default edge color (#5A6080) — brighter for contrast on dark bg */
+export const EDGE_COLOR = { r: 0.353, g: 0.376, b: 0.502, a: 1.0 };
 
 /** Dimmed edge color during search */
-export const EDGE_COLOR_DIMMED = { r: 0.267, g: 0.267, b: 0.267, a: 0.3 };
+export const EDGE_COLOR_DIMMED = { r: 0.184, g: 0.200, b: 0.255, a: 0.3 };
 
 /** Standard alpha blend state for all pipelines */
 export const ALPHA_BLEND: GPUBlendState = {

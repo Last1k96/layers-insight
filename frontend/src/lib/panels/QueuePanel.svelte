@@ -96,9 +96,9 @@
       {#each ['all', 'success', 'failed'] as status (status)}
         <button
           class="px-2 py-0.5 text-xs rounded transition-colors"
-          class:bg-gray-600={queueStore.filterStatus === status}
-          class:text-gray-300={queueStore.filterStatus === status}
-          class:text-gray-500={queueStore.filterStatus !== status}
+          class:bg-surface-elevated={queueStore.filterStatus === status}
+          class:text-content-primary={queueStore.filterStatus === status}
+          class:text-content-secondary={queueStore.filterStatus !== status}
           onclick={() => queueStore.filterStatus = status as any}
         >
           {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}

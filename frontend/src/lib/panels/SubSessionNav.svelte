@@ -125,7 +125,7 @@
             class:bg-[--bg-menu]={activeSubSessionId === null}
             onclick={activateRoot}
           >
-            <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+            <span class="w-1.5 h-1.5 rounded-full bg-accent"></span>
             <span>Full Model (root)</span>
           </button>
 
@@ -138,8 +138,8 @@
             >
               <span
                 class="w-1.5 h-1.5 rounded-full shrink-0"
-                class:bg-amber-400={node.sub.cut_type === 'output'}
-                class:bg-purple-400={node.sub.cut_type === 'input'}
+                class:bg-status-waiting={node.sub.cut_type === 'output'}
+                class:bg-accent={node.sub.cut_type === 'input'}
               ></span>
               <span class="flex-1 truncate">
                 {node.sub.cut_type === 'output' ? 'Output' : 'Input'} @ {node.sub.cut_node}

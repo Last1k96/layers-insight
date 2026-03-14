@@ -77,7 +77,7 @@
       { label: 'Ref Device', stats: refStats, color: 'text-green-400' },
       { label: 'Abs Diff', stats: diffStats, color: 'text-red-400' },
     ] as col (col.label)}
-      <div class="bg-gray-900/50 rounded-lg p-3">
+      <div class="bg-surface-base/50 rounded-lg p-3">
         <h4 class="text-xs font-medium {col.color} mb-2">{col.label}</h4>
         <div class="space-y-1 text-xs">
           <div class="flex justify-between">

@@ -108,7 +108,7 @@
   </div>
 
   <!-- Canvas -->
-  <div class="flex justify-center bg-gray-900 rounded-lg p-4 overflow-auto">
+  <div class="flex justify-center bg-surface-base rounded-lg p-4 overflow-auto">
     <canvas
       bind:this={canvas}
       class="max-w-full"

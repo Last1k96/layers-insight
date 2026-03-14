@@ -98,7 +98,7 @@
   }
 </script>
 
-<div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-40 w-96">
+<div class="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-96">
   <div class="bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-xl shadow-2xl">
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-3 border-b border-[--border-color]">
@@ -164,7 +164,7 @@
     <!-- Actions -->
     <div class="p-4">
       <button
-        class="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-[--bg-panel] disabled:text-gray-500 rounded text-sm font-medium transition-colors"
+        class="w-full py-2 bg-accent hover:bg-accent-hover disabled:bg-[--bg-panel] disabled:text-content-secondary rounded text-sm font-medium transition-colors"
         disabled={previewNodes.length === 0 || submitting}
         onclick={queueAll}
       >

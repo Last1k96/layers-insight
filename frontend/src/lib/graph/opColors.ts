@@ -112,10 +112,10 @@ export const OP_CATEGORIES: Record<string, { category: string; color: string }> 
 };
 
 export const STATUS_COLORS: Record<string, string> = {
-  waiting: '#F59E0B',
-  executing: '#3B82F6',
-  success: '#10B981',
-  failed: '#EF4444',
+  waiting: '#E5A820',
+  executing: '#4C8DFF',
+  success: '#34C77B',
+  failed: '#E54D4D',
 };
 
 /** Default color for unknown op types — Netron's default dark charcoal */

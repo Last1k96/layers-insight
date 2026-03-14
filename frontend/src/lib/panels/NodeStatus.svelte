@@ -2,8 +2,6 @@
   import { graphStore } from '../stores/graph.svelte';
   import { queueStore } from '../stores/queue.svelte';
   import { sessionStore } from '../stores/session.svelte';
-  import AccuracyView from '../accuracy/AccuracyView.svelte';
-  import BatchQueue from './BatchQueue.svelte';
   import type { ConstantData } from '../stores/types';
 
   let selectedNode = $derived(graphStore.selectedNode);
@@ -60,8 +58,6 @@
     return v.toPrecision(4);
   }
 
-  let showAccuracyView = $state(false);
-  let showBatchQueue = $state(false);
   let cutting = $state(false);
 
   function handleRerun() {
@@ -76,8 +72,16 @@
     }
   }
 
+  let {
+    onshowaccuracy = () => {},
+    onshowbatchqueue = () => {},
+  }: {
+    onshowaccuracy?: () => void;
+    onshowbatchqueue?: () => void;
+  } = $props();
+
   function handleDeepAccuracy() {
-    showAccuracyView = true;
+    onshowaccuracy();
   }
 
   async function handleCut(cutType: 'output' | 'input') {
@@ -236,26 +240,26 @@
       <!-- Phase 2 actions -->
       <div class="mt-3 space-y-2">
         <button
-          class="w-full py-1.5 bg-indigo-700 hover:bg-indigo-600 rounded text-xs transition-colors"
+          class="w-full py-1.5 bg-accent hover:bg-accent-hover rounded text-xs transition-colors"
           onclick={handleDeepAccuracy}
         >
           Deep Accuracy View
         </button>
         <button
-          class="w-full py-1.5 bg-amber-700 hover:bg-amber-600 rounded text-xs transition-colors"
+          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
           onclick={() => handleCut('output')}
         >
           Make Output Node
         </button>
         <button
-          class="w-full py-1.5 bg-purple-700 hover:bg-purple-600 rounded text-xs transition-colors"
+          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
           onclick={() => handleCut('input')}
         >
           Make Input Node
         </button>
         <button
-          class="w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors"
-          onclick={() => showBatchQueue = true}
+          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+          onclick={onshowbatchqueue}
         >
           Batch Queue
         </button>
@@ -399,23 +403,3 @@
   {/if}
 </div>
 
-<!-- Overlays rendered with fixed positioning -->
-{#if showAccuracyView && nodeStatus?.taskId && selectedNode}
-  <div class="fixed inset-0 z-50">
-    <AccuracyView
-      taskId={nodeStatus.taskId}
-      nodeId={selectedNode.name}
-      onclose={() => showAccuracyView = false}
-    />
-  </div>
-{/if}
-
-{#if showBatchQueue && selectedNode}
-  <div class="fixed inset-0 z-50 bg-black/30">
-    <BatchQueue
-      nodeId={selectedNode.id}
-      nodeName={selectedNode.name}
-      onclose={() => showBatchQueue = false}
-    />
-  </div>
-{/if}

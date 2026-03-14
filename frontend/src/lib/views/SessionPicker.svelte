@@ -56,18 +56,18 @@
   });
 </script>
 
-<div class="flex-1 flex items-start justify-center p-8 pt-[15vh]">
+<div class="flex-1 flex items-start justify-center p-8 pt-[15vh] bg-[--bg-primary]">
   <div class="max-w-2xl w-full">
     <h1 class="text-3xl font-bold mb-2">Layers Insight</h1>
-    <p class="text-gray-400 mb-8">Neural Network Graph Debugger</p>
+    <p class="text-content-secondary mb-8">Neural Network Graph Debugger</p>
 
     {#if sessionStore.loading}
-      <div class="text-gray-400">Loading sessions...</div>
+      <div class="text-content-secondary">Loading sessions...</div>
     {:else if sessionStore.sessions.length === 0}
       <div class="text-center py-12">
-        <p class="text-gray-400 mb-4">No sessions found</p>
+        <p class="text-content-secondary mb-4">No sessions found</p>
         <button
-          class="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
+          class="px-6 py-3 bg-accent hover:bg-accent-hover rounded-lg font-medium transition-colors"
           onclick={onnewsession}
         >
           New Session
@@ -77,29 +77,29 @@
       <div class="space-y-3 mb-6 max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin">
         {#each sessionStore.sessions as session, i (session.id)}
           <button
-            class="group w-full text-left p-4 bg-[--bg-panel] hover:bg-[--bg-menu] rounded-lg border transition-colors {i === selectedIndex ? 'border-blue-500 bg-[--bg-menu]' : 'border-[--border-color] hover:border-gray-600'}"
+            class="group w-full text-left p-4 bg-surface-panel hover:bg-surface-elevated rounded-lg border transition-colors {i === selectedIndex ? 'border-accent bg-surface-elevated' : 'border-edge hover:border-content-secondary/30'}"
             onclick={() => onsessionselected(session.id)}
           >
             <div class="flex justify-between items-start">
               <div class="min-w-0 flex-1">
                 <div class="font-medium">{session.model_name}</div>
-                <div class="text-sm text-gray-400 mt-1">
+                <div class="text-sm text-content-secondary mt-1">
                   {session.main_device} vs {session.ref_device}
                 </div>
               </div>
               <div class="text-right flex-shrink-0 flex items-start gap-2">
                 <div>
-                  <div class="text-sm text-gray-400">
+                  <div class="text-sm text-content-secondary">
                     {session.success_count}/{session.task_count} tasks
                   </div>
-                  <div class="text-xs text-gray-500 mt-1">
+                  <div class="text-xs text-content-secondary/60 mt-1">
                     {new Date(session.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
                   </div>
                 </div>
                 {#if confirmingDelete === session.id}
                   <div class="flex gap-1">
                     <button
-                      class="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-500 text-gray-200 rounded transition-colors"
+                      class="px-2 py-1 text-xs bg-surface-elevated hover:bg-edge text-content-primary rounded transition-colors"
                       onclick={cancelDelete}
                     >
                       Cancel
@@ -113,7 +113,7 @@
                   </div>
                 {:else}
                   <button
-                    class="opacity-0 group-hover:opacity-100 p-1 text-gray-500 hover:text-red-400 transition-all"
+                    class="opacity-0 group-hover:opacity-100 p-1 text-content-secondary hover:text-red-400 transition-all"
                     onclick={(e) => handleDelete(e, session.id)}
                     title="Delete session"
                   >
@@ -129,7 +129,7 @@
       </div>
 
       <button
-        class="w-full py-3 border border-dashed border-gray-600 hover:border-gray-500 rounded-lg text-gray-400 hover:text-gray-300 transition-colors"
+        class="w-full py-3 border border-dashed border-edge hover:border-content-secondary/50 rounded-lg text-content-secondary hover:text-content-primary transition-colors"
         onclick={onnewsession}
       >
         + New Session
@@ -152,10 +152,10 @@
     background: transparent;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: #4b5563;
+    background: #3A3F56;
     border-radius: 3px;
   }
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: #6b7280;
+    background: #4A5070;
   }
 </style>

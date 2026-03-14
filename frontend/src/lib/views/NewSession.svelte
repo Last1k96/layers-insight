@@ -157,39 +157,39 @@
   }
 </script>
 
-<div class="flex-1 flex items-center justify-center p-8">
+<div class="flex-1 flex items-center justify-center p-8 bg-[--bg-primary]">
   <div class="max-w-lg w-full">
     <div class="flex items-center gap-4 mb-6">
-      <button class="text-gray-400 hover:text-gray-200" onclick={onback}>&larr; Back</button>
+      <button class="text-content-secondary hover:text-content-primary" onclick={onback}>&larr; Back</button>
       <h2 class="text-2xl font-bold">New Session</h2>
     </div>
 
     <form class="space-y-4" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
       <div>
-        <label class="block text-sm text-gray-400 mb-1">OpenVINO Path (optional)</label>
+        <label class="block text-sm text-content-secondary mb-1">OpenVINO Path (optional)</label>
         <input
           type="text"
           bind:value={ovPath}
           placeholder="/opt/intel/openvino"
-          class="w-full px-3 py-2 bg-[--bg-menu] border border-[--border-color] rounded focus:border-blue-500 focus:outline-none"
+          class="w-full px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none"
         />
       </div>
 
       <div>
-        <label class="block text-sm text-gray-400 mb-1">Model Path (.xml) *</label>
+        <label class="block text-sm text-content-secondary mb-1">Model Path (.xml) *</label>
         <div class="flex gap-2">
           <input
             type="text"
             bind:value={modelPath}
             placeholder="/path/to/model.xml"
-            class="flex-1 px-3 py-2 bg-[--bg-menu] border border-[--border-color] rounded focus:border-blue-500 focus:outline-none"
+            class="flex-1 px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none"
             required
           />
           <button
             type="button"
             onclick={inspectModel}
             disabled={loadingInputs || !modelPath.trim()}
-            class="px-3 py-2 bg-[--bg-menu] hover:bg-[--bg-primary] disabled:bg-[--bg-panel] disabled:text-gray-600 rounded text-sm transition-colors"
+            class="px-3 py-2 bg-surface-elevated hover:bg-surface-panel disabled:bg-[--bg-input] disabled:text-content-secondary rounded text-sm transition-colors"
           >
             {loadingInputs ? 'Reading...' : 'Inspect'}
           </button>
@@ -199,31 +199,31 @@
       <!-- Model Inputs Section -->
       {#if modelInputs.length > 0}
         <div class="border border-[--border-color] rounded p-3 space-y-3">
-          <div class="text-sm text-gray-400 font-medium">Model Inputs ({modelInputs.length})</div>
+          <div class="text-sm text-content-secondary font-medium">Model Inputs ({modelInputs.length})</div>
           {#each modelInputs as input, i (input.name)}
-            <div class="bg-[--bg-menu] rounded p-3 space-y-2">
+            <div class="bg-[--bg-panel] rounded p-3 space-y-2">
               <div class="flex items-center justify-between">
-                <div class="font-mono text-sm text-blue-400">{input.name}</div>
-                <div class="text-xs text-gray-500">
+                <div class="font-mono text-sm text-accent">{input.name}</div>
+                <div class="text-xs text-content-secondary">
                   {input.element_type} &middot; {formatShape(input.shape)}
                 </div>
               </div>
               <div class="flex gap-3 items-center">
                 <div class="flex-1">
-                  <label class="block text-xs text-gray-500 mb-0.5">Source</label>
+                  <label class="block text-xs text-content-secondary mb-0.5">Source</label>
                   <select
                     bind:value={modelInputs[i].source}
-                    class="w-full px-2 py-1.5 bg-[--bg-menu] border border-[--border-color] rounded text-sm focus:border-blue-500 focus:outline-none"
+                    class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
                   >
                     <option value="random">Random</option>
                     <option value="file">File</option>
                   </select>
                 </div>
                 <div class="flex-1">
-                  <label class="block text-xs text-gray-500 mb-0.5">Data Type</label>
+                  <label class="block text-xs text-content-secondary mb-0.5">Data Type</label>
                   <select
                     bind:value={modelInputs[i].data_type}
-                    class="w-full px-2 py-1.5 bg-[--bg-menu] border border-[--border-color] rounded text-sm focus:border-blue-500 focus:outline-none"
+                    class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
                   >
                     {#each getAllowedPrecisions(input.element_type) as p (p)}
                       <option value={p}>{p.toUpperCase()}</option>
@@ -231,10 +231,10 @@
                   </select>
                 </div>
                 <div class="flex-1">
-                  <label class="block text-xs text-gray-500 mb-0.5">Layout</label>
+                  <label class="block text-xs text-content-secondary mb-0.5">Layout</label>
                   <select
                     bind:value={modelInputs[i].layout}
-                    class="w-full px-2 py-1.5 bg-[--bg-menu] border border-[--border-color] rounded text-sm focus:border-blue-500 focus:outline-none"
+                    class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
                   >
                     {#each getLayoutOptions(input.shape) as l (l)}
                       <option value={l}>{l}</option>
@@ -248,7 +248,7 @@
                     type="text"
                     bind:value={modelInputs[i].path}
                     placeholder="/path/to/input.npy"
-                    class="w-full px-2 py-1.5 bg-[--bg-menu] border border-[--border-color] rounded text-sm focus:border-blue-500 focus:outline-none"
+                    class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
                   />
                 </div>
               {/if}
@@ -260,23 +260,23 @@
           {inputsError}
         </div>
       {:else if !loadingInputs && modelPath.trim()}
-        <div class="text-sm text-gray-500">
+        <div class="text-sm text-content-secondary">
           Click "Inspect" to read model inputs.
         </div>
       {/if}
 
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Main Device</label>
-          <select bind:value={mainDevice} class="w-full px-3 py-2 bg-[--bg-menu] border border-[--border-color] rounded focus:border-blue-500 focus:outline-none">
+          <label class="block text-sm text-content-secondary mb-1">Main Device</label>
+          <select bind:value={mainDevice} class="w-full px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none">
             {#each configStore.devices as device (device)}
               <option value={device}>{device}</option>
             {/each}
           </select>
         </div>
         <div>
-          <label class="block text-sm text-gray-400 mb-1">Reference Device</label>
-          <select bind:value={refDevice} class="w-full px-3 py-2 bg-[--bg-menu] border border-[--border-color] rounded focus:border-blue-500 focus:outline-none">
+          <label class="block text-sm text-content-secondary mb-1">Reference Device</label>
+          <select bind:value={refDevice} class="w-full px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none">
             {#each configStore.devices as device (device)}
               <option value={device}>{device}</option>
             {/each}
@@ -293,7 +293,7 @@
       <button
         type="submit"
         disabled={submitting}
-        class="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-[--bg-panel] disabled:text-gray-500 rounded-lg font-medium transition-colors"
+        class="w-full py-3 bg-accent hover:bg-accent-hover disabled:bg-[--bg-panel] disabled:text-content-secondary rounded-lg font-medium transition-colors"
       >
         {submitting ? 'Creating...' : 'Start Session'}
       </button>

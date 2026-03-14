@@ -68,9 +68,9 @@
     onclick={toggleCollapse}
   >
     {#if !collapsed}
-      <span class="text-sm font-medium text-gray-300">{title}</span>
+      <span class="text-sm font-medium text-content-primary">{title}</span>
     {/if}
-    <span class="text-gray-500 text-xs">{collapsed ? (side === 'left' ? '>' : '<') : (side === 'left' ? '<' : '>')}</span>
+    <span class="text-content-secondary text-xs">{collapsed ? (side === 'left' ? '>' : '<') : (side === 'left' ? '<' : '>')}</span>
   </div>
 
   <!-- Content -->

@@ -43,7 +43,7 @@
     const offsetY = (MINIMAP_HEIGHT - gh * scale) / 2 - minY * scale + 20 * scale;
 
     // Draw edges
-    ctx.strokeStyle = '#374151';
+    ctx.strokeStyle = '#3A3F56';
     ctx.lineWidth = 0.5;
     for (const edge of graphData.edges) {
       const sn = graphData.nodes.find(n => n.id === edge.source);
@@ -81,10 +81,10 @@
     const vw = (bottomRight.x - topLeft.x) * scale;
     const vh = (bottomRight.y - topLeft.y) * scale;
 
-    ctx.strokeStyle = '#3B82F6';
+    ctx.strokeStyle = '#4C8DFF';
     ctx.lineWidth = 2;
     ctx.strokeRect(vx, vy, vw, vh);
-    ctx.fillStyle = 'rgba(59, 130, 246, 0.08)';
+    ctx.fillStyle = 'rgba(76, 141, 255, 0.08)';
     ctx.fillRect(vx, vy, vw, vh);
   }
 

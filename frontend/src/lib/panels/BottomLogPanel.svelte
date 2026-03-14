@@ -106,7 +106,7 @@
 
     <!-- Header -->
     <div class="flex items-center justify-between px-3 py-1 border-b border-[--border-color] shrink-0">
-      <span class="text-sm font-medium text-gray-300">Inference Logs</span>
+      <span class="text-sm font-medium text-content-primary">Inference Logs</span>
       <div class="flex items-center gap-2">
         <button
           class="text-xs text-gray-500 hover:text-gray-300 transition-colors"
@@ -125,7 +125,7 @@
     >
       {#each logStore.entries as entry}
         <div class="flex gap-2 px-2 py-0.5 hover:bg-[--bg-menu]">
-          <span class="text-gray-600 shrink-0">{formatTime(entry.timestamp)}</span>
+          <span class="text-content-secondary/50 shrink-0">{formatTime(entry.timestamp)}</span>
           <span class="shrink-0 px-1 rounded text-[10px] uppercase font-semibold {LEVEL_COLORS[entry.level] ?? 'text-gray-400'} {LEVEL_BG[entry.level] ?? 'bg-gray-700/50'}">
             {entry.level}
           </span>
@@ -134,7 +134,7 @@
               {entry.node_name}
             </span>
           {/if}
-          <span class="text-gray-300 break-all">{entry.message}</span>
+          <span class="text-content-primary break-all">{entry.message}</span>
         </div>
       {/each}
       {#if logStore.entries.length === 0}
