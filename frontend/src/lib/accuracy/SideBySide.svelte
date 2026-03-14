@@ -6,6 +6,7 @@
 		formatValue,
 		type ColormapName,
 	} from './tensorUtils';
+	import { rangeScroll } from './rangeScroll';
 
 	let {
 		main,
@@ -275,32 +276,34 @@
 
 <div class="flex w-full flex-col gap-2">
 	<!-- Controls row -->
-	<div class="flex flex-wrap items-center gap-4 text-sm text-gray-300">
+	<div class="flex flex-wrap items-center gap-4 text-sm text-gray-300 w-full">
 		{#if dims.batches > 1}
-			<label class="flex items-center gap-1">
-				Batch
+			<label class="flex items-center gap-1 flex-1 min-w-[10rem]">
+				<span class="shrink-0">Batch</span>
 				<input
+					use:rangeScroll
 					type="range"
 					min="0"
 					max={dims.batches - 1}
 					bind:value={batch}
-					class="w-24"
+					class="flex-1"
 				/>
-				<span class="w-6 text-center font-mono">{batch}</span>
+				<span class="w-6 text-center font-mono shrink-0">{batch}</span>
 			</label>
 		{/if}
 
 		{#if dims.channels > 1}
-			<label class="flex items-center gap-1">
-				Channel
+			<label class="flex items-center gap-1 flex-1 min-w-[10rem]">
+				<span class="shrink-0">Channel</span>
 				<input
+					use:rangeScroll
 					type="range"
 					min="0"
 					max={dims.channels - 1}
 					bind:value={channel}
-					class="w-24"
+					class="flex-1"
 				/>
-				<span class="w-6 text-center font-mono">{channel}</span>
+				<span class="w-6 text-center font-mono shrink-0">{channel}</span>
 			</label>
 		{/if}
 

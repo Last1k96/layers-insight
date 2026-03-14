@@ -1,5 +1,6 @@
 <script lang="ts">
   import { getSpatialDims, extractSlice, computeStats, computeHistogram, cosineSimilarity, formatValue } from './tensorUtils';
+  import { rangeScroll } from './rangeScroll';
 
   let {
     main,
@@ -243,16 +244,17 @@
 <div class="h-full flex flex-col gap-4">
   <!-- Channel selector -->
   {#if dims.channels > 1}
-    <div class="flex items-center gap-2 text-xs shrink-0">
-      <span class="text-gray-400">Channel:</span>
+    <div class="flex items-center gap-2 text-xs shrink-0 w-full">
+      <span class="text-gray-400 shrink-0">Channel:</span>
       <input
+        use:rangeScroll
         type="range"
         min="0"
         max={dims.channels - 1}
         bind:value={channelIndex}
-        class="w-48"
+        class="flex-1"
       />
-      <span class="text-gray-300">{channelIndex} / {dims.channels}</span>
+      <span class="text-gray-300 shrink-0">{channelIndex} / {dims.channels}</span>
     </div>
   {/if}
 

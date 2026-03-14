@@ -8,6 +8,7 @@
     computeStats,
     type ColormapName,
   } from './tensorUtils';
+  import { rangeScroll } from './rangeScroll';
 
   let {
     diff,
@@ -238,19 +239,19 @@
 
 <div class="flex flex-col gap-4 relative h-full">
   <!-- Controls -->
-  <div class="flex flex-wrap gap-4 items-center text-xs">
+  <div class="flex flex-wrap gap-4 items-center text-xs w-full">
     {#if dims.batches > 1}
-      <label class="flex items-center gap-2">
-        <span class="text-gray-400">Batch:</span>
-        <input type="range" min="0" max={dims.batches - 1} bind:value={sliceIndex} class="w-24" />
-        <span class="text-gray-300 w-6">{sliceIndex}</span>
+      <label class="flex items-center gap-2 flex-1 min-w-[10rem]">
+        <span class="text-gray-400 shrink-0">Batch:</span>
+        <input use:rangeScroll type="range" min="0" max={dims.batches - 1} bind:value={sliceIndex} class="flex-1" />
+        <span class="text-gray-300 w-6 shrink-0">{sliceIndex}</span>
       </label>
     {/if}
     {#if dims.channels > 1}
-      <label class="flex items-center gap-2">
-        <span class="text-gray-400">Channel:</span>
-        <input type="range" min="0" max={dims.channels - 1} bind:value={channelIndex} class="w-32" />
-        <span class="text-gray-300 w-8">{channelIndex}/{dims.channels}</span>
+      <label class="flex items-center gap-2 flex-1 min-w-[10rem]">
+        <span class="text-gray-400 shrink-0">Channel:</span>
+        <input use:rangeScroll type="range" min="0" max={dims.channels - 1} bind:value={channelIndex} class="flex-1" />
+        <span class="text-gray-300 w-8 shrink-0">{channelIndex}/{dims.channels}</span>
       </label>
     {/if}
     <label class="flex items-center gap-2">

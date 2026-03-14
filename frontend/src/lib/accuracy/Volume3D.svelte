@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { getSpatialDims, formatValue } from './tensorUtils';
+	import { rangeScroll } from './rangeScroll';
 
 	let { main, ref, shape, mainLabel = 'Main', refLabel = 'Reference' }: {
 		main: Float32Array;
@@ -153,6 +154,9 @@
 
 	const MAX_VOXELS = 50000;
 
+	// User-controlled chunk size
+	let chunkSize = $state(3);
+
 	let volumeData = $derived.by(() => {
 		const dims = getSpatialDims(shape);
 		const { channels: C, height: H, width: W } = dims;
@@ -170,13 +174,12 @@
 
 		if (maxVal === minVal) maxVal = minVal + 1;
 
-		// Downsample if too many voxels
-		const total = C * H * W;
-		if (total <= MAX_VOXELS) {
+		const factor = chunkSize;
+
+		// No downsampling needed
+		if (factor <= 1) {
 			return { diff, C, H, W, minVal, maxVal, dsC: 1, dsH: 1, dsW: 1, dsOrigin: null, origC: C, origH: H, origW: W };
 		}
-
-		const factor = Math.ceil(Math.cbrt(total / MAX_VOXELS));
 		const nC = Math.max(1, Math.ceil(C / factor));
 		const nH = Math.max(1, Math.ceil(H / factor));
 		const nW = Math.max(1, Math.ceil(W / factor));
@@ -656,30 +659,32 @@
 </script>
 
 <div class="h-full flex flex-col gap-2">
-	<div class="flex flex-wrap items-center gap-4 text-xs text-gray-400 shrink-0">
-		<label class="flex items-center gap-1.5">
-			<span class="whitespace-nowrap">Hide errors below</span>
+	<div class="flex flex-wrap items-center gap-4 text-xs text-gray-400 shrink-0 w-full">
+		<label class="flex items-center gap-1.5 flex-1 min-w-[10rem]">
+			<span class="whitespace-nowrap shrink-0">Hide errors below</span>
 			<input
+				use:rangeScroll
 				type="range"
 				min="0"
 				max="1"
 				step="0.01"
 				bind:value={threshold}
-				class="w-24 accent-purple-500"
+				class="flex-1 accent-purple-500"
 			/>
-			<span class="w-8 text-right font-mono text-gray-300">{threshold.toFixed(2)}</span>
+			<span class="w-8 text-right font-mono text-gray-300 shrink-0">{threshold.toFixed(2)}</span>
 		</label>
-		<label class="flex items-center gap-1.5">
-			<span class="whitespace-nowrap">Voxel opacity</span>
+		<label class="flex items-center gap-1.5 flex-1 min-w-[10rem]">
+			<span class="whitespace-nowrap shrink-0">Voxel opacity</span>
 			<input
+				use:rangeScroll
 				type="range"
 				min="0.05"
 				max="1"
 				step="0.05"
 				bind:value={opacity}
-				class="w-24 accent-purple-500"
+				class="flex-1 accent-purple-500"
 			/>
-			<span class="w-8 text-right font-mono text-gray-300">{opacity.toFixed(2)}</span>
+			<span class="w-8 text-right font-mono text-gray-300 shrink-0">{opacity.toFixed(2)}</span>
 		</label>
 		<label class="flex items-center gap-1.5">
 			<span class="whitespace-nowrap">Colors</span>
@@ -689,20 +694,33 @@
 				{/each}
 			</select>
 		</label>
+		<label class="flex items-center gap-1.5 flex-1 min-w-[10rem]">
+			<span class="whitespace-nowrap shrink-0">Chunk</span>
+			<input
+				use:rangeScroll
+				type="range"
+				min="1"
+				max="16"
+				step="1"
+				bind:value={chunkSize}
+				class="flex-1 accent-purple-500"
+			/>
+			<span class="w-8 text-right font-mono text-gray-300 shrink-0">{chunkSize}x</span>
+		</label>
 		<span class="text-gray-500 italic">Drag to orbit · Shift-drag or middle-drag to pan · Scroll to zoom</span>
 	</div>
 	<!-- Axis slice range sliders -->
 	{#if volumeData}
-		<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400 shrink-0">
+		<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400 shrink-0 w-full">
 			{#each [
 				{ label: 'C', color: 'blue', max: volumeData.origC - 1, slice: sliceC, set: (v: [number, number]) => sliceC = v },
 				{ label: 'H', color: 'green', max: volumeData.origH - 1, slice: sliceH, set: (v: [number, number]) => sliceH = v },
 				{ label: 'W', color: 'red', max: volumeData.origW - 1, slice: sliceW, set: (v: [number, number]) => sliceW = v },
 			] as axis}
 				{#if axis.max > 0}
-					<div class="flex items-center gap-1.5">
-						<span class="w-3 font-semibold" style="color: {axis.color === 'blue' ? '#3b82f6' : axis.color === 'green' ? '#22c55e' : '#ef4444'}">{axis.label}</span>
-						<div class="relative w-28 h-5">
+					<div class="flex items-center gap-1.5 flex-1 min-w-[10rem]">
+						<span class="w-3 font-semibold shrink-0" style="color: {axis.color === 'blue' ? '#3b82f6' : axis.color === 'green' ? '#22c55e' : '#ef4444'}">{axis.label}</span>
+						<div class="relative flex-1 h-5">
 							<!-- Track background -->
 							<div class="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1 rounded bg-gray-700"></div>
 							<!-- Active range bar -->
@@ -712,6 +730,7 @@
 							></div>
 							<!-- Min slider -->
 							<input
+								use:rangeScroll
 								type="range"
 								min="0"
 								max={axis.max}
@@ -726,6 +745,7 @@
 							/>
 							<!-- Max slider -->
 							<input
+								use:rangeScroll
 								type="range"
 								min="0"
 								max={axis.max}
