@@ -31,7 +31,7 @@
   }
 </script>
 
-<div class="h-screen w-screen flex flex-col bg-gray-900 text-gray-100">
+<div class="h-screen w-screen flex flex-col bg-[--bg-primary] text-gray-100">
   {#if wsError}
     <ErrorBanner message="Connection lost. Reconnecting..." onretry={() => wsError = false} />
   {/if}

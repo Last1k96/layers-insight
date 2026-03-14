@@ -85,8 +85,8 @@
 <!-- Toggle button — always visible, centered at bottom to avoid overlap with side panels -->
 <button
   class="fixed left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 text-xs font-medium rounded-md
-    bg-gray-800 border border-gray-600 text-gray-200 shadow-lg
-    hover:bg-gray-700 hover:text-white transition-colors"
+    bg-[--bg-panel] border border-[--border-color] text-gray-200 shadow-lg
+    hover:bg-[--bg-menu] hover:text-white transition-colors"
   style:bottom={logStore.visible ? `${height + 4}px` : '0.5rem'}
   onclick={() => logStore.toggle()}
 >
@@ -95,7 +95,7 @@
 
 {#if logStore.visible}
   <div
-    class="fixed bottom-0 left-0 right-0 z-40 bg-gray-800/95 backdrop-blur border-t border-gray-700 flex flex-col"
+    class="fixed bottom-0 left-0 right-0 z-40 bg-[--bg-panel] backdrop-blur border-t border-[--border-color] flex flex-col"
     style:height={`${height}px`}
   >
     <!-- Resize handle -->
@@ -105,7 +105,7 @@
     ></div>
 
     <!-- Header -->
-    <div class="flex items-center justify-between px-3 py-1 border-b border-gray-700 shrink-0">
+    <div class="flex items-center justify-between px-3 py-1 border-b border-[--border-color] shrink-0">
       <span class="text-sm font-medium text-gray-300">Inference Logs</span>
       <div class="flex items-center gap-2">
         <button
@@ -124,7 +124,7 @@
       onscroll={handleScroll}
     >
       {#each logStore.entries as entry}
-        <div class="flex gap-2 px-2 py-0.5 hover:bg-gray-700/30">
+        <div class="flex gap-2 px-2 py-0.5 hover:bg-[--bg-menu]">
           <span class="text-gray-600 shrink-0">{formatTime(entry.timestamp)}</span>
           <span class="shrink-0 px-1 rounded text-[10px] uppercase font-semibold {LEVEL_COLORS[entry.level] ?? 'text-gray-400'} {LEVEL_BG[entry.level] ?? 'bg-gray-700/50'}">
             {entry.level}

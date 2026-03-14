@@ -188,6 +188,7 @@ export class WebGPURenderer {
     searchVisible: boolean,
     grayedNodes: Set<string>,
     zoomRatio: number,
+    nodeOverrides?: Map<string, { name: string; type: string; color: string }>,
   ): void {
     if (!this.graphData) return;
     this.currentZoom = zoomRatio;
@@ -201,13 +202,26 @@ export class WebGPURenderer {
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
       const off = i * NODE_FLOATS;
-      const size = this.nodeSizeFn!(node.id);
+      let size = this.nodeSizeFn!(node.id);
+      const override = nodeOverrides?.get(node.id);
       const isGrayed = grayedNodes.has(node.id);
       const isSelected = selectedNodeId === node.id;
       const isHovered = hoveredNodeId === node.id;
       const nodeStatus = nodeStatusMap.get(node.id);
 
-      const fillColor = isGrayed ? '#1f2937' : node.color;
+      // Widen node if override label needs more space
+      let dx = 0;
+      if (override) {
+        const pad = 16;
+        const labelWidth = measureText(this.atlas, override.type, GRAPH_FONT_SIZE);
+        if (labelWidth + pad > size.width) {
+          const newWidth = labelWidth + pad;
+          dx = (newWidth - size.width) / 2;
+          size = { width: newWidth, height: size.height };
+        }
+      }
+
+      const fillColor = override ? override.color : isGrayed ? '#303030' : node.color;
       const fill = hexToRgb(fillColor);
 
       let strokeR = 0.2, strokeG = 0.2, strokeB = 0.2;
@@ -242,13 +256,15 @@ export class WebGPURenderer {
         strokeWidth = 2;
       }
 
-      // Opacity for search dimming
+      // Opacity: grayed nodes semi-transparent, search dims non-matches
       let opacity = 1;
-      if (searchActive && searchSet && !searchSet.has(node.id)) {
+      if (isGrayed) {
+        opacity = 0.35;
+      } else if (searchActive && searchSet && !searchSet.has(node.id)) {
         opacity = 0.15;
       }
 
-      nodeData[off + 0] = node.x;
+      nodeData[off + 0] = node.x - dx;
       nodeData[off + 1] = node.y;
       nodeData[off + 2] = size.width;
       nodeData[off + 3] = size.height;
@@ -279,12 +295,12 @@ export class WebGPURenderer {
     }
 
     // Build text glyph instances (skip if zoomed out)
-    this.rebuildText(grayedNodes, zoomRatio);
+    this.rebuildText(grayedNodes, zoomRatio, nodeOverrides);
 
     this.markDirty();
   }
 
-  private rebuildText(grayedNodes: Set<string>, zoomRatio: number): void {
+  private rebuildText(grayedNodes: Set<string>, zoomRatio: number, nodeOverrides?: Map<string, { name: string; type: string; color: string }>): void {
     if (!this.graphData || zoomRatio < 0.05) {
       this.textPipeline = updateGlyphInstances(
         this.textPipeline, this.device, this.cameraBuffer, this.atlas,
@@ -309,32 +325,50 @@ export class WebGPURenderer {
     // Estimate glyph count
     let totalGlyphs = 0;
     for (const node of nodes) {
-      if (!grayedNodes.has(node.id)) {
-        totalGlyphs += node.type.length;
-      }
+      const ov = nodeOverrides?.get(node.id);
+      totalGlyphs += ov ? ov.type.length : node.type.length;
     }
 
     const glyphData = new Float32Array(totalGlyphs * 12);
     let glyphCount = 0;
 
     for (const node of nodes) {
-      if (grayedNodes.has(node.id)) continue;
+      const override = nodeOverrides?.get(node.id);
+      const isGrayed = grayedNodes.has(node.id);
 
-      const label = node.type;
-      const size = this.nodeSizeFn!(node.id);
-      const fillColor = node.color;
+      const label = override ? override.type : node.type;
+      let size = this.nodeSizeFn!(node.id);
+      let dx = 0;
+      if (override) {
+        const oPad = 16;
+        const labelW = measureText(atlas, label, GRAPH_FONT_SIZE);
+        if (labelW + oPad > size.width) {
+          const newWidth = labelW + oPad;
+          dx = (newWidth - size.width) / 2;
+          size = { width: newWidth, height: size.height };
+        }
+      }
+      const fillColor = override ? override.color : isGrayed ? '#303030' : node.color;
+      const glyphAlpha = isGrayed ? textAlpha * 0.35 : textAlpha;
       const textColor = isLightNodeColor(fillColor) ? { r: 0.2, g: 0.2, b: 0.2 } : { r: 1, g: 1, b: 1 };
 
-      // Measure text width for centering
-      const textWidth = measureText(atlas, label, GRAPH_FONT_SIZE);
-      const startX = node.x + (size.width - textWidth) / 2;
-      const startY = node.y + (size.height - GRAPH_FONT_SIZE) / 2;
+      // Measure text width for centering; shrink font if it overflows the node
+      const pad = 6; // horizontal padding
+      let fontSize = GRAPH_FONT_SIZE;
+      let textWidth = measureText(atlas, label, fontSize);
+      if (textWidth > size.width - pad * 2) {
+        fontSize = fontSize * (size.width - pad * 2) / textWidth;
+        textWidth = size.width - pad * 2;
+      }
+      const labelScale = fontSize / atlas.fontSize;
+      const startX = (node.x - dx) + (size.width - textWidth) / 2;
+      const startY = node.y + (size.height - fontSize) / 2;
 
       let curX = startX;
       for (let ci = 0; ci < label.length; ci++) {
         const code = label.charCodeAt(ci) - FIRST_CHAR;
         if (code < 0 || code >= CHAR_COUNT) {
-          curX += 6 * scale; // space for unknown chars
+          curX += 6 * labelScale; // space for unknown chars
           continue;
         }
 
@@ -344,8 +378,8 @@ export class WebGPURenderer {
         // World position & size
         glyphData[off + 0] = curX;
         glyphData[off + 1] = startY;
-        glyphData[off + 2] = g.w * scale;
-        glyphData[off + 3] = g.h * scale;
+        glyphData[off + 2] = g.w * labelScale;
+        glyphData[off + 3] = g.h * labelScale;
 
         // UV rect (normalized)
         glyphData[off + 4] = g.x / atlasW;
@@ -357,9 +391,9 @@ export class WebGPURenderer {
         glyphData[off + 8] = textColor.r;
         glyphData[off + 9] = textColor.g;
         glyphData[off + 10] = textColor.b;
-        glyphData[off + 11] = textAlpha;
+        glyphData[off + 11] = glyphAlpha;
 
-        curX += g.advance * scale;
+        curX += g.advance * labelScale;
         glyphCount++;
       }
     }

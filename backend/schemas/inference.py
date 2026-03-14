@@ -59,6 +59,7 @@ class EnqueueRequest(BaseModel):
     node_id: str
     node_name: str
     node_type: str
+    sub_session_id: Optional[str] = None
 
 
 class ReorderRequest(BaseModel):

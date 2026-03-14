@@ -68,17 +68,19 @@ class QueueStore {
     this.tasks = this.tasks.filter(t => t.task_id !== taskId);
   }
 
-  async enqueue(sessionId: string, nodeId: string, nodeName: string, nodeType: string): Promise<InferenceTask | null> {
+  async enqueue(sessionId: string, nodeId: string, nodeName: string, nodeType: string, subSessionId?: string | null): Promise<InferenceTask | null> {
     try {
+      const body: Record<string, string> = {
+        session_id: sessionId,
+        node_id: nodeId,
+        node_name: nodeName,
+        node_type: nodeType,
+      };
+      if (subSessionId) body.sub_session_id = subSessionId;
       const res = await fetch('/api/inference/enqueue', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          node_id: nodeId,
-          node_name: nodeName,
-          node_type: nodeType,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`Enqueue failed: ${res.statusText}`);
       const task: InferenceTask = await res.json();
@@ -114,6 +116,15 @@ class QueueStore {
   loadTasks(tasks: InferenceTask[]): void {
     this.tasks = tasks;
     this.selectedTaskId = null;
+  }
+
+  removeByNodeNames(names: Set<string>): void {
+    for (const t of this.tasks) {
+      if (names.has(t.node_name) && t.status === 'waiting') {
+        this.cancel(t.task_id);
+      }
+    }
+    this.tasks = this.tasks.filter(t => !names.has(t.node_name));
   }
 
   clear(): void {

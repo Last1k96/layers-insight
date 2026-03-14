@@ -2,6 +2,7 @@ import { graphStore, type NodeStatus } from '../stores/graph.svelte';
 import { queueStore } from '../stores/queue.svelte';
 import { cacheMetrics } from '../stores/metrics.svelte';
 import { logStore } from '../stores/log.svelte';
+import { refreshRenderer } from '../graph/renderer';
 import type { TaskStatusMessage, TaskStatus } from '../stores/types';
 
 let ws: WebSocket | null = null;
@@ -85,7 +86,10 @@ function _scheduleReconnect(): void {
 
 function handleMessage(msg: any): void {
   if (msg.type === 'sub_session_created') {
-    graphStore.setGrayedNodes(msg.grayed_nodes || []);
+    graphStore.setGrayedNodes(msg.grayed_nodes || [], msg.cut_node, msg.cut_type, msg.ancestor_cuts);
+    graphStore.setActiveSubSession(msg.sub_session_id || null);
+    queueStore.removeByNodeNames(new Set(msg.grayed_nodes || []));
+    refreshRenderer();
   }
 
   if (msg.type === 'task_status') {
@@ -111,7 +115,7 @@ function handleMessage(msg: any): void {
       refResult: tsMsg.ref_result,
       errorDetail: tsMsg.error_detail,
     };
-    graphStore.updateNodeStatus(tsMsg.node_id, nodeStatus);
+    graphStore.updateNodeStatus(tsMsg.node_id, nodeStatus, tsMsg.sub_session_id);
 
     // Cache metrics on success
     if (tsMsg.status === 'success' && tsMsg.metrics) {

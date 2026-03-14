@@ -83,13 +83,9 @@ def main() -> None:
         cut_model.validate_nodes_and_infer_types()
         _log("info", f"Cut model created: {len(reachable_params)} parameters, {len(new_outputs)} outputs")
 
-        # Serialize cut model as-is to temp files, then destroy the read Core
-        # to avoid Core-corruption issues with plugins like TEMPLATE that
-        # crash when compile_model is called on a Core that previously
-        # called read_model on FP16-INT8 IR.
-        import tempfile
-        tmp_model_dir = tempfile.mkdtemp(prefix="ov_cut_")
-        tmp_xml = str(Path(tmp_model_dir) / "cut_model.xml")
+        # Serialize cut model directly to out_dir so the task folder becomes
+        # a self-contained reproducer (cut model + inputs + outputs).
+        tmp_xml = str(Path(out_dir) / "cut_model.xml")
         ov.save_model(cut_model, tmp_xml)
         model_params = _extract_params(cut_model)
         _log("info", f"Serialized cut model to {tmp_xml}")
@@ -117,16 +113,17 @@ def main() -> None:
         cut_model = core.read_model(tmp_xml)
         _log("info", f"Reloaded cut model: {len(list(cut_model.get_ordered_ops()))} ops")
 
-        # Clean up temp files
-        import shutil
-        shutil.rmtree(tmp_model_dir, ignore_errors=True)
-
         # Prepare inputs (use cut_model's params, not original model's)
         _log("info", "Preparing inputs...")
         from backend.utils.input_generator import prepare_inputs
 
         inputs = prepare_inputs(model_params, input_path, precision, input_configs)
         _log("info", f"Inputs prepared: {len(inputs)} tensors")
+
+        # Save input tensors to out_dir for reproducibility
+        for name, tensor in inputs.items():
+            safe_name = name.replace("/", "_").replace("(", "_").replace(")", "_")
+            np.save(str(Path(out_dir) / f"input_{safe_name}.npy"), tensor)
 
         # Infer on main device
         _log("info", f"Compiling model for {main_device}...")

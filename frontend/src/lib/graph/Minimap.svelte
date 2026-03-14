@@ -156,7 +156,7 @@
 
 <div class="absolute bottom-4 right-4 z-10">
   <button
-    class="absolute -top-7 right-0 px-2 py-0.5 text-xs text-gray-400 bg-gray-800 border border-gray-700 rounded-t hover:bg-gray-700 transition-colors"
+    class="absolute -top-7 right-0 px-2 py-0.5 text-xs text-gray-400 bg-[--bg-panel] border border-[--border-color] rounded-t hover:bg-[--bg-menu] transition-colors"
     onclick={() => collapsed = !collapsed}
   >
     {collapsed ? 'Map' : 'Hide'}
@@ -164,7 +164,7 @@
 
   {#if !collapsed}
     <div
-      class="relative border border-gray-700 rounded bg-gray-900 overflow-hidden shadow-lg"
+      class="relative border border-[--border-color] rounded bg-[--bg-primary] overflow-hidden shadow-lg"
       style="width: {MINIMAP_WIDTH}px; height: {MINIMAP_HEIGHT}px;"
     >
       <canvas

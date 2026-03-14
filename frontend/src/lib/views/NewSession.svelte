@@ -27,6 +27,18 @@
 
   const PRECISIONS = ['fp32', 'fp16', 'i32', 'i64', 'u8', 'i8'];
 
+  const FLOAT_TYPES = new Set(['f16', 'f32', 'f64', 'bf16', 'float16', 'float32', 'float64', 'bfloat16']);
+  const FLOAT_PRECISIONS = ['fp32', 'fp16'];
+  const INT_PRECISIONS = ['i32', 'i64', 'u8', 'i8'];
+
+  function getAllowedPrecisions(elementType: string): string[] {
+    const norm = normalizeElementType(elementType);
+    if (FLOAT_TYPES.has(norm)) return FLOAT_PRECISIONS;
+    if (norm === 'boolean') return ['u8'];
+    if (norm) return INT_PRECISIONS;
+    return PRECISIONS;
+  }
+
   // OpenVINO layout options by tensor rank
   // Dimension letters: N=batch, C=channels, D=depth, H=height, W=width
   const LAYOUTS_BY_RANK: Record<number, string[]> = {
@@ -94,13 +106,23 @@
     loadingInputs = false;
   }
 
+  /** Extract the inner type name from OV strings like "<Type: 'float32'>" or plain "f32" */
+  function normalizeElementType(et: string): string {
+    const m = et.match(/'([^']+)'/);
+    return m ? m[1] : et;
+  }
+
   function elementTypeToDataType(et: string): string {
+    const norm = normalizeElementType(et);
     const map: Record<string, string> = {
       'f32': 'fp32', 'f16': 'fp16', 'f64': 'fp32',
+      'float32': 'fp32', 'float16': 'fp16', 'float64': 'fp32', 'bfloat16': 'fp16',
       'i32': 'i32', 'i64': 'i64', 'i8': 'i8',
-      'u8': 'u8', 'boolean': 'u8',
+      'int32': 'i32', 'int64': 'i64', 'int8': 'i8',
+      'u8': 'u8', 'uint8': 'u8',
+      'boolean': 'u8',
     };
-    return map[et] || 'fp32';
+    return map[norm] || 'fp32';
   }
 
   function formatShape(shape: number[]): string {
@@ -149,7 +171,7 @@
           type="text"
           bind:value={ovPath}
           placeholder="/opt/intel/openvino"
-          class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:border-blue-500 focus:outline-none"
+          class="w-full px-3 py-2 bg-[--bg-menu] border border-[--border-color] rounded focus:border-blue-500 focus:outline-none"
         />
       </div>
 
@@ -160,14 +182,14 @@
             type="text"
             bind:value={modelPath}
             placeholder="/path/to/model.xml"
-            class="flex-1 px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:border-blue-500 focus:outline-none"
+            class="flex-1 px-3 py-2 bg-[--bg-menu] border border-[--border-color] rounded focus:border-blue-500 focus:outline-none"
             required
           />
           <button
             type="button"
             onclick={inspectModel}
             disabled={loadingInputs || !modelPath.trim()}
-            class="px-3 py-2 bg-gray-700 hover:bg-gray-600 disabled:bg-gray-800 disabled:text-gray-600 rounded text-sm transition-colors"
+            class="px-3 py-2 bg-[--bg-menu] hover:bg-[--bg-primary] disabled:bg-[--bg-panel] disabled:text-gray-600 rounded text-sm transition-colors"
           >
             {loadingInputs ? 'Reading...' : 'Inspect'}
           </button>
@@ -176,10 +198,10 @@
 
       <!-- Model Inputs Section -->
       {#if modelInputs.length > 0}
-        <div class="border border-gray-700 rounded p-3 space-y-3">
+        <div class="border border-[--border-color] rounded p-3 space-y-3">
           <div class="text-sm text-gray-400 font-medium">Model Inputs ({modelInputs.length})</div>
           {#each modelInputs as input, i (input.name)}
-            <div class="bg-gray-800/50 rounded p-3 space-y-2">
+            <div class="bg-[--bg-menu] rounded p-3 space-y-2">
               <div class="flex items-center justify-between">
                 <div class="font-mono text-sm text-blue-400">{input.name}</div>
                 <div class="text-xs text-gray-500">
@@ -191,7 +213,7 @@
                   <label class="block text-xs text-gray-500 mb-0.5">Source</label>
                   <select
                     bind:value={modelInputs[i].source}
-                    class="w-full px-2 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm focus:border-blue-500 focus:outline-none"
+                    class="w-full px-2 py-1.5 bg-[--bg-menu] border border-[--border-color] rounded text-sm focus:border-blue-500 focus:outline-none"
                   >
                     <option value="random">Random</option>
                     <option value="file">File</option>
@@ -201,9 +223,9 @@
                   <label class="block text-xs text-gray-500 mb-0.5">Data Type</label>
                   <select
                     bind:value={modelInputs[i].data_type}
-                    class="w-full px-2 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm focus:border-blue-500 focus:outline-none"
+                    class="w-full px-2 py-1.5 bg-[--bg-menu] border border-[--border-color] rounded text-sm focus:border-blue-500 focus:outline-none"
                   >
-                    {#each PRECISIONS as p (p)}
+                    {#each getAllowedPrecisions(input.element_type) as p (p)}
                       <option value={p}>{p.toUpperCase()}</option>
                     {/each}
                   </select>
@@ -212,7 +234,7 @@
                   <label class="block text-xs text-gray-500 mb-0.5">Layout</label>
                   <select
                     bind:value={modelInputs[i].layout}
-                    class="w-full px-2 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm focus:border-blue-500 focus:outline-none"
+                    class="w-full px-2 py-1.5 bg-[--bg-menu] border border-[--border-color] rounded text-sm focus:border-blue-500 focus:outline-none"
                   >
                     {#each getLayoutOptions(input.shape) as l (l)}
                       <option value={l}>{l}</option>
@@ -226,7 +248,7 @@
                     type="text"
                     bind:value={modelInputs[i].path}
                     placeholder="/path/to/input.npy"
-                    class="w-full px-2 py-1.5 bg-gray-800 border border-gray-700 rounded text-sm focus:border-blue-500 focus:outline-none"
+                    class="w-full px-2 py-1.5 bg-[--bg-menu] border border-[--border-color] rounded text-sm focus:border-blue-500 focus:outline-none"
                   />
                 </div>
               {/if}
@@ -246,7 +268,7 @@
       <div class="grid grid-cols-2 gap-4">
         <div>
           <label class="block text-sm text-gray-400 mb-1">Main Device</label>
-          <select bind:value={mainDevice} class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:border-blue-500 focus:outline-none">
+          <select bind:value={mainDevice} class="w-full px-3 py-2 bg-[--bg-menu] border border-[--border-color] rounded focus:border-blue-500 focus:outline-none">
             {#each configStore.devices as device (device)}
               <option value={device}>{device}</option>
             {/each}
@@ -254,7 +276,7 @@
         </div>
         <div>
           <label class="block text-sm text-gray-400 mb-1">Reference Device</label>
-          <select bind:value={refDevice} class="w-full px-3 py-2 bg-gray-800 border border-gray-700 rounded focus:border-blue-500 focus:outline-none">
+          <select bind:value={refDevice} class="w-full px-3 py-2 bg-[--bg-menu] border border-[--border-color] rounded focus:border-blue-500 focus:outline-none">
             {#each configStore.devices as device (device)}
               <option value={device}>{device}</option>
             {/each}
@@ -271,7 +293,7 @@
       <button
         type="submit"
         disabled={submitting}
-        class="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg font-medium transition-colors"
+        class="w-full py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-[--bg-panel] disabled:text-gray-500 rounded-lg font-medium transition-colors"
       >
         {submitting ? 'Creating...' : 'Start Session'}
       </button>

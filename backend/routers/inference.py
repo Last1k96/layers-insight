@@ -20,6 +20,13 @@ router = APIRouter(prefix="/api/inference", tags=["inference"])
 @router.post("/enqueue", response_model=InferenceTask)
 async def enqueue_task(req: EnqueueRequest, request: Request) -> InferenceTask:
     """Enqueue a node for inference."""
+    # Reject nodes that are grayed out (not in the cut sub-model)
+    if req.sub_session_id:
+        session_svc = request.app.state.session_service
+        sub_meta = session_svc.get_sub_session_meta(req.session_id, req.sub_session_id)
+        if sub_meta and req.node_name in sub_meta.get("grayed_nodes", []):
+            raise HTTPException(status_code=400, detail="Node is not part of this sub-session's model")
+
     queue_svc = request.app.state.queue_service
     task = queue_svc.create_task(
         session_id=req.session_id,
@@ -27,6 +34,8 @@ async def enqueue_task(req: EnqueueRequest, request: Request) -> InferenceTask:
         node_name=req.node_name,
         node_type=req.node_type,
     )
+    if req.sub_session_id:
+        task.sub_session_id = req.sub_session_id
     return await queue_svc.enqueue(task)
 
 

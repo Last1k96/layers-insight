@@ -56,7 +56,7 @@
   });
 </script>
 
-<div class="flex-1 flex items-center justify-center p-8">
+<div class="flex-1 flex items-start justify-center p-8 pt-[15vh]">
   <div class="max-w-2xl w-full">
     <h1 class="text-3xl font-bold mb-2">Layers Insight</h1>
     <p class="text-gray-400 mb-8">Neural Network Graph Debugger</p>
@@ -77,7 +77,7 @@
       <div class="space-y-3 mb-6 max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin">
         {#each sessionStore.sessions as session, i (session.id)}
           <button
-            class="group w-full text-left p-4 bg-gray-800 hover:bg-gray-750 rounded-lg border transition-colors {i === selectedIndex ? 'border-blue-500 bg-gray-750' : 'border-gray-700 hover:border-gray-600'}"
+            class="group w-full text-left p-4 bg-[--bg-panel] hover:bg-[--bg-menu] rounded-lg border transition-colors {i === selectedIndex ? 'border-blue-500 bg-[--bg-menu]' : 'border-[--border-color] hover:border-gray-600'}"
             onclick={() => onsessionselected(session.id)}
           >
             <div class="flex justify-between items-start">
@@ -99,16 +99,16 @@
                 {#if confirmingDelete === session.id}
                   <div class="flex gap-1">
                     <button
-                      class="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
-                      onclick={(e) => handleDelete(e, session.id)}
-                    >
-                      Confirm
-                    </button>
-                    <button
                       class="px-2 py-1 text-xs bg-gray-600 hover:bg-gray-500 text-gray-200 rounded transition-colors"
                       onclick={cancelDelete}
                     >
                       Cancel
+                    </button>
+                    <button
+                      class="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                      onclick={(e) => handleDelete(e, session.id)}
+                    >
+                      Confirm
                     </button>
                   </div>
                 {:else}

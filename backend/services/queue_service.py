@@ -103,6 +103,7 @@ class QueueService:
             node_name=old_task.node_name,
             node_type=old_task.node_type,
         )
+        new_task.sub_session_id = old_task.sub_session_id
         return await self.enqueue(new_task)
 
     async def cancel(self, task_id: str) -> bool:

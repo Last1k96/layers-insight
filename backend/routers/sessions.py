@@ -61,12 +61,35 @@ async def cut_model(session_id: str, req: CutRequest, request: Request) -> SubSe
     if model is None:
         raise HTTPException(status_code=400, detail="Model not loaded")
 
+    # Resolve source model and parent metadata for chained cuts
+    parent_sub = None
+    parent_grayed: list[str] = []
+    parent_input_configs: list[dict] = []
+    parent_ancestor_cuts: list[dict] = []
+
+    if req.parent_sub_session_id:
+        parent_sub = svc.get_sub_session_meta(session_id, req.parent_sub_session_id)
+        if parent_sub is None:
+            raise HTTPException(status_code=400, detail="Parent sub-session not found")
+        parent_grayed = parent_sub.get("grayed_nodes", [])
+        parent_input_configs = parent_sub.get("input_configs", [])
+        parent_ancestor_cuts = parent_sub.get("ancestor_cuts", [])
+
     try:
         if req.cut_type == "output":
-            cut_model, grayed_nodes = model_cut_svc.make_output_node(model, req.node_name)
+            if req.parent_sub_session_id and parent_sub:
+                # Read the parent sub-session's cut model
+                import openvino as ov
+                parent_model_path = parent_sub.get("model_path")
+                if not parent_model_path:
+                    raise HTTPException(status_code=400, detail="Parent sub-session has no model")
+                source_model = ov.Core().read_model(parent_model_path)
+                cut_model, new_grayed = model_cut_svc.make_output_node(source_model, req.node_name)
+            else:
+                cut_model, new_grayed = model_cut_svc.make_output_node(model, req.node_name)
         elif req.cut_type == "input":
-            # Find the main output .npy from the latest successful task for this node
-            task_id = _find_task_for_node(svc, session_id, req.node_name)
+            # Find the main output .npy for this node
+            task_id = svc.find_task_for_node(session_id, req.node_name, req.parent_sub_session_id)
             if task_id is None:
                 raise HTTPException(
                     status_code=400,
@@ -75,45 +98,93 @@ async def cut_model(session_id: str, req: CutRequest, request: Request) -> SubSe
             npy_path = svc.get_tensor_path(session_id, task_id, "main_output")
             if npy_path is None:
                 raise HTTPException(status_code=400, detail="Main output tensor not found")
-            cut_model, input_data, grayed_nodes = model_cut_svc.make_input_node(
-                model, req.node_name, str(npy_path), req.input_precision,
+
+            # Use parent sub-session's model path or root model path
+            if req.parent_sub_session_id and parent_sub:
+                source_model_path = parent_sub.get("model_path", session.config.model_path)
+            else:
+                source_model_path = session.config.model_path
+
+            cut_model, input_data, new_grayed = model_cut_svc.make_input_node(
+                source_model_path, req.node_name, str(npy_path), req.input_precision,
             )
         else:
             raise HTTPException(status_code=400, detail=f"Invalid cut_type: {req.cut_type}")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Normalize sub-model node names back to original graph names.
+    # When cutting a sub-model, Parameter(X) nodes created by prior input cuts
+    # appear with that wrapper name — map them back so the frontend can match.
+    normalized_grayed = []
+    for name in new_grayed:
+        if name.startswith("Parameter(") and name.endswith(")"):
+            normalized_grayed.append(name[len("Parameter("):-1])
+        else:
+            normalized_grayed.append(name)
+
+    # Accumulate grayed nodes from parent
+    accumulated_grayed = list(set(parent_grayed + normalized_grayed))
+
+    # Compute ancestor_cuts chain
+    ancestor_cuts = parent_ancestor_cuts + [{
+        "cut_node": parent_sub["cut_node"],
+        "cut_type": parent_sub["cut_type"],
+    }] if parent_sub else []
+
     # Store cut model
     sub_session = svc.create_sub_session(
         session_id=session_id,
         cut_type=req.cut_type,
         cut_node=req.node_name,
-        grayed_nodes=grayed_nodes,
+        grayed_nodes=accumulated_grayed,
+        parent_sub_session_id=req.parent_sub_session_id,
+        ancestor_cuts=ancestor_cuts,
     )
 
-    # Cache the cut model for inference
-    request.app.state.models[f"{session_id}:{sub_session.id}"] = cut_model
+    # Serialize cut model to sub-session directory for subprocess inference
+    import openvino as ov
+
+    sub_dir = svc._session_path(session_id) / "sub_sessions" / sub_session.id
+    cut_model_path = str(sub_dir / "cut_model.xml")
+    ov.save_model(cut_model, cut_model_path)
+
+    # For input cuts, save the .npy input and store accumulated input_configs
+    if req.cut_type == "input":
+        inputs_dir = sub_dir / "inputs"
+        inputs_dir.mkdir(exist_ok=True)
+        import numpy as np
+        param_name = f"Parameter({req.node_name})"
+        safe_filename = param_name.replace("/", "_").replace("\\", "_")
+        npy_save_path = str(inputs_dir / f"{safe_filename}.npy")
+        np.save(npy_save_path, input_data)
+
+        new_config = {"name": param_name, "source": "file", "path": npy_save_path}
+        accumulated_configs = parent_input_configs + [new_config]
+
+        svc.update_sub_session_meta(session_id, sub_session.id, {
+            "model_path": cut_model_path,
+            "input_configs": accumulated_configs,
+        })
+    else:
+        svc.update_sub_session_meta(session_id, sub_session.id, {
+            "model_path": cut_model_path,
+            "input_configs": parent_input_configs,
+        })
 
     # Broadcast sub-session creation via WS
     from backend.ws.handler import ws_manager
     await ws_manager.broadcast(session_id, {
         "type": "sub_session_created",
         "sub_session_id": sub_session.id,
+        "parent_sub_session_id": req.parent_sub_session_id,
         "cut_type": req.cut_type,
         "cut_node": req.node_name,
-        "grayed_nodes": grayed_nodes,
+        "grayed_nodes": accumulated_grayed,
+        "ancestor_cuts": ancestor_cuts,
     })
 
     return sub_session
-
-
-def _find_task_for_node(svc, session_id: str, node_name: str) -> str | None:
-    """Find the most recent successful task_id for a given node."""
-    meta = svc._read_metadata(session_id)
-    for task_id, task_data in reversed(list(meta.get("tasks", {}).items())):
-        if task_data.get("node_name") == node_name and task_data.get("status") == "success":
-            return task_id
-    return None
 
 
 @router.get("/{session_id}/sub-sessions", response_model=list[SubSessionInfo])

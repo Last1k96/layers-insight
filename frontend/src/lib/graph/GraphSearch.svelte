@@ -65,7 +65,7 @@
 
 {#if graphStore.searchVisible}
   <div class="absolute top-3 left-1/2 -translate-x-1/2 z-30 w-96">
-    <div class="bg-gray-800/95 backdrop-blur border border-gray-600 rounded-lg shadow-xl">
+    <div class="bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-lg shadow-xl">
       <div class="flex items-center px-3 py-2 gap-2">
         <svg class="w-4 h-4 text-gray-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -87,11 +87,11 @@
       </div>
 
       {#if graphStore.searchResults.length > 0}
-        <div bind:this={listEl} class="border-t border-gray-700 max-h-48 overflow-y-auto">
+        <div bind:this={listEl} class="border-t border-[--border-color] max-h-48 overflow-y-auto">
           {#each graphStore.searchResults as result, i (result.id)}
             <button
-              class="w-full text-left px-3 py-1.5 text-sm hover:bg-gray-700 flex justify-between"
-              class:bg-gray-700={i === graphStore.searchIndex}
+              class="w-full text-left px-3 py-1.5 text-sm hover:bg-[--bg-menu] flex justify-between"
+              class:bg-[--bg-menu]={i === graphStore.searchIndex}
               onclick={() => {
                 graphStore.searchIndex = i;
                 graphStore.selectNode(result.id);

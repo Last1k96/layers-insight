@@ -99,15 +99,15 @@
 </script>
 
 <div class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-40 w-96">
-  <div class="bg-gray-800/98 backdrop-blur border border-gray-700 rounded-xl shadow-2xl">
+  <div class="bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-xl shadow-2xl">
     <!-- Header -->
-    <div class="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-[--border-color]">
       <h3 class="text-sm font-medium text-gray-200">Batch Queue</h3>
       <button class="text-gray-400 hover:text-gray-200 text-xs" onclick={onclose}>Close</button>
     </div>
 
     <!-- Config -->
-    <div class="p-4 space-y-3 border-b border-gray-700">
+    <div class="p-4 space-y-3 border-b border-[--border-color]">
       <div class="text-xs text-gray-400">
         Starting from: <span class="text-gray-200 font-mono">{nodeName}</span>
       </div>
@@ -131,7 +131,7 @@
             min="1"
             max="100"
             bind:value={stride}
-            class="w-full mt-1 px-2 py-1 bg-gray-900 border border-gray-700 rounded text-xs focus:border-blue-500 focus:outline-none"
+            class="w-full mt-1 px-2 py-1 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
           />
         </label>
         <label class="text-xs">
@@ -141,7 +141,7 @@
             min="1"
             max="1000"
             bind:value={maxCount}
-            class="w-full mt-1 px-2 py-1 bg-gray-900 border border-gray-700 rounded text-xs focus:border-blue-500 focus:outline-none"
+            class="w-full mt-1 px-2 py-1 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
           />
         </label>
       </div>
@@ -153,7 +153,7 @@
         <div class="p-4 text-center text-gray-500 text-xs">No nodes found</div>
       {:else}
         {#each previewNodes as node, i (node.id)}
-          <div class="px-4 py-1.5 text-xs flex justify-between border-b border-gray-700/30">
+          <div class="px-4 py-1.5 text-xs flex justify-between border-b border-[--border-color]">
             <span class="font-mono text-gray-300 truncate">{node.name}</span>
             <span class="text-gray-500">{node.type}</span>
           </div>
@@ -164,7 +164,7 @@
     <!-- Actions -->
     <div class="p-4">
       <button
-        class="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:text-gray-500 rounded text-sm font-medium transition-colors"
+        class="w-full py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-[--bg-panel] disabled:text-gray-500 rounded text-sm font-medium transition-colors"
         disabled={previewNodes.length === 0 || submitting}
         onclick={queueAll}
       >

@@ -3,12 +3,12 @@
 @tailwind utilities;
 
 :root {
-  --bg-primary: #111827;
-  --bg-secondary: #1f2937;
-  --bg-tertiary: #374151;
-  --text-primary: #f3f4f6;
-  --text-secondary: #9ca3af;
-  --border-color: #4b5563;
+  --bg-primary: #404040;
+  --bg-panel: #2D2D2D;
+  --bg-menu: #3E3E3E;
+  --text-primary: #dfdfdf;
+  --text-secondary: #b2b2b2;
+  --border-color: #242424;
 }
 
 body {
@@ -23,7 +23,7 @@ body {
   width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-secondary);
+  background: var(--bg-panel);
 }
 ::-webkit-scrollbar-thumb {
   background: var(--border-color);

@@ -202,6 +202,7 @@ function doRefresh(): void {
     graphStore.searchVisible,
     graphStore.grayedNodes,
     panZoom.ratio,
+    graphStore.nodeOverrides,
   );
 }
 

@@ -71,8 +71,8 @@ export function setupInteractions(): void {
     if (e.ctrlKey) centerOnNode(nodeId);
     refreshRenderer();
 
-    if (e.shiftKey || !nodeStatus) {
-      queueStore.enqueue(sessionId, nodeId, attrs.nodeName || attrs.label, attrs.opType);
+    if (!graphStore.grayedNodes.has(nodeId) && (e.shiftKey || !nodeStatus)) {
+      queueStore.enqueue(sessionId, nodeId, attrs.nodeName || attrs.label, attrs.opType, graphStore.activeSubSessionId);
     }
   }
 

@@ -52,6 +52,7 @@ class SubSessionInfo(BaseModel):
     cut_type: str  # "output" or "input"
     cut_node: str  # node name where cut was made
     grayed_nodes: list[str] = []
+    ancestor_cuts: list[dict] = []  # [{cut_node, cut_type}] for all ancestors
     created_at: str
     task_count: int = 0
     success_count: int = 0
@@ -63,6 +64,7 @@ class CutRequest(BaseModel):
     node_name: str
     cut_type: str  # "output" or "input"
     input_precision: str = "f16"  # for make_input_node
+    parent_sub_session_id: Optional[str] = None  # cut from a sub-session's model
 
 
 class SessionDetail(BaseModel):

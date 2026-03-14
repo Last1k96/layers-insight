@@ -143,6 +143,7 @@ export interface TaskStatusMessage {
   metrics?: AccuracyMetrics;
   main_result?: DeviceResult;
   ref_result?: DeviceResult;
+  sub_session_id?: string;
 }
 
 export interface SubSessionInfo {
@@ -151,6 +152,7 @@ export interface SubSessionInfo {
   cut_type: 'output' | 'input';
   cut_node: string;
   grayed_nodes: string[];
+  ancestor_cuts?: { cut_node: string; cut_type: string }[];
   created_at: string;
   task_count: number;
   success_count: number;
@@ -160,9 +162,11 @@ export interface SubSessionInfo {
 export interface SubSessionCreatedMessage {
   type: 'sub_session_created';
   sub_session_id: string;
+  parent_sub_session_id?: string;
   cut_type: string;
   cut_node: string;
   grayed_nodes: string[];
+  ancestor_cuts?: { cut_node: string; cut_type: string }[];
 }
 
 export interface TensorMeta {

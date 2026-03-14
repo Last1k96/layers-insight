@@ -31,4 +31,4 @@
   });
 </script>
 
-<div bind:this={container} class="absolute inset-0" style="background: #1a1a2e;"></div>
+<div bind:this={container} class="absolute inset-0" style="background: var(--bg-primary);"></div>

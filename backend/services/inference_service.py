@@ -9,8 +9,6 @@ import threading
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-import numpy as np
-
 from backend.schemas.inference import AccuracyMetrics, DeviceResult, InferenceTask, TaskStatus
 
 
@@ -87,7 +85,9 @@ class InferenceService:
                             stage_callback(stage)
                     break
 
-        with tempfile.TemporaryDirectory(prefix="li_infer_") as tmp_dir:
+        tmp_dir = tempfile.mkdtemp(prefix="li_infer_")
+        success = False
+        try:
             # Build config for the subprocess worker
             worker_cfg = {
                 "model_path": model_path,
@@ -222,14 +222,10 @@ class InferenceService:
             task.status = TaskStatus.SUCCESS
             task.stage = None
 
-            # Load numpy outputs
-            main_output = None
-            ref_output = None
-            main_npy = Path(tmp_dir) / "main_output.npy"
-            ref_npy = Path(tmp_dir) / "ref_output.npy"
-            if main_npy.exists():
-                main_output = np.load(str(main_npy))
-            if ref_npy.exists():
-                ref_output = np.load(str(ref_npy))
-
-            return task, main_output, ref_output
+            # Return the artifacts directory path — caller is responsible for cleanup
+            success = True
+            return task, tmp_dir
+        finally:
+            if not success:
+                import shutil
+                shutil.rmtree(tmp_dir, ignore_errors=True)

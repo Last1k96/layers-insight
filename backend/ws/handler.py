@@ -53,6 +53,7 @@ class ConnectionManager:
             "metrics": task.metrics.model_dump() if task.metrics else None,
             "main_result": task.main_result.model_dump() if task.main_result else None,
             "ref_result": task.ref_result.model_dump() if task.ref_result else None,
+            "sub_session_id": task.sub_session_id,
         }
         await self.broadcast(task.session_id, message)
 

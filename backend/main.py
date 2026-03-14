@@ -92,6 +92,21 @@ async def lifespan(app: FastAPI):
         if session.config.inputs:
             input_configs = [inp.model_dump() for inp in session.config.inputs]
 
+        # Sub-session routing: use cut model path and merged input configs
+        infer_model_path = session.config.model_path
+        if task.sub_session_id:
+            sub_meta = session_service.get_sub_session_meta(task.session_id, task.sub_session_id)
+            if sub_meta:
+                if sub_meta.get("model_path"):
+                    infer_model_path = sub_meta["model_path"]
+                if sub_meta.get("input_configs"):
+                    # Merge: sub-session input configs take priority
+                    sub_cfgs = sub_meta["input_configs"]
+                    if input_configs:
+                        input_configs = input_configs + sub_cfgs
+                    else:
+                        input_configs = sub_cfgs
+
         # Set up real-time log streaming via WebSocket
         loop = asyncio.get_running_loop()
 
@@ -124,7 +139,7 @@ async def lifespan(app: FastAPI):
             target_node_name=task.node_name,
             main_device=session.config.main_device,
             ref_device=session.config.ref_device,
-            model_path=session.config.model_path,
+            model_path=infer_model_path,
             input_path=session.config.input_path,
             precision=session.config.input_precision,
             task=task,
@@ -133,16 +148,19 @@ async def lifespan(app: FastAPI):
             stage_callback=stage_callback,
         )
 
-        # Handle tuple result (task, main_output, ref_output)
+        # Handle tuple result (task, artifacts_dir)
         if isinstance(result, tuple):
-            updated_task, main_output, ref_output = result
-            session_service.save_task_result(
-                session_id=task.session_id,
-                task_id=task.task_id,
-                task_data=updated_task.model_dump(),
-                main_output=main_output,
-                ref_output=ref_output,
-            )
+            updated_task, artifacts_dir = result
+            try:
+                session_service.save_task_result(
+                    session_id=task.session_id,
+                    task_id=task.task_id,
+                    task_data=updated_task.model_dump(),
+                    artifacts_dir=artifacts_dir,
+                )
+            finally:
+                import shutil
+                shutil.rmtree(artifacts_dir, ignore_errors=True)
             log_callback(task.task_id, "info", f"Task completed for node '{task.node_name}'")
             return updated_task
         else:

@@ -55,15 +55,34 @@ class TestComputeMetrics:
         assert metrics["cosine_similarity"] == 1.0
 
 
+def _make_mock_popen(returncode, stdout="", stderr_lines=None):
+    """Create a mock Popen object with the given behavior."""
+    mock_proc = MagicMock()
+    mock_proc.stdin = MagicMock()
+    mock_proc.returncode = returncode
+    mock_proc.poll.return_value = returncode
+
+    # stdout.read() returns the stdout string
+    mock_proc.stdout.read.return_value = stdout
+
+    # stderr.readline() yields lines then empty string
+    lines = list(stderr_lines or [])
+    line_iter = iter(lines + [""])
+    mock_proc.stderr.readline.side_effect = lambda: next(line_iter)
+
+    mock_proc.wait.return_value = returncode
+    return mock_proc
+
+
 class TestCutAndInfer:
     def test_subprocess_timeout(self, inference_service):
-        """Test that timeouts are handled gracefully."""
+        """Test that process killed by timer returns timeout error."""
         model = MagicMock()
 
-        with patch("backend.services.inference_service.subprocess.run") as mock_run:
-            import subprocess
-            mock_run.side_effect = subprocess.TimeoutExpired(cmd="test", timeout=300)
+        mock_proc = _make_mock_popen(returncode=-9)
 
+        with patch("backend.services.inference_service.subprocess.Popen", return_value=mock_proc), \
+             patch("backend.services.inference_service.tempfile.mkdtemp", return_value="/tmp/test_infer"):
             result = inference_service.cut_and_infer(
                 model, "node1", "CPU", "CPU", model_path="/tmp/test.xml"
             )
@@ -76,13 +95,13 @@ class TestCutAndInfer:
         """Test that segfaults are reported as errors, not crashes."""
         model = MagicMock()
 
-        with patch("backend.services.inference_service.subprocess.run") as mock_run:
-            mock_run.return_value = MagicMock(
-                returncode=-11,  # SIGSEGV
-                stdout="",
-                stderr="segfault in libopenvino",
-            )
+        mock_proc = _make_mock_popen(
+            returncode=-11,
+            stderr_lines=["segfault in libopenvino\n"],
+        )
 
+        with patch("backend.services.inference_service.subprocess.Popen", return_value=mock_proc), \
+             patch("backend.services.inference_service.tempfile.mkdtemp", return_value="/tmp/test_infer"):
             result = inference_service.cut_and_infer(
                 model, "node1", "CPU", "CPU", model_path="/tmp/test.xml"
             )
@@ -95,10 +114,9 @@ class TestCutAndInfer:
         """Test successful subprocess result parsing."""
         model = MagicMock()
 
-        main_npy = tmp_path / "main_output.npy"
-        ref_npy = tmp_path / "ref_output.npy"
-        np.save(str(main_npy), np.array([1.0, 2.0]))
-        np.save(str(ref_npy), np.array([1.0, 2.0]))
+        # Create artifacts in tmp_path (simulating worker output)
+        np.save(str(tmp_path / "main_output.npy"), np.array([1.0, 2.0]))
+        np.save(str(tmp_path / "ref_output.npy"), np.array([1.0, 2.0]))
 
         worker_result = {
             "main_result": {
@@ -126,23 +144,43 @@ class TestCutAndInfer:
             },
         }
 
-        with patch("backend.services.inference_service.subprocess.run") as mock_run, \
-             patch("backend.services.inference_service.tempfile.TemporaryDirectory") as mock_tmpdir:
-            mock_run.return_value = MagicMock(
-                returncode=0,
-                stdout=json.dumps(worker_result),
-                stderr="",
-            )
-            mock_tmpdir.return_value.__enter__ = lambda s: str(tmp_path)
-            mock_tmpdir.return_value.__exit__ = lambda s, *a: None
+        mock_proc = _make_mock_popen(
+            returncode=0,
+            stdout=json.dumps(worker_result),
+        )
 
+        with patch("backend.services.inference_service.subprocess.Popen", return_value=mock_proc), \
+             patch("backend.services.inference_service.tempfile.mkdtemp", return_value=str(tmp_path)):
             result = inference_service.cut_and_infer(
                 model, "node1", "CPU", "CPU", model_path="/tmp/test.xml"
             )
 
-            # Success returns (task, main_output, ref_output)
+            # Success returns (task, artifacts_dir)
             assert isinstance(result, tuple)
-            task, main_out, ref_out = result
+            task, artifacts_dir = result
             assert task.status == TaskStatus.SUCCESS
             assert task.metrics.mse == 0.0
-            assert main_out is not None
+            assert artifacts_dir == str(tmp_path)
+
+    def test_custom_model_path_passed_to_worker(self, inference_service):
+        """Custom model_path (e.g. sub-session) is forwarded to worker config."""
+        model = MagicMock()
+        captured_cfg = {}
+
+        mock_proc = _make_mock_popen(returncode=-9)
+
+        original_stdin_write = mock_proc.stdin.write
+        def capturing_write(data):
+            captured_cfg.update(json.loads(data))
+            return original_stdin_write(data)
+        mock_proc.stdin.write = capturing_write
+
+        with patch("backend.services.inference_service.subprocess.Popen", return_value=mock_proc), \
+             patch("backend.services.inference_service.tempfile.mkdtemp", return_value="/tmp/test_infer"):
+            inference_service.cut_and_infer(
+                model, "node1", "CPU", "CPU",
+                model_path="/sub_sessions/abc/cut_model.xml",
+            )
+
+        assert captured_cfg["model_path"] == "/sub_sessions/abc/cut_model.xml"
+        assert "skip_cut" not in captured_cfg

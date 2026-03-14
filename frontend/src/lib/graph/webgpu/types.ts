@@ -18,8 +18,8 @@ export const GRAPH_FONT_SIZE = 16;
 /** Node corner radius in graph units */
 export const NODE_RADIUS = 5;
 
-/** Background clear color (#1a1a2e) */
-export const CLEAR_COLOR: GPUColor = { r: 0.102, g: 0.102, b: 0.180, a: 1.0 };
+/** Background clear color (#404040) */
+export const CLEAR_COLOR: GPUColor = { r: 0.251, g: 0.251, b: 0.251, a: 1.0 };
 
 /** Default edge color (#aaaaaa) */
 export const EDGE_COLOR = { r: 0.667, g: 0.667, b: 0.667, a: 1.0 };

@@ -16,9 +16,14 @@ def session_service(tmp_path):
 
 
 @pytest.fixture
-def sample_config():
+def sample_config(tmp_path):
+    # Create a real model file so create_session can copy it
+    model_xml = tmp_path / "models" / "model.xml"
+    model_xml.parent.mkdir(parents=True, exist_ok=True)
+    model_xml.write_text("<model/>")
+    model_xml.with_suffix(".bin").write_bytes(b"\x00" * 16)
     return SessionConfig(
-        model_path="/path/to/model.xml",
+        model_path=str(model_xml),
         main_device="CPU",
         ref_device="GPU",
     )
@@ -46,7 +51,8 @@ class TestSessionService:
         detail = session_service.get_session(info.id)
         assert detail is not None
         assert detail.id == info.id
-        assert detail.config.model_path == "/path/to/model.xml"
+        assert detail.config.model_path.endswith("model.xml")
+        assert info.id in detail.config.model_path  # path is inside session dir
 
     def test_delete_session(self, session_service, sample_config):
         info = session_service.create_session(sample_config)
@@ -65,17 +71,25 @@ class TestSessionService:
 
         assert loaded == graph_data
 
-    def test_task_result_persistence(self, session_service, sample_config):
+    def test_task_result_persistence(self, session_service, sample_config, tmp_path):
         info = session_service.create_session(sample_config)
 
         task_data = {"task_id": "t1", "status": "success", "node_name": "conv1"}
+
+        # Create a temporary artifacts directory simulating worker output
+        artifacts_dir = tmp_path / "artifacts"
+        artifacts_dir.mkdir()
         main_output = np.random.randn(1, 64, 112, 112).astype(np.float32)
         ref_output = np.random.randn(1, 64, 112, 112).astype(np.float32)
+        np.save(str(artifacts_dir / "main_output.npy"), main_output)
+        np.save(str(artifacts_dir / "ref_output.npy"), ref_output)
+        (artifacts_dir / "cut_model.xml").write_text("<model/>")
+        (artifacts_dir / "cut_model.bin").write_bytes(b"\x00" * 16)
+        np.save(str(artifacts_dir / "input_data.npy"), np.zeros((1, 3)))
 
         session_service.save_task_result(
             info.id, "t1", task_data,
-            main_output=main_output,
-            ref_output=ref_output,
+            artifacts_dir=str(artifacts_dir),
         )
 
         # Verify task metadata
@@ -83,10 +97,18 @@ class TestSessionService:
         assert result["task_id"] == "t1"
         assert result["status"] == "success"
 
-        # Verify tensor files
-        tensor_dir = session_service._session_path(info.id) / "tensors" / "t1"
+        # Verify all artifact files were moved — folder is named after the node
+        tensor_dir = session_service._session_path(info.id) / "tensors" / "conv1"
         assert (tensor_dir / "main_output.npy").exists()
         assert (tensor_dir / "ref_output.npy").exists()
+        assert (tensor_dir / "cut_model.xml").exists()
+        assert (tensor_dir / "cut_model.bin").exists()
+        assert (tensor_dir / "input_data.npy").exists()
+
+        # Verify get_tensor_path resolves via task_id -> tensor_dir mapping
+        path = session_service.get_tensor_path(info.id, "t1", "main_output")
+        assert path is not None
+        assert "conv1" in str(path)
 
     def test_create_sub_session(self, session_service, sample_config):
         info = session_service.create_session(sample_config)
@@ -109,21 +131,81 @@ class TestSessionService:
         assert len(subs) == 1
         assert subs[0].id == sub.id
 
-    def test_get_tensor_path(self, session_service, sample_config):
+    def test_get_tensor_path(self, session_service, sample_config, tmp_path):
         info = session_service.create_session(sample_config)
 
         # No tensor yet
         assert session_service.get_tensor_path(info.id, "t1", "main_output") is None
 
-        # Save a tensor
+        # Save via artifacts_dir
+        artifacts_dir = tmp_path / "artifacts2"
+        artifacts_dir.mkdir()
+        np.save(str(artifacts_dir / "main_output.npy"), np.zeros((1, 3)))
+
         session_service.save_task_result(
-            info.id, "t1", {"status": "success"},
-            main_output=np.zeros((1, 3)),
+            info.id, "t1", {"status": "success", "node_name": "relu1"},
+            artifacts_dir=str(artifacts_dir),
         )
 
         path = session_service.get_tensor_path(info.id, "t1", "main_output")
         assert path is not None
         assert path.exists()
+        assert "relu1" in str(path)
+
+    def test_duplicate_node_name_folders(self, session_service, sample_config, tmp_path):
+        """Re-inferring the same node creates a new uniquely-named folder."""
+        info = session_service.create_session(sample_config)
+
+        for i, task_id in enumerate(["t1", "t2"]):
+            artifacts_dir = tmp_path / f"dup_artifacts_{i}"
+            artifacts_dir.mkdir()
+            np.save(str(artifacts_dir / "main_output.npy"), np.zeros((1, 3)))
+            session_service.save_task_result(
+                info.id, task_id,
+                {"status": "success", "node_name": "conv1"},
+                artifacts_dir=str(artifacts_dir),
+            )
+
+        tensors_dir = session_service._session_path(info.id) / "tensors"
+        assert (tensors_dir / "conv1").exists()
+        assert (tensors_dir / "conv1_2").exists()
+
+        # Both resolve correctly via task_id
+        assert session_service.get_tensor_path(info.id, "t1", "main_output") is not None
+        assert session_service.get_tensor_path(info.id, "t2", "main_output") is not None
+
+    def test_get_sub_session_meta(self, session_service, sample_config):
+        info = session_service.create_session(sample_config)
+        sub = session_service.create_sub_session(
+            session_id=info.id, cut_type="output",
+            cut_node="conv1", grayed_nodes=["relu1"],
+        )
+
+        meta = session_service.get_sub_session_meta(info.id, sub.id)
+        assert meta is not None
+        assert meta["id"] == sub.id
+        assert meta["cut_type"] == "output"
+
+    def test_get_sub_session_meta_not_found(self, session_service, sample_config):
+        info = session_service.create_session(sample_config)
+        assert session_service.get_sub_session_meta(info.id, "nonexistent") is None
+
+    def test_update_sub_session_meta(self, session_service, sample_config):
+        info = session_service.create_session(sample_config)
+        sub = session_service.create_sub_session(
+            session_id=info.id, cut_type="input",
+            cut_node="conv1", grayed_nodes=["param0"],
+        )
+
+        session_service.update_sub_session_meta(info.id, sub.id, {
+            "model_path": "/tmp/cut_model.xml",
+            "input_configs": [{"name": "cut_input_conv1", "source": "file", "path": "/tmp/in.npy"}],
+        })
+
+        meta = session_service.get_sub_session_meta(info.id, sub.id)
+        assert meta["model_path"] == "/tmp/cut_model.xml"
+        assert len(meta["input_configs"]) == 1
+        assert meta["input_configs"][0]["name"] == "cut_input_conv1"
 
     def test_task_count_update(self, session_service, sample_config):
         info = session_service.create_session(sample_config)
@@ -136,3 +218,92 @@ class TestSessionService:
         assert detail.info.task_count == 3
         assert detail.info.success_count == 2
         assert detail.info.failed_count == 1
+
+    def test_chained_sub_sessions(self, session_service, sample_config):
+        """Sub-sessions can chain: S1 -> S2, with parent_sub_session_id."""
+        info = session_service.create_session(sample_config)
+
+        s1 = session_service.create_sub_session(
+            session_id=info.id,
+            cut_type="input",
+            cut_node="conv1",
+            grayed_nodes=["param0"],
+        )
+        assert s1.parent_id == info.id
+        assert s1.ancestor_cuts == []
+
+        s2 = session_service.create_sub_session(
+            session_id=info.id,
+            cut_type="input",
+            cut_node="conv2",
+            grayed_nodes=["param0", "conv1_upstream"],
+            parent_sub_session_id=s1.id,
+            ancestor_cuts=[{"cut_node": "conv1", "cut_type": "input"}],
+        )
+        assert s2.parent_id == s1.id
+        assert s2.ancestor_cuts == [{"cut_node": "conv1", "cut_type": "input"}]
+
+        # Verify persisted
+        subs = session_service.list_sub_sessions(info.id)
+        assert len(subs) == 2
+        s2_loaded = [s for s in subs if s.id == s2.id][0]
+        assert s2_loaded.parent_id == s1.id
+        assert s2_loaded.ancestor_cuts == [{"cut_node": "conv1", "cut_type": "input"}]
+
+    def test_find_task_for_node_root(self, session_service, sample_config):
+        """find_task_for_node returns root tasks when no sub_session_id given."""
+        info = session_service.create_session(sample_config)
+        session_service.save_task_result(info.id, "t1", {
+            "status": "success", "node_name": "conv1",
+        })
+        assert session_service.find_task_for_node(info.id, "conv1") == "t1"
+        assert session_service.find_task_for_node(info.id, "relu1") is None
+
+    def test_find_task_for_node_sub_session(self, session_service, sample_config):
+        """find_task_for_node searches sub-session tasks first, then falls back to root."""
+        info = session_service.create_session(sample_config)
+
+        # Root task
+        session_service.save_task_result(info.id, "t_root", {
+            "status": "success", "node_name": "conv1",
+        })
+
+        # Sub-session task
+        s1 = session_service.create_sub_session(
+            session_id=info.id, cut_type="input",
+            cut_node="relu0", grayed_nodes=["param0"],
+        )
+        session_service.save_task_result(info.id, "t_sub", {
+            "status": "success", "node_name": "conv1", "sub_session_id": s1.id,
+        })
+
+        # With sub_session_id, should find the sub-session task
+        assert session_service.find_task_for_node(info.id, "conv1", s1.id) == "t_sub"
+
+        # Node only in root — should fall back
+        session_service.save_task_result(info.id, "t_root2", {
+            "status": "success", "node_name": "bn1",
+        })
+        assert session_service.find_task_for_node(info.id, "bn1", s1.id) == "t_root2"
+
+    def test_find_task_for_node_ancestor_walk(self, session_service, sample_config):
+        """find_task_for_node walks up the parent chain."""
+        info = session_service.create_session(sample_config)
+
+        s1 = session_service.create_sub_session(
+            session_id=info.id, cut_type="input",
+            cut_node="conv1", grayed_nodes=["param0"],
+        )
+        session_service.save_task_result(info.id, "t_s1", {
+            "status": "success", "node_name": "relu1", "sub_session_id": s1.id,
+        })
+
+        s2 = session_service.create_sub_session(
+            session_id=info.id, cut_type="input",
+            cut_node="conv2", grayed_nodes=["param0", "conv1"],
+            parent_sub_session_id=s1.id,
+            ancestor_cuts=[{"cut_node": "conv1", "cut_type": "input"}],
+        )
+
+        # s2 has no task for relu1, but s1 (parent) does
+        assert session_service.find_task_for_node(info.id, "relu1", s2.id) == "t_s1"

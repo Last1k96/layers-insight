@@ -57,14 +57,14 @@
 </script>
 
 <div
-  class="absolute top-2 bottom-2 flex flex-col bg-gray-800/95 backdrop-blur border border-gray-700 rounded-lg shadow-xl z-10 transition-all"
+  class="absolute top-2 bottom-2 flex flex-col bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-lg shadow-xl z-10 transition-all"
   class:left-2={side === 'left'}
   class:right-2={side === 'right'}
   style:width={collapsed ? '40px' : `${width}px`}
 >
   <!-- Header -->
   <div
-    class="flex items-center justify-between px-3 py-2 border-b border-gray-700 cursor-pointer select-none shrink-0"
+    class="flex items-center justify-between px-3 py-2 border-b border-[--border-color] cursor-pointer select-none shrink-0"
     onclick={toggleCollapse}
   >
     {#if !collapsed}

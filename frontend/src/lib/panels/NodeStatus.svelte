@@ -8,6 +8,7 @@
 
   let selectedNode = $derived(graphStore.selectedNode);
   let nodeStatus = $derived(graphStore.selectedNodeStatus);
+  let nodeOverride = $derived(selectedNode ? graphStore.nodeOverrides.get(selectedNode.name) : undefined);
 
   let outputs = $derived.by(() => {
     if (!selectedNode || !graphStore.graphData) return [];
@@ -85,13 +86,17 @@
 
     cutting = true;
     try {
+      const body: Record<string, unknown> = {
+        node_name: selectedNode.name,
+        cut_type: cutType,
+      };
+      if (graphStore.activeSubSessionId) {
+        body.parent_sub_session_id = graphStore.activeSubSessionId;
+      }
       const res = await fetch(`/api/sessions/${session.id}/cut`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          node_name: selectedNode.name,
-          cut_type: cutType,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -143,7 +148,7 @@
         Waiting in queue
       </div>
       <button
-        class="mt-3 w-full py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs transition-colors"
+        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors"
         onclick={handleCancel}
       >
         Cancel
@@ -169,11 +174,11 @@
           <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Accuracy</h4>
           <table class="w-full text-xs">
             <tbody>
-              <tr class="border-b border-gray-700/50">
+              <tr class="border-b border-[--border-color]/50">
                 <td class="py-1 text-gray-400">MSE</td>
                 <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.mse)}</td>
               </tr>
-              <tr class="border-b border-gray-700/50">
+              <tr class="border-b border-[--border-color]/50">
                 <td class="py-1 text-gray-400">Max Abs Diff</td>
                 <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
               </tr>
@@ -214,7 +219,7 @@
                 { label: 'Mean', key: 'mean_val' as const },
                 { label: 'Std', key: 'std_val' as const },
               ] as row}
-                <tr class="border-t border-gray-700/50">
+                <tr class="border-t border-[--border-color]/50">
                   <td class="py-1 text-gray-400">{row.label}</td>
                   {#if main}<td class="py-1 text-right font-mono truncate">{fmt4(main[row.key])}</td>{/if}
                   {#if ref}<td class="py-1 text-right font-mono truncate">{fmt4(ref[row.key])}</td>{/if}
@@ -249,7 +254,7 @@
           Make Input Node
         </button>
         <button
-          class="w-full py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs transition-colors"
+          class="w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors"
           onclick={() => showBatchQueue = true}
         >
           Batch Queue
@@ -257,7 +262,7 @@
       </div>
 
       <button
-        class="mt-3 w-full py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs transition-colors"
+        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors"
         onclick={handleRerun}
       >
         Re-run
@@ -272,10 +277,10 @@
         <div class="text-gray-400 text-xs mb-2">Stage: {nodeStatus.stage}</div>
       {/if}
       {#if nodeStatus.errorDetail}
-        <pre class="bg-gray-900 rounded p-2 text-xs text-red-300 overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{nodeStatus.errorDetail}</pre>
+        <pre class="bg-[--bg-panel] rounded p-2 text-xs text-red-300 overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{nodeStatus.errorDetail}</pre>
       {/if}
       <button
-        class="mt-3 w-full py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs transition-colors"
+        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors"
         onclick={handleRerun}
       >
         Retry
@@ -288,7 +293,7 @@
         <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
           Attributes ({Object.keys(selectedNode.attributes).length})
         </summary>
-        <div class="mt-1 bg-gray-900/50 rounded p-2 text-xs font-mono max-h-32 overflow-y-auto">
+        <div class="mt-1 bg-[--bg-panel] rounded p-2 text-xs font-mono max-h-32 overflow-y-auto">
           {#each Object.entries(selectedNode.attributes) as [key, value]}
             <div class="flex justify-between gap-2">
               <span class="text-gray-500">{key}</span>
@@ -307,7 +312,7 @@
         </summary>
         <div class="mt-1 space-y-1">
           {#each selectedNode.inputs as inp, idx}
-            <div class="bg-gray-900/50 rounded p-2 text-xs">
+            <div class="bg-[--bg-panel] rounded p-2 text-xs">
               <div class="flex items-center gap-1.5">
                 <span class="text-gray-600 font-mono w-4 shrink-0">{idx}</span>
                 {#if inp.is_const}
@@ -349,7 +354,7 @@
                         <summary class="text-[10px] text-gray-600 cursor-pointer hover:text-gray-500">
                           Values ({cd.total_elements}{cd.truncated ? ', truncated' : ''})
                         </summary>
-                        <pre class="mt-1 bg-gray-950 rounded p-1.5 text-[9px] text-gray-400 font-mono overflow-x-auto max-h-40 whitespace-pre-wrap leading-tight">{cd.data.map(v => formatFloat(v)).join(', ')}</pre>
+                        <pre class="mt-1 bg-[--bg-panel] rounded p-1.5 text-[9px] text-gray-400 font-mono overflow-x-auto max-h-40 whitespace-pre-wrap leading-tight">{cd.data.map(v => formatFloat(v)).join(', ')}</pre>
                       </details>
                     </div>
                   {/if}
@@ -369,7 +374,7 @@
         </summary>
         <div class="mt-1 space-y-1">
           {#each outputs as out}
-            <div class="bg-gray-900/50 rounded p-2 text-xs">
+            <div class="bg-[--bg-panel] rounded p-2 text-xs">
               <div class="flex items-center gap-1.5">
                 <span class="text-gray-600 font-mono w-4 shrink-0">{out.source_port}</span>
                 <button

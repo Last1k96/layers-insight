@@ -37,15 +37,15 @@
     {:else}
       {#each queueStore.filteredTasks as task, i (task.task_id)}
         {#if i > 0 && (task.status === 'executing' || task.status === 'waiting') && (queueStore.filteredTasks[i - 1].status === 'success' || queueStore.filteredTasks[i - 1].status === 'failed')}
-          <div class="flex items-center gap-2 px-3 py-1 bg-gray-800/50">
+          <div class="flex items-center gap-2 px-3 py-1 bg-[--bg-menu]">
             <div class="flex-1 h-px bg-gray-600"></div>
             <span class="text-[10px] text-gray-500 uppercase tracking-wider shrink-0">Pending</span>
             <div class="flex-1 h-px bg-gray-600"></div>
           </div>
         {/if}
         <div
-          class="w-full text-left px-3 py-2 text-sm border-b border-gray-700/50 hover:bg-gray-700/50 flex items-center gap-2 transition-colors cursor-pointer"
-          class:bg-gray-700={i === queueStore.selectedIndex}
+          class="w-full text-left px-3 py-2 text-sm border-b border-[--border-color] hover:bg-[--bg-menu] flex items-center gap-2 transition-colors cursor-pointer"
+          class:bg-[--bg-menu]={i === queueStore.selectedIndex}
           role="button"
           tabindex="0"
           onclick={() => { queueStore.selectedIndex = i; selectTask(task); }}
@@ -85,12 +85,12 @@
   </div>
 
   <!-- Simple filter -->
-  <div class="border-t border-gray-700 p-2 shrink-0">
+  <div class="border-t border-[--border-color] p-2 shrink-0">
     <input
       type="text"
       bind:value={queueStore.filterText}
       placeholder="Filter by name or type..."
-      class="w-full px-2 py-1 bg-gray-900 border border-gray-700 rounded text-xs focus:border-blue-500 focus:outline-none"
+      class="w-full px-2 py-1 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
     />
     <div class="flex gap-1 mt-1">
       {#each ['all', 'success', 'failed'] as status (status)}
