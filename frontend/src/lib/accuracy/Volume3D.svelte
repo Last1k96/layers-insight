@@ -18,8 +18,10 @@
 	let containerH = $state(600);
 	let rotX = $state(-25);
 	let rotY = $state(30);
-	let threshold = $state(0.1);
-	let opacity = $state(0.3);
+	let threshold = $state(0.30);
+	let opacitySlider = $state(0.77); // quadratic: 0.77² ≈ 0.60
+	let opacity = $derived(opacitySlider * opacitySlider);
+	let alphaPower = $state(0.5);
 
 	let dragging = $state(false);
 	let dragStartX = $state(0);
@@ -51,9 +53,9 @@
 	let sliceH = $state<[number, number]>([0, 0]);
 	let sliceW = $state<[number, number]>([0, 0]);
 
-	// Reset slice ranges when volume data changes
+	// Reset slice ranges only when the actual tensor shape changes (not chunk size)
 	$effect(() => {
-		const { origC, origH, origW } = volumeData;
+		const { channels: origC, height: origH, width: origW } = getSpatialDims(shape);
 		sliceC = [0, origC - 1];
 		sliceH = [0, origH - 1];
 		sliceW = [0, origW - 1];
@@ -468,6 +470,7 @@
 		const _sliceC = sliceC;
 		const _sliceH = sliceH;
 		const _sliceW = sliceW;
+		const _alphaPower = alphaPower;
 
 		const origW2 = W * dsW;
 		const origH2 = H * dsH;
@@ -492,6 +495,7 @@
 			voxW, voxH, voxD,
 			origW2 / 2, origH2 / 2, depthExtent / 2,
 			minVal, maxVal,
+			_alphaPower,
 		);
 	});
 
@@ -681,15 +685,28 @@
 				type="range"
 				min="0.05"
 				max="1"
-				step="0.05"
-				bind:value={opacity}
+				step="0.01"
+				bind:value={opacitySlider}
 				class="flex-1 accent-purple-500"
 			/>
 			<span class="w-8 text-right font-mono text-gray-300 shrink-0">{opacity.toFixed(2)}</span>
 		</label>
+		<label class="flex items-center gap-1.5 flex-1 min-w-[10rem]">
+			<span class="whitespace-nowrap shrink-0">Alpha curve</span>
+			<input
+				use:rangeScroll
+				type="range"
+				min="0.5"
+				max="5"
+				step="0.25"
+				bind:value={alphaPower}
+				class="flex-1 accent-purple-500"
+			/>
+			<span class="w-8 text-right font-mono text-gray-300 shrink-0">{alphaPower.toFixed(1)}</span>
+		</label>
 		<label class="flex items-center gap-1.5">
 			<span class="whitespace-nowrap">Colors</span>
-			<select bind:value={colorScheme} class="bg-gray-700 text-gray-200 text-xs rounded px-1.5 py-0.5 border border-gray-600">
+			<select use:rangeScroll bind:value={colorScheme} class="bg-gray-700 text-gray-200 text-xs rounded px-1.5 py-0.5 border border-gray-600">
 				{#each Object.keys(COLOR_SCHEMES) as name}
 					<option value={name}>{name}</option>
 				{/each}
@@ -721,7 +738,11 @@
 				{#if axis.max > 0}
 					<div class="flex items-center gap-1.5 flex-1 min-w-[10rem]">
 						<span class="w-3 font-semibold shrink-0" style="color: {axis.color === 'blue' ? '#3b82f6' : axis.color === 'green' ? '#22c55e' : '#ef4444'}">{axis.label}</span>
-						<div class="relative flex-1 h-5">
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div
+							class="relative flex-1 h-5"
+							ondblclick={() => axis.set([0, axis.max])}
+						>
 							<!-- Track background -->
 							<div class="absolute top-1/2 -translate-y-1/2 left-0 right-0 h-1 rounded bg-gray-700"></div>
 							<!-- Active range bar -->
@@ -738,8 +759,11 @@
 								step="1"
 								value={axis.slice[0]}
 								oninput={(e: Event) => {
-									const v = parseInt((e.target as HTMLInputElement).value);
-									axis.set([Math.min(v, axis.slice[1]), axis.slice[1]]);
+									const el = e.target as HTMLInputElement;
+									const v = parseInt(el.value);
+									const clamped = Math.min(v, axis.slice[1] - 1);
+									if (v !== clamped) el.value = String(clamped);
+									axis.set([clamped, axis.slice[1]]);
 								}}
 								class="dual-range-slider absolute inset-0 w-full"
 								style="--thumb-color: {axis.color === 'blue' ? '#3b82f6' : axis.color === 'green' ? '#22c55e' : '#ef4444'};"
@@ -753,8 +777,11 @@
 								step="1"
 								value={axis.slice[1]}
 								oninput={(e: Event) => {
-									const v = parseInt((e.target as HTMLInputElement).value);
-									axis.set([axis.slice[0], Math.max(v, axis.slice[0])]);
+									const el = e.target as HTMLInputElement;
+									const v = parseInt(el.value);
+									const clamped = Math.max(v, axis.slice[0] + 1);
+									if (v !== clamped) el.value = String(clamped);
+									axis.set([axis.slice[0], clamped]);
 								}}
 								class="dual-range-slider absolute inset-0 w-full"
 								style="--thumb-color: {axis.color === 'blue' ? '#3b82f6' : axis.color === 'green' ? '#22c55e' : '#ef4444'};"

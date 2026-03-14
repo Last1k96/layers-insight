@@ -310,6 +310,7 @@
 		<label class="flex items-center gap-1">
 			Colormap
 			<select
+				use:rangeScroll
 				bind:value={colormap}
 				class="rounded border border-gray-600 bg-gray-800 px-2 py-0.5 text-gray-200"
 			>

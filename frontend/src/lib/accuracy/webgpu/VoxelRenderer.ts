@@ -406,6 +406,7 @@ export class VoxelRenderer {
 		voxW: number, voxH: number, voxD: number,
 		halfOrigW: number, halfOrigH: number, halfDepth: number,
 		minVal: number, maxVal: number,
+		alphaPower: number,
 	): void {
 		const data = new Float32Array(24);
 		data[0] = threshold;
@@ -435,7 +436,7 @@ export class VoxelRenderer {
 
 		data[20] = this.camDirY;
 		data[21] = this.camDirZ;
-		data[22] = 0; // pad
+		data[22] = alphaPower;
 		data[23] = 0; // pad
 
 		this.device.queue.writeBuffer(this.voxelState.filterBuffer, 0, data);

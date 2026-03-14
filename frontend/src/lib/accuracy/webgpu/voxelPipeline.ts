@@ -43,7 +43,7 @@ struct Filter {
 
 	camDirY: f32,
 	camDirZ: f32,
-	_pad0: f32,
+	alphaPower: f32,
 	_pad1: f32,
 };
 
@@ -161,7 +161,7 @@ fn vs(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) instance
 	out.pos = camera.viewProj * vec4(wx, wy, wz, 1.0);
 	out.norm = normVal;
 	out.brightness = brightness;
-	out.alpha = params.opacity * (0.3 + 0.7 * normVal);
+	out.alpha = params.opacity * pow(normVal, params.alphaPower);
 
 	return out;
 }
