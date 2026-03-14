@@ -24,6 +24,18 @@
 	let rotStartX = $state(0);
 	let rotStartY = $state(0);
 
+	let userZoom = $state(1.0);
+
+	// Tooltip state
+	let tooltip = $state<{ x: number; y: number; ci: number; iy: number; ix: number; mainVal: number; refVal: number; diffVal: number } | null>(null);
+
+	// Render params shared between render effect and mousemove
+	let renderParams = $state<{
+		scale: number; cosX: number; sinX: number; cosY: number; sinY: number;
+		centerX: number; centerY: number; depthSpreadX: number; depthSpreadY: number;
+		C: number; H: number; W: number; depthExtent: number; viewZ: number;
+	} | null>(null);
+
 	// ResizeObserver for container sizing
 	$effect(() => {
 		if (!container) return;
@@ -87,17 +99,82 @@
 		dragStartY = e.clientY;
 		rotStartX = rotX;
 		rotStartY = rotY;
+		tooltip = null;
 	}
 
 	function onMouseMove(e: MouseEvent) {
-		if (!dragging) return;
-		rotY = rotStartY + (e.clientX - dragStartX) * 0.5;
-		rotX = rotStartX + (e.clientY - dragStartY) * 0.5;
-		rotX = Math.max(-89, Math.min(89, rotX));
+		if (dragging) {
+			rotY = rotStartY + (e.clientX - dragStartX) * 0.5;
+			rotX = rotStartX + (e.clientY - dragStartY) * 0.5;
+			rotX = Math.max(-89, Math.min(89, rotX));
+			tooltip = null;
+			return;
+		}
+
+		// Hit-test for tooltip
+		if (!canvas || !renderParams) return;
+		const rect = canvas.getBoundingClientRect();
+		const mouseX = (e.clientX - rect.left) * (canvas.width / rect.width);
+		const mouseY = (e.clientY - rect.top) * (canvas.height / rect.height);
+
+		const rp = renderParams;
+		const { C, H, W, scale, cosY, sinY, cosX, sinX, centerX, centerY, depthSpreadX, depthSpreadY, viewZ } = rp;
+		const { diff, minVal, maxVal } = volumeData;
+		const span = maxVal - minVal || 1;
+		const invSpan = 1 / span;
+		const frontToBack = viewZ >= 0;
+
+		// Iterate slices front-to-back (reverse of render order) to find topmost hit
+		for (let si = C - 1; si >= 0; si--) {
+			const ci = frontToBack ? (C - 1 - si) : si;
+			const z = C > 1 ? ci / (C - 1) : 0.5;
+			const zCentered = z - 0.5;
+
+			const sx = centerX + zCentered * depthSpreadX - (W * scale * cosY) / 2;
+			const sy = centerY + zCentered * depthSpreadY - (H * scale) / 2;
+
+			// Inverse transform: screen -> slice pixel coords
+			const localX = (mouseX - sx) / (scale * cosY);
+			const localY = (mouseY - sy) / scale;
+
+			const ix = Math.floor(localX);
+			const iy = Math.floor(localY);
+
+			if (ix < 0 || ix >= W || iy < 0 || iy >= H) continue;
+
+			const v = diff[ci * H * W + iy * W + ix];
+			const norm = (v - minVal) * invSpan;
+
+			if (norm < threshold) continue;
+
+			// Hit found
+			const mainIdx = ci * H * W + iy * W + ix;
+			tooltip = {
+				x: e.clientX,
+				y: e.clientY,
+				ci, iy, ix,
+				mainVal: main[mainIdx],
+				refVal: ref[mainIdx],
+				diffVal: v,
+			};
+			return;
+		}
+		tooltip = null;
 	}
 
 	function onMouseUp() {
 		dragging = false;
+	}
+
+	function onMouseLeave() {
+		dragging = false;
+		tooltip = null;
+	}
+
+	function onWheel(e: WheelEvent) {
+		e.preventDefault();
+		userZoom *= e.deltaY > 0 ? 0.9 : 1.1;
+		userZoom = Math.max(0.1, Math.min(10, userZoom));
 	}
 
 	// 3D projection helper: rotate point and project to 2D
@@ -147,18 +224,28 @@
 		const cosY = Math.cos(_rotY * Math.PI / 180);
 		const sinY = Math.sin(_rotY * Math.PI / 180);
 
-		const maxDim = Math.max(W, H);
-		const scale = Math.min(cw, ch) * 0.5 / maxDim;
-		const totalDepth = Math.min(cw, ch) * 0.35;
+		const depthExtent = C > 1 ? C : 0;
 
+		// Rotation-independent base scale (worst-case diagonal)
+		const diagonal = Math.sqrt(W * W + H * H + depthExtent * depthExtent) || 1;
+		const margin = 80;
+		const _userZoom = userZoom;
+		const baseScale = Math.min((cw - margin) / diagonal, (ch - margin) / diagonal);
+		const scale = baseScale * _userZoom;
+
+		// Volume is centered at origin, so centroid is always (0,0)
 		const centerX = cw / 2;
 		const centerY = ch / 2;
 
-		const depthSpreadX = totalDepth * sinY;
-		const depthSpreadY = totalDepth * cosY * sinX;
+		// Depth spread matching project3D convention: z contributes -sinY to X, -cosY*sinX to Y
+		const depthSpreadX = -depthExtent * sinY * scale;
+		const depthSpreadY = -depthExtent * cosY * sinX * scale;
 
 		const viewZ = cosX * cosY;
 		const frontToBack = viewZ >= 0;
+
+		// Store render params for mousemove hit-testing
+		renderParams = { scale, cosX, sinX, cosY, sinY, centerX, centerY, depthSpreadX, depthSpreadY, C, H, W, depthExtent, viewZ };
 
 		const offscreen = new OffscreenCanvas(W, H);
 		const offCtx = offscreen.getContext('2d');
@@ -211,28 +298,86 @@
 			ctx.restore();
 		}
 
-		// --- Draw 3D axes ---
-		const axisLen = Math.min(cw, ch) * 0.12;
-		const axisOriginX = 50;
-		const axisOriginY = ch - 50;
-		const axisScale = axisLen;
+		// --- Draw axes along volume edges ---
+		// Volume-to-screen using slice convention (matches setTransform rendering)
+		function volToScreen(vx: number, vy: number, vz: number): [number, number] {
+			return [
+				centerX + ((vx - W / 2) * cosY - vz * sinY) * scale,
+				centerY + ((vy - H / 2) - vz * cosY * sinX) * scale,
+			];
+		}
 
-		// Axes: W(x), H(y), C(z) — normalized direction vectors
-		const axes: { dir: [number, number, number]; label: string; color: string }[] = [
+		// Fixed axes at the (0, 0, 0) corner — origin of the volume
+		const origin: [number, number, number] = [0, 0, -depthExtent / 2];
+
+		const edgeAxes: { from: [number, number, number]; to: [number, number, number]; label: string; color: string; dimSize: number }[] = [
+			{ from: origin, to: [W, 0, -depthExtent / 2], label: 'W', color: '#ef4444', dimSize: W },
+			{ from: origin, to: [0, H, -depthExtent / 2], label: 'H', color: '#22c55e', dimSize: H },
+			{ from: origin, to: [0, 0, depthExtent / 2], label: 'C', color: '#3b82f6', dimSize: C },
+		];
+
+		for (const axis of edgeAxes) {
+			if (axis.label === 'C' && C <= 1) continue;
+
+			const [p1x, p1y] = volToScreen(...axis.from);
+			const [p2x, p2y] = volToScreen(...axis.to);
+
+			// Draw axis line
+			ctx.strokeStyle = axis.color;
+			ctx.lineWidth = 1.5;
+			ctx.beginPath();
+			ctx.moveTo(p1x, p1y);
+			ctx.lineTo(p2x, p2y);
+			ctx.stroke();
+
+			// Tick marks (cap at 10)
+			const numTicks = Math.min(10, axis.dimSize);
+			const tickLen = 5;
+			const dx = p2x - p1x;
+			const dy = p2y - p1y;
+			const len = Math.sqrt(dx * dx + dy * dy) || 1;
+			const perpX = -dy / len;
+			const perpY = dx / len;
+
+			for (let ti = 0; ti <= numTicks; ti++) {
+				const t = ti / numTicks;
+				const tx2 = p1x + dx * t;
+				const ty2 = p1y + dy * t;
+				ctx.strokeStyle = axis.color;
+				ctx.lineWidth = 1;
+				ctx.beginPath();
+				ctx.moveTo(tx2, ty2);
+				ctx.lineTo(tx2 + perpX * tickLen, ty2 + perpY * tickLen);
+				ctx.stroke();
+			}
+
+			// Label dim size at the far end
+			ctx.fillStyle = axis.color;
+			const labelX = p2x + (p2x - p1x) * 0.06 + perpX * 12;
+			const labelY = p2y + (p2y - p1y) * 0.06 + perpY * 12;
+			ctx.font = '11px monospace';
+			ctx.fillText(`${axis.label}: ${axis.dimSize}`, labelX, labelY);
+		}
+
+		// --- Draw corner gizmo (secondary reference) ---
+		const axisLen = Math.min(cw, ch) * 0.1;
+		const axisOriginX = 40;
+		const axisOriginY = ch - 40;
+
+		const gizmoAxes: { dir: [number, number, number]; label: string; color: string }[] = [
 			{ dir: [1, 0, 0], label: 'W', color: '#ef4444' },
 			{ dir: [0, 1, 0], label: 'H', color: '#22c55e' },
 			{ dir: [0, 0, 1], label: 'C', color: '#3b82f6' },
 		];
 
-		for (const axis of axes) {
-			const [dx, dy, dz] = axis.dir;
+		for (const axis of gizmoAxes) {
+			const [adx, ady, adz] = axis.dir;
 			const [endX, endY] = project3D(
-				dx, -dy, dz,
+				adx, -ady, adz,
 				cosX, sinX, cosY, sinY,
-				axisOriginX, axisOriginY, axisScale,
+				axisOriginX, axisOriginY, axisLen,
 			);
 
-			// Draw axis line
 			ctx.strokeStyle = axis.color;
 			ctx.lineWidth = 2;
 			ctx.beginPath();
@@ -240,23 +385,19 @@
 			ctx.lineTo(endX, endY);
 			ctx.stroke();
 
-			// Draw tick at end
 			ctx.fillStyle = axis.color;
 			ctx.beginPath();
 			ctx.arc(endX, endY, 3, 0, Math.PI * 2);
 			ctx.fill();
 
-			// Label
 			const labelOffX = (endX - axisOriginX) * 0.2;
 			const labelOffY = (endY - axisOriginY) * 0.2;
-			ctx.fillStyle = axis.color;
-			ctx.font = '12px monospace';
+			ctx.font = '11px monospace';
 			ctx.textAlign = 'center';
 			ctx.textBaseline = 'middle';
 			ctx.fillText(axis.label, endX + labelOffX, endY + labelOffY);
 		}
 
-		// Draw axis origin dot
 		ctx.fillStyle = '#9ca3af';
 		ctx.beginPath();
 		ctx.arc(axisOriginX, axisOriginY, 2, 0, Math.PI * 2);
@@ -319,9 +460,9 @@
 			/>
 			<span class="w-8 text-right font-mono text-gray-300">{opacity.toFixed(2)}</span>
 		</label>
-		<span class="text-gray-500 italic">Drag to orbit</span>
+		<span class="text-gray-500 italic">Drag to orbit · Scroll to zoom</span>
 	</div>
-	<div bind:this={container} class="flex-1 min-h-0">
+	<div bind:this={container} class="flex-1 min-h-0 relative">
 		<canvas
 			bind:this={canvas}
 			class="w-full h-full rounded border border-gray-700 cursor-grab"
@@ -329,7 +470,19 @@
 			onmousedown={onMouseDown}
 			onmousemove={onMouseMove}
 			onmouseup={onMouseUp}
-			onmouseleave={onMouseUp}
+			onmouseleave={onMouseLeave}
+			onwheel={onWheel}
 		></canvas>
+		{#if tooltip}
+			<div
+				class="fixed z-50 pointer-events-none px-3 py-2 rounded-lg border border-gray-600 bg-gray-800/95 text-xs font-mono text-gray-200 shadow-xl"
+				style="left: {tooltip.x + 14}px; top: {tooltip.y + 14}px;"
+			>
+				<div class="text-purple-300 font-semibold mb-1">[C={tooltip.ci}, H={tooltip.iy}, W={tooltip.ix}]</div>
+				<div><span class="text-gray-400">{mainLabel}:</span> {formatValue(tooltip.mainVal)}</div>
+				<div><span class="text-gray-400">{refLabel}:</span> {formatValue(tooltip.refVal)}</div>
+				<div><span class="text-yellow-400">Diff:</span> <span class="text-yellow-300">{formatValue(tooltip.diffVal)}</span></div>
+			</div>
+		{/if}
 	</div>
 </div>
