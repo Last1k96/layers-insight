@@ -528,50 +528,6 @@
 			ctx.fillText(`${axis.label}: ${axis.dimSize}`, labelX, labelY);
 		}
 
-		// --- Draw corner gizmo (secondary reference) ---
-		const axisLen = Math.min(cw, ch) * 0.1;
-		const axisOriginX = 40;
-		const axisOriginY = ch - 40;
-
-		const gizmoAxes: { dir: [number, number, number]; label: string; color: string }[] = [
-			{ dir: [1, 0, 0], label: 'W', color: '#ef4444' },
-			{ dir: [0, 1, 0], label: 'H', color: '#22c55e' },
-			{ dir: [0, 0, 1], label: 'C', color: '#3b82f6' },
-		];
-
-		for (const axis of gizmoAxes) {
-			const [adx, ady, adz] = axis.dir;
-			const [endX, endY] = project3D(
-				adx, -ady, adz,
-				cosX, sinX, cosY, sinY,
-				axisOriginX, axisOriginY, axisLen,
-			);
-
-			ctx.strokeStyle = axis.color;
-			ctx.lineWidth = 2;
-			ctx.beginPath();
-			ctx.moveTo(axisOriginX, axisOriginY);
-			ctx.lineTo(endX, endY);
-			ctx.stroke();
-
-			ctx.fillStyle = axis.color;
-			ctx.beginPath();
-			ctx.arc(endX, endY, 3, 0, Math.PI * 2);
-			ctx.fill();
-
-			const labelOffX = (endX - axisOriginX) * 0.2;
-			const labelOffY = (endY - axisOriginY) * 0.2;
-			ctx.font = '11px monospace';
-			ctx.textAlign = 'center';
-			ctx.textBaseline = 'middle';
-			ctx.fillText(axis.label, endX + labelOffX, endY + labelOffY);
-		}
-
-		ctx.fillStyle = '#9ca3af';
-		ctx.beginPath();
-		ctx.arc(axisOriginX, axisOriginY, 2, 0, Math.PI * 2);
-		ctx.fill();
-
 		// Draw info text and colorbar
 		ctx.fillStyle = '#9ca3af';
 		ctx.font = '12px monospace';
