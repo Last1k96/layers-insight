@@ -1,6 +1,11 @@
 <script lang="ts">
   import Heatmap from './Heatmap.svelte';
   import ChannelView from './ChannelView.svelte';
+  import SideBySide from './SideBySide.svelte';
+  import ErrorTreemap from './ErrorTreemap.svelte';
+  import Volume3D from './Volume3D.svelte';
+  import Diagnostics from './Diagnostics.svelte';
+  import { getSpatialDims } from './tensorUtils';
   import { tensorStore } from '../stores/tensors.svelte';
   import { sessionStore } from '../stores/session.svelte';
 
@@ -14,7 +19,9 @@
     onclose: () => void;
   } = $props();
 
-  let activeTab = $state<'heatmap' | 'channel'>('heatmap');
+  type TabKey = 'heatmap' | 'sidebyside' | 'channel' | 'treemap' | 'volume3d' | 'diagnostics';
+
+  let activeTab = $state<TabKey>('heatmap');
   let mainTensor = $state<Float32Array | null>(null);
   let refTensor = $state<Float32Array | null>(null);
   let tensorShape = $state<number[]>([]);
@@ -52,6 +59,44 @@
     }
     return diff;
   });
+
+  // Volume 3D is only available for 3D tensors [C,H,W] or 4D with batch=1 [1,C,H,W]
+  let canShow3D = $derived.by(() => {
+    if (tensorShape.length === 3) return true;
+    if (tensorShape.length === 4 && tensorShape[0] === 1) return true;
+    return false;
+  });
+
+  let tabs = $derived.by(() => {
+    const base: { key: TabKey; label: string }[] = [
+      { key: 'heatmap', label: 'Heatmap' },
+      { key: 'sidebyside', label: 'Side-by-Side' },
+      { key: 'channel', label: 'Per-Channel' },
+      { key: 'treemap', label: 'Error Map' },
+      { key: 'diagnostics', label: 'Diagnostics' },
+    ];
+    if (canShow3D) {
+      base.push({ key: 'volume3d', label: '3D Volume' });
+    }
+    return base;
+  });
+
+  // If active tab becomes unavailable, reset to heatmap
+  $effect(() => {
+    if (activeTab === 'volume3d' && !canShow3D) {
+      activeTab = 'heatmap';
+    }
+  });
+
+  let mainDeviceName = $derived(sessionStore.currentSession?.main_device ?? 'Main');
+  let refDeviceName = $derived(sessionStore.currentSession?.ref_device ?? 'Reference');
+
+  // Handle legacy tab values
+  $effect(() => {
+    if ((activeTab as string) === 'histogram') {
+      activeTab = 'channel';
+    }
+  });
 </script>
 
 <div class="fixed inset-0 bg-surface-panel backdrop-blur z-[60] flex flex-col">
@@ -70,18 +115,15 @@
   </div>
 
   <!-- Tabs -->
-  <div class="flex border-b border-edge shrink-0">
-    {#each [
-      { key: 'heatmap', label: 'Heatmap' },
-      { key: 'channel', label: 'Per-Channel' },
-    ] as tab (tab.key)}
+  <div class="flex border-b border-edge shrink-0 overflow-x-auto">
+    {#each tabs as tab (tab.key)}
       <button
-        class="px-4 py-2 text-sm transition-colors"
+        class="px-4 py-2 text-sm transition-colors whitespace-nowrap"
         class:text-accent={activeTab === tab.key}
         class:border-b-2={activeTab === tab.key}
         class:border-accent={activeTab === tab.key}
         class:text-content-secondary={activeTab !== tab.key}
-        onclick={() => activeTab = tab.key as any}
+        onclick={() => activeTab = tab.key}
       >
         {tab.label}
       </button>
@@ -101,10 +143,38 @@
     {:else if activeTab === 'heatmap'}
       <Heatmap
         diff={diffTensor}
+        main={mainTensor}
+        ref={refTensor}
+        shape={tensorShape}
+      />
+    {:else if activeTab === 'sidebyside'}
+      <SideBySide
+        main={mainTensor}
+        ref={refTensor}
         shape={tensorShape}
       />
     {:else if activeTab === 'channel'}
       <ChannelView
+        main={mainTensor}
+        ref={refTensor}
+        shape={tensorShape}
+        mainLabel={mainDeviceName}
+        refLabel={refDeviceName}
+      />
+    {:else if activeTab === 'treemap'}
+      <ErrorTreemap
+        main={mainTensor}
+        ref={refTensor}
+        shape={tensorShape}
+      />
+    {:else if activeTab === 'volume3d'}
+      <Volume3D
+        main={mainTensor}
+        ref={refTensor}
+        shape={tensorShape}
+      />
+    {:else if activeTab === 'diagnostics'}
+      <Diagnostics
         main={mainTensor}
         ref={refTensor}
         shape={tensorShape}
