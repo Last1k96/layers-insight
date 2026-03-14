@@ -28,6 +28,8 @@
 
 	// Tooltip state
 	let tooltip = $state<{ x: number; y: number; ci: number; iy: number; ix: number; mainVal: number; refVal: number; diffVal: number } | null>(null);
+	// Hovered voxel in downsampled grid coords (for outline rendering)
+	let hoveredVoxel = $state<{ ci: number; yi: number; xi: number } | null>(null);
 
 	// Render params shared between render effect and mousemove
 	let renderParams = $state<{
@@ -188,6 +190,7 @@
 		dragStartY = e.clientY;
 		rotStartX = rotX;
 		rotStartY = rotY;
+		hoveredVoxel = null;
 		tooltip = null;
 	}
 
@@ -196,6 +199,7 @@
 			rotY = rotStartY + (e.clientX - dragStartX) * 0.5;
 			rotX = rotStartX + (e.clientY - dragStartY) * 0.5;
 			rotX = Math.max(-89, Math.min(89, rotX));
+			hoveredVoxel = null;
 			tooltip = null;
 			return;
 		}
@@ -251,6 +255,7 @@
 							origXi = xi;
 						}
 						const mainIdx = origCi * oH * oW + origYi * oW + origXi;
+						hoveredVoxel = { ci, yi, xi };
 						tooltip = {
 							x: e.clientX, y: e.clientY,
 							ci: origCi, iy: origYi, ix: origXi,
@@ -263,6 +268,7 @@
 				}
 			}
 		}
+		hoveredVoxel = null;
 		tooltip = null;
 	}
 
@@ -272,6 +278,7 @@
 
 	function onMouseLeave() {
 		dragging = false;
+		hoveredVoxel = null;
 		tooltip = null;
 	}
 
@@ -303,6 +310,7 @@
 		const _threshold = threshold;
 		const _opacity = opacity;
 		const _colorScheme = colorScheme;
+		const _hoveredVoxel = hoveredVoxel;
 		const _cw = containerW;
 		const _ch = containerH;
 
@@ -421,6 +429,40 @@
 						ctx.fill();
 					}
 				}
+			}
+		}
+
+		// --- Draw hovered voxel outline ---
+		if (_hoveredVoxel) {
+			const hv = _hoveredVoxel;
+			const ox = hv.xi * voxW - origW / 2;
+			const oy = hv.yi * voxH - origH / 2;
+			const oz = hv.ci * voxD - depthExtent / 2;
+
+			// Project all 8 corners
+			const c000 = project3D(ox, oy, oz, cosX, sinX, cosY, sinY, centerX, centerY, scale);
+			const c100 = project3D(ox + voxW, oy, oz, cosX, sinX, cosY, sinY, centerX, centerY, scale);
+			const c010 = project3D(ox, oy + voxH, oz, cosX, sinX, cosY, sinY, centerX, centerY, scale);
+			const c110 = project3D(ox + voxW, oy + voxH, oz, cosX, sinX, cosY, sinY, centerX, centerY, scale);
+			const c001 = project3D(ox, oy, oz + voxD, cosX, sinX, cosY, sinY, centerX, centerY, scale);
+			const c101 = project3D(ox + voxW, oy, oz + voxD, cosX, sinX, cosY, sinY, centerX, centerY, scale);
+			const c011 = project3D(ox, oy + voxH, oz + voxD, cosX, sinX, cosY, sinY, centerX, centerY, scale);
+			const c111 = project3D(ox + voxW, oy + voxH, oz + voxD, cosX, sinX, cosY, sinY, centerX, centerY, scale);
+
+			// Draw all 12 edges of the cube
+			const edges: [[number,number],[number,number]][] = [
+				[c000,c100],[c010,c110],[c001,c101],[c011,c111], // X edges
+				[c000,c010],[c100,c110],[c001,c011],[c101,c111], // Y edges
+				[c000,c001],[c100,c101],[c010,c011],[c110,c111], // Z edges
+			];
+
+			ctx.strokeStyle = '#ffffff';
+			ctx.lineWidth = 2;
+			for (const [a, b] of edges) {
+				ctx.beginPath();
+				ctx.moveTo(a[0], a[1]);
+				ctx.lineTo(b[0], b[1]);
+				ctx.stroke();
 			}
 		}
 
