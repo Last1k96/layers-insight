@@ -84,11 +84,6 @@ export async function initRenderer(container: HTMLElement, graphData: GraphData)
   container.appendChild(canvas);
 
   const renderer = await WebGPURenderer.create(canvas);
-  if (!renderer) {
-    canvas.remove();
-    throw new Error('WebGPU is not available in this browser');
-  }
-
   gpuRenderer = renderer;
 
   // Set up pan/zoom on canvas

@@ -205,63 +205,11 @@ async def compute_layout(graph_data: GraphData) -> dict:
         if proc.returncode == 0:
             return json.loads(stdout.decode())
         else:
-            print(f"ELK layout failed: {stderr.decode()}", file=sys.stderr)
+            raise RuntimeError(f"ELK layout failed (rc={proc.returncode}): {stderr.decode()}")
+    except RuntimeError:
+        raise
     except Exception as e:
-        print(f"ELK layout error: {e}", file=sys.stderr)
-
-    # Fallback: topological layer assignment
-    return _fallback_layout(graph_data)
-
-
-def _fallback_layout(graph_data: GraphData) -> dict[str, dict[str, float]]:
-    """Simple layered layout fallback using topological ordering."""
-    # Build adjacency
-    children: dict[str, list[str]] = {}
-    parents: dict[str, list[str]] = {}
-    for e in graph_data.edges:
-        children.setdefault(e.source, []).append(e.target)
-        parents.setdefault(e.target, []).append(e.source)
-
-    # Compute layers via BFS from sources
-    node_ids = {n.id for n in graph_data.nodes}
-    sources = [n.id for n in graph_data.nodes if n.id not in parents or not parents.get(n.id)]
-    if not sources:
-        sources = [graph_data.nodes[0].id] if graph_data.nodes else []
-
-    layer: dict[str, int] = {}
-    queue = list(sources)
-    for s in queue:
-        layer[s] = 0
-
-    visited = set(queue)
-    while queue:
-        current = queue.pop(0)
-        for child in children.get(current, []):
-            new_layer = layer[current] + 1
-            if child not in layer or new_layer > layer[child]:
-                layer[child] = new_layer
-            if child not in visited:
-                visited.add(child)
-                queue.append(child)
-
-    # Assign remaining nodes
-    for n in graph_data.nodes:
-        if n.id not in layer:
-            layer[n.id] = 0
-
-    # Position nodes
-    layer_nodes: dict[int, list[str]] = {}
-    for nid, l in layer.items():
-        layer_nodes.setdefault(l, []).append(nid)
-
-    positions = {}
-    y_spacing = 100
-    x_spacing = 220
-    for l, nids in sorted(layer_nodes.items()):
-        for i, nid in enumerate(nids):
-            positions[nid] = {"x": i * x_spacing, "y": l * y_spacing}
-
-    return {"nodes": positions, "edges": {}}
+        raise RuntimeError(f"ELK layout error: {e}") from e
 
 
 def apply_layout(graph_data: GraphData, layout_result: dict) -> GraphData:

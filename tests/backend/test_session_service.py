@@ -307,3 +307,88 @@ class TestSessionService:
 
         # s2 has no task for relu1, but s1 (parent) does
         assert session_service.find_task_for_node(info.id, "relu1", s2.id) == "t_s1"
+
+    def test_sub_session_cascade_delete(self, session_service, sample_config, tmp_path):
+        """Deleting a parent sub-session cascades to children."""
+        info = session_service.create_session(sample_config)
+
+        parent = session_service.create_sub_session(
+            session_id=info.id, cut_type="output",
+            cut_node="conv1", grayed_nodes=["relu1"],
+        )
+        child = session_service.create_sub_session(
+            session_id=info.id, cut_type="input",
+            cut_node="relu1", grayed_nodes=["param0"],
+            parent_sub_session_id=parent.id,
+        )
+
+        # Add tasks to both sub-sessions
+        session_service.save_task_result(info.id, "tp", {
+            "status": "success", "node_name": "conv1", "sub_session_id": parent.id,
+        })
+        session_service.save_task_result(info.id, "tc", {
+            "status": "success", "node_name": "relu1", "sub_session_id": child.id,
+        })
+
+        # Delete parent — child should also be removed
+        assert session_service.delete_sub_session(info.id, parent.id) is True
+
+        subs = session_service.list_sub_sessions(info.id)
+        assert len(subs) == 0
+
+        # Tasks associated with deleted sub-sessions should also be removed
+        detail = session_service.get_session(info.id)
+        assert detail.info.task_count == 0
+
+    def test_delete_task_removes_metadata_and_tensors(self, session_service, sample_config, tmp_path):
+        """delete_task removes both metadata and tensor directory."""
+        info = session_service.create_session(sample_config)
+
+        artifacts_dir = tmp_path / "del_artifacts"
+        artifacts_dir.mkdir()
+        np.save(str(artifacts_dir / "main_output.npy"), np.zeros((1, 3)))
+
+        session_service.save_task_result(
+            info.id, "t1",
+            {"status": "success", "node_name": "conv1"},
+            artifacts_dir=str(artifacts_dir),
+        )
+
+        # Verify tensor dir exists
+        tensor_dir = session_service._session_path(info.id) / "tensors" / "conv1"
+        assert tensor_dir.exists()
+
+        # Delete task
+        assert session_service.delete_task(info.id, "t1") is True
+
+        # Tensor dir should be gone
+        assert not tensor_dir.exists()
+
+        # Metadata should be gone
+        result = session_service.load_task_result(info.id, "t1")
+        assert result == {}
+
+        # Counts should be updated
+        detail = session_service.get_session(info.id)
+        assert detail.info.task_count == 0
+
+    def test_get_sub_session_meta_resolved_paths(self, session_service, sample_config):
+        """get_sub_session_meta_resolved returns absolute paths."""
+        info = session_service.create_session(sample_config)
+        sub = session_service.create_sub_session(
+            session_id=info.id, cut_type="input",
+            cut_node="conv1", grayed_nodes=["param0"],
+        )
+
+        session_service.update_sub_session_meta(info.id, sub.id, {
+            "model_path": "sub_sessions/conv1/cut_model.xml",
+            "input_configs": [
+                {"name": "input", "source": "file", "path": "sub_sessions/conv1/inputs/input.npy"},
+            ],
+        })
+
+        resolved = session_service.get_sub_session_meta_resolved(info.id, sub.id)
+        assert resolved is not None
+        # Paths should be absolute
+        assert resolved["model_path"].startswith("/")
+        assert resolved["input_configs"][0]["path"].startswith("/")

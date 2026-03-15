@@ -78,39 +78,24 @@ export class WebGPURenderer {
     this.frameLoop();
   }
 
-  static async create(canvas: HTMLCanvasElement): Promise<WebGPURenderer | null> {
+  static async create(canvas: HTMLCanvasElement): Promise<WebGPURenderer> {
     if (!navigator.gpu) {
-      console.error('[WebGPU] navigator.gpu not available. Check chrome://flags/#enable-unsafe-webgpu or chrome://gpu');
-      return null;
+      throw new Error('[WebGPU] navigator.gpu not available. Check chrome://flags/#enable-unsafe-webgpu or chrome://gpu');
     }
     console.log('[WebGPU] navigator.gpu found');
 
-    let adapter: GPUAdapter | null;
-    try {
-      adapter = await navigator.gpu.requestAdapter();
-    } catch (e) {
-      console.error('[WebGPU] requestAdapter() threw:', e);
-      return null;
-    }
+    const adapter = await navigator.gpu.requestAdapter();
     if (!adapter) {
-      console.error('[WebGPU] requestAdapter() returned null. Check chrome://gpu for WebGPU status');
-      return null;
+      throw new Error('[WebGPU] requestAdapter() returned null. Check chrome://gpu for WebGPU status');
     }
     console.log('[WebGPU] adapter:', adapter.info);
 
-    let device: GPUDevice;
-    try {
-      device = await adapter.requestDevice();
-    } catch (e) {
-      console.error('[WebGPU] requestDevice() threw:', e);
-      return null;
-    }
+    const device = await adapter.requestDevice();
     console.log('[WebGPU] device acquired');
 
     const context = canvas.getContext('webgpu');
     if (!context) {
-      console.error('[WebGPU] canvas.getContext("webgpu") returned null');
-      return null;
+      throw new Error('[WebGPU] canvas.getContext("webgpu") returned null');
     }
 
     const format = navigator.gpu.getPreferredCanvasFormat();

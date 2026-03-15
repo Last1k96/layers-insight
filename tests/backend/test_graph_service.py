@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import MagicMock, PropertyMock
 
-from backend.services.graph_service import extract_graph, search_nodes, _fallback_layout
+from backend.services.graph_service import extract_graph, search_nodes
 from backend.schemas.graph import GraphData, GraphNode, GraphEdge
 
 
@@ -124,8 +124,8 @@ class TestExtractGraph:
         graph = extract_graph(model)
         colors = {n.name: n.color for n in graph.nodes}
 
-        assert colors["conv"] == "#4A90D9"
-        assert colors["unknown_op"] == "#78909C"  # Other/default
+        assert colors["conv"] == "#335588"  # Netron "layer" color
+        assert colors["unknown_op"] == "#333333"  # Other/default
 
     def test_constants_filtered(self):
         """Constant nodes should be excluded from the graph but tracked as inputs."""
@@ -220,26 +220,3 @@ class TestSearchNodes:
         assert len(results) == 1
 
 
-class TestFallbackLayout:
-    def test_linear_graph(self):
-        nodes = [
-            GraphNode(id="a", name="a", type="T"),
-            GraphNode(id="b", name="b", type="T"),
-            GraphNode(id="c", name="c", type="T"),
-        ]
-        edges = [
-            GraphEdge(source="a", target="b"),
-            GraphEdge(source="b", target="c"),
-        ]
-        graph = GraphData(nodes=nodes, edges=edges)
-
-        result = _fallback_layout(graph)
-        positions = result["nodes"]
-
-        assert positions["a"]["y"] < positions["b"]["y"]
-        assert positions["b"]["y"] < positions["c"]["y"]
-
-    def test_empty_graph(self):
-        graph = GraphData(nodes=[], edges=[])
-        result = _fallback_layout(graph)
-        assert result == {"nodes": {}, "edges": {}}

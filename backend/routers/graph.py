@@ -1,8 +1,6 @@
 """Graph data routes."""
 from __future__ import annotations
 
-import asyncio
-
 import numpy as np
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -26,31 +24,14 @@ async def get_graph(session_id: str, request: Request) -> JSONResponse:
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Check for broken .bin symlink before loading
-    from pathlib import Path
-    model_path = Path(session.config.model_path)
-    bin_path = model_path.with_suffix(".bin")
-    bin_symlink_broken = bin_path.is_symlink() and not bin_path.exists()
-
     # Ensure model is loaded for inference (even if graph is cached)
     ov_core = request.app.state.ov_core
     if session_id not in request.app.state.models and ov_core is not None:
-        if bin_symlink_broken:
-            # Can still serve cached graph but warn about limited functionality
-            cached = session_svc.load_graph_cache(session_id)
-            if cached:
-                cached["_warning"] = "Model weights symlink is broken. Graph is read-only (no inference)."
-                return JSONResponse(content=cached)
-            raise HTTPException(
-                status_code=400,
-                detail="Model weights (.bin) symlink is broken. Cannot load model.",
-            )
         try:
             model = load_model(session.config.model_path, ov_core)
             request.app.state.models[session_id] = model
         except Exception as e:
-            if not session_svc.load_graph_cache(session_id):
-                raise HTTPException(status_code=400, detail=f"Failed to load model: {e}")
+            raise HTTPException(status_code=400, detail=f"Failed to load model: {e}")
 
     # Check for cached graph
     cached = session_svc.load_graph_cache(session_id)
