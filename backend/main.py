@@ -95,7 +95,7 @@ async def lifespan(app: FastAPI):
         # Sub-session routing: use cut model path and merged input configs
         infer_model_path = session.config.model_path
         if task.sub_session_id:
-            sub_meta = session_service.get_sub_session_meta(task.session_id, task.sub_session_id)
+            sub_meta = session_service.get_sub_session_meta_resolved(task.session_id, task.sub_session_id)
             if sub_meta:
                 if sub_meta.get("model_path"):
                     infer_model_path = sub_meta["model_path"]
@@ -157,6 +157,7 @@ async def lifespan(app: FastAPI):
                     task_id=task.task_id,
                     task_data=updated_task.model_dump(),
                     artifacts_dir=artifacts_dir,
+                    sub_session_id=task.sub_session_id,
                 )
             finally:
                 import shutil

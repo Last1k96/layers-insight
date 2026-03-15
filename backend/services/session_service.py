@@ -8,14 +8,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+import numpy as np
+
 from backend.schemas.session import SessionConfig, SessionDetail, SessionInfo
+from backend.utils.input_generator import generate_random_input
 
 
 class SessionService:
     """Manages session lifecycle and persistence."""
 
     def __init__(self, sessions_dir: Path):
-        self.sessions_dir = sessions_dir
+        self.sessions_dir = sessions_dir.resolve()
         self.sessions_dir.mkdir(parents=True, exist_ok=True)
 
     def _session_path(self, session_id: str) -> Path:
@@ -23,6 +26,14 @@ class SessionService:
 
     def _metadata_path(self, session_id: str) -> Path:
         return self._session_path(session_id) / "metadata.json"
+
+    def _to_session_rel(self, session_id: str, abs_path: Path) -> str:
+        """Convert an absolute path to a session-relative path string."""
+        return str(abs_path.relative_to(self._session_path(session_id)))
+
+    def _resolve_path(self, session_id: str, rel_path: str) -> Path:
+        """Resolve a session-relative path to absolute."""
+        return self._session_path(session_id) / rel_path
 
     def create_session(self, config: SessionConfig) -> SessionInfo:
         """Create a new session directory with metadata."""
@@ -43,12 +54,46 @@ class SessionService:
             local_bin = session_path / original_bin.name
             local_bin.symlink_to(original_bin.resolve())
 
-        # Point config at the session-local copy
-        config = config.model_copy(update={"model_path": str(local_xml)})
+        # Store session-relative model path (just the filename)
+        rel_model_path = original_xml.name
+        config = config.model_copy(update={"model_path": rel_model_path})
+
+        # Generate and persist random inputs so they are reused across inferences
+        if config.inputs:
+            inputs_dir = session_path / "inputs"
+            inputs_dir.mkdir(exist_ok=True)
+            updated_inputs = []
+            for inp in config.inputs:
+                if inp.source == "file" and inp.path:
+                    # User-provided file: copy into session inputs dir
+                    src = Path(inp.path)
+                    if src.exists():
+                        dst = inputs_dir / src.name
+                        shutil.copy2(str(src), str(dst))
+                        # Store as session-relative path
+                        updated_inputs.append(inp.model_copy(update={
+                            "path": f"inputs/{src.name}",
+                        }))
+                    else:
+                        updated_inputs.append(inp)
+                elif inp.shape:
+                    # Random source with known shape: generate and save
+                    safe_name = inp.name.replace("/", "_").replace("\\", "_")
+                    npy_path = inputs_dir / f"{safe_name}.npy"
+                    data = generate_random_input(inp.shape, inp.data_type)
+                    np.save(str(npy_path), data)
+                    updated_inputs.append(inp.model_copy(update={
+                        "source": "file",
+                        "path": f"inputs/{safe_name}.npy",
+                    }))
+                else:
+                    # No shape yet — will be generated at inference time
+                    updated_inputs.append(inp)
+            config = config.model_copy(update={"inputs": updated_inputs})
 
         info = SessionInfo(
             id=session_id,
-            model_path=str(local_xml),
+            model_path=rel_model_path,
             model_name=model_name,
             created_at=datetime.now(timezone.utc).isoformat(),
             main_device=config.main_device,
@@ -56,11 +101,11 @@ class SessionService:
         )
 
         metadata = {
-            "schema_version": 1,
+            "schema_version": 2,
             "info": info.model_dump(),
             "config": config.model_dump(),
             "tasks": {},
-            "sub_sessions": [],  # Phase 2 extensibility
+            "sub_sessions": [],
         }
         self._write_metadata(session_id, metadata)
         return info
@@ -74,21 +119,43 @@ class SessionService:
             if p.is_dir() and (p / "metadata.json").exists():
                 try:
                     meta = self._read_metadata(p.name)
-                    sessions.append(SessionInfo(**meta["info"]))
+                    info_data = dict(meta["info"])
+                    # Resolve model_path to absolute for consumers
+                    if "model_path" in info_data:
+                        info_data["model_path"] = str(
+                            self._resolve_path(p.name, info_data["model_path"])
+                        )
+                    sessions.append(SessionInfo(**info_data))
                 except Exception:
                     continue
         return sessions
 
     def get_session(self, session_id: str) -> Optional[SessionDetail]:
-        """Get full session detail."""
+        """Get full session detail with resolved absolute paths."""
         meta_path = self._metadata_path(session_id)
         if not meta_path.exists():
             return None
         meta = self._read_metadata(session_id)
+
+        # Resolve session-relative paths to absolute for consumers
+        config_data = dict(meta["config"])
+        config_data["model_path"] = str(self._resolve_path(session_id, config_data["model_path"]))
+        if config_data.get("inputs"):
+            resolved_inputs = []
+            for inp in config_data["inputs"]:
+                if inp.get("path"):
+                    inp = dict(inp)
+                    inp["path"] = str(self._resolve_path(session_id, inp["path"]))
+                resolved_inputs.append(inp)
+            config_data["inputs"] = resolved_inputs
+
+        info_data = dict(meta["info"])
+        info_data["model_path"] = str(self._resolve_path(session_id, info_data["model_path"]))
+
         return SessionDetail(
             id=session_id,
-            config=SessionConfig(**meta["config"]),
-            info=SessionInfo(**meta["info"]),
+            config=SessionConfig(**config_data),
+            info=SessionInfo(**info_data),
             tasks=list(meta.get("tasks", {}).values()),
         )
 
@@ -118,12 +185,16 @@ class SessionService:
         task_id: str,
         task_data: dict,
         artifacts_dir: Optional[str] = None,
+        sub_session_id: Optional[str] = None,
     ) -> None:
         """Save task result metadata and output tensors.
 
         If artifacts_dir is provided, all files from that directory are moved
         into the task's tensor directory, creating a self-contained reproducer
         (cut model + inputs + outputs).
+
+        If sub_session_id is provided, tensors are stored under the sub-session's
+        own tensors/ directory instead of the root session's.
         """
         # Update metadata
         meta = self._read_metadata(session_id)
@@ -140,12 +211,22 @@ class SessionService:
         # Name the folder after the node for easy discovery
         if artifacts_dir:
             node_name = task_data.get("node_name", task_id)
-            folder_name = self._unique_tensor_folder(session_id, node_name)
+
+            # Determine base tensors directory
+            if sub_session_id:
+                tensors_base = self._session_path(session_id) / "sub_sessions" / sub_session_id / "tensors"
+            else:
+                tensors_base = self._session_path(session_id) / "tensors"
+            tensors_base.mkdir(parents=True, exist_ok=True)
+
+            folder_name = self._unique_tensor_folder_in(tensors_base, node_name)
             task_data["tensor_dir"] = folder_name
+            if sub_session_id:
+                task_data["tensor_base"] = f"sub_sessions/{sub_session_id}/tensors"
             meta["tasks"][task_id] = task_data
             self._write_metadata(session_id, meta)
 
-            task_dir = self._session_path(session_id) / "tensors" / folder_name
+            task_dir = tensors_base / folder_name
             task_dir.mkdir(parents=True, exist_ok=True)
             src = Path(artifacts_dir)
             for f in src.iterdir():
@@ -235,12 +316,30 @@ class SessionService:
         return sub_info
 
     def get_sub_session_meta(self, session_id: str, sub_session_id: str) -> Optional[dict]:
-        """Get metadata for a specific sub-session."""
+        """Get raw metadata for a specific sub-session (paths are session-relative)."""
         meta = self._read_metadata(session_id)
         for s in meta.get("sub_sessions", []):
             if s.get("id") == sub_session_id:
                 return s
         return None
+
+    def get_sub_session_meta_resolved(self, session_id: str, sub_session_id: str) -> Optional[dict]:
+        """Get sub-session metadata with paths resolved to absolute."""
+        raw = self.get_sub_session_meta(session_id, sub_session_id)
+        if raw is None:
+            return None
+        resolved = dict(raw)
+        if resolved.get("model_path"):
+            resolved["model_path"] = str(self._resolve_path(session_id, resolved["model_path"]))
+        if resolved.get("input_configs"):
+            resolved_configs = []
+            for cfg in resolved["input_configs"]:
+                cfg = dict(cfg)
+                if cfg.get("path"):
+                    cfg["path"] = str(self._resolve_path(session_id, cfg["path"]))
+                resolved_configs.append(cfg)
+            resolved["input_configs"] = resolved_configs
+        return resolved
 
     def update_sub_session_meta(self, session_id: str, sub_session_id: str, updates: dict) -> None:
         """Update sub-session metadata with additional fields (e.g. model_path, input_configs)."""
@@ -257,23 +356,69 @@ class SessionService:
         meta = self._read_metadata(session_id)
         return [SubSessionInfo(**s) for s in meta.get("sub_sessions", [])]
 
+    def delete_sub_session(self, session_id: str, sub_session_id: str) -> bool:
+        """Delete a sub-session and all its descendants, files, and associated tasks."""
+        meta = self._read_metadata(session_id)
+        subs = meta.get("sub_sessions", [])
+
+        # Find all descendant sub-session IDs (BFS)
+        to_delete = {sub_session_id}
+        changed = True
+        while changed:
+            changed = False
+            for s in subs:
+                if s["id"] not in to_delete and s.get("parent_id") in to_delete:
+                    to_delete.add(s["id"])
+                    changed = True
+
+        if sub_session_id not in {s["id"] for s in subs}:
+            return False
+
+        # Remove sub-session metadata entries
+        meta["sub_sessions"] = [s for s in subs if s["id"] not in to_delete]
+        meta["info"]["sub_sessions"] = meta["sub_sessions"]
+
+        # Remove tasks associated with deleted sub-sessions
+        tasks = meta.get("tasks", {})
+        meta["tasks"] = {
+            tid: t for tid, t in tasks.items()
+            if t.get("sub_session_id") not in to_delete
+        }
+
+        # Update counts
+        tasks = meta["tasks"]
+        meta["info"]["task_count"] = len(tasks)
+        meta["info"]["success_count"] = sum(1 for t in tasks.values() if t.get("status") == "success")
+        meta["info"]["failed_count"] = sum(1 for t in tasks.values() if t.get("status") == "failed")
+
+        self._write_metadata(session_id, meta)
+
+        # Delete sub-session directories from disk
+        for sid in to_delete:
+            sub_dir = self._session_path(session_id) / "sub_sessions" / sid
+            if sub_dir.exists():
+                shutil.rmtree(sub_dir)
+
+        return True
+
     def get_tensor_path(self, session_id: str, task_id: str, output_name: str) -> Optional[Path]:
         """Get path to a saved tensor file."""
-        # Look up the tensor folder name from task metadata
         meta = self._read_metadata(session_id)
         task_data = meta.get("tasks", {}).get(task_id, {})
         folder_name = task_data.get("tensor_dir", task_id)
-        path = self._session_path(session_id) / "tensors" / folder_name / f"{output_name}.npy"
+        # Check if tensors are in a sub-session directory
+        tensor_base = task_data.get("tensor_base")
+        if tensor_base:
+            path = self._session_path(session_id) / tensor_base / folder_name / f"{output_name}.npy"
+        else:
+            path = self._session_path(session_id) / "tensors" / folder_name / f"{output_name}.npy"
         return path if path.exists() else None
 
-    def _unique_tensor_folder(self, session_id: str, node_name: str) -> str:
-        """Return a unique folder name under tensors/ based on node_name."""
-        # Sanitize: replace path-unsafe chars with underscores
+    def _unique_tensor_folder_in(self, tensors_dir: Path, node_name: str) -> str:
+        """Return a unique folder name under given tensors dir based on node_name."""
         safe = node_name.replace("/", "_").replace("\\", "_")
-        tensors_dir = self._session_path(session_id) / "tensors"
         if not (tensors_dir / safe).exists():
             return safe
-        # Append incrementing suffix
         i = 2
         while (tensors_dir / f"{safe}_{i}").exists():
             i += 1

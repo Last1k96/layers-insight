@@ -74,6 +74,10 @@
 		col: number;
 		error: number;
 		size: number;
+		rStart: number;
+		rEnd: number;
+		cStart: number;
+		cEnd: number;
 	}
 
 	let blockErrors = $derived.by((): BlockError[] | null => {
@@ -106,7 +110,7 @@
 						count++;
 					}
 				}
-				blocks.push({ blockIdx: idx++, row: br, col: bc, error: err, size: count });
+				blocks.push({ blockIdx: idx++, row: br, col: bc, error: err, size: count, rStart, rEnd: rEnd - 1, cStart, cEnd: cEnd - 1 });
 			}
 		}
 
@@ -293,12 +297,18 @@
 			if (!be) return null;
 			const pct = blockTotalError > 0 ? (be.error / blockTotalError) * 100 : 0;
 			return {
-				label: `Block [${be.row}, ${be.col}]`,
+				label: `H:${be.rStart}-${be.rEnd}, W:${be.cStart}-${be.cEnd}`,
 				error: formatValue(be.error),
 				pct: pct.toFixed(1),
 			};
 		}
 	});
+
+	/** Pick black or white text for readability on a given background. */
+	function contrastText(r: number, g: number, b: number): string {
+		const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+		return lum > 140 ? '#000000' : '#ffffff';
+	}
 
 	// ---------------------------------------------------------------------------
 	// Canvas rendering
@@ -347,7 +357,7 @@
 
 				// Label
 				if (r.w > 30 && r.h > 30) {
-					ctx.fillStyle = '#d1d5db';
+					ctx.fillStyle = contrastText(cr, cg, cb);
 					ctx.font = '11px monospace';
 					ctx.textAlign = 'center';
 					ctx.textBaseline = 'middle';
@@ -379,12 +389,13 @@
 				ctx.lineWidth = isHovered ? 2 : 1;
 				ctx.strokeRect(r.x, r.y, r.w, r.h);
 
-				if (r.w > 30 && r.h > 30 && be) {
-					ctx.fillStyle = '#d1d5db';
+				if (r.w > 40 && r.h > 30 && be) {
+					ctx.fillStyle = contrastText(cr, cg, cb);
 					ctx.font = '11px monospace';
 					ctx.textAlign = 'center';
 					ctx.textBaseline = 'middle';
-					ctx.fillText(`${be.row},${be.col}`, r.x + r.w / 2, r.y + r.h / 2);
+					const rangeLabel = `${be.rStart}-${be.rEnd}, ${be.cStart}-${be.cEnd}`;
+					ctx.fillText(rangeLabel, r.x + r.w / 2, r.y + r.h / 2);
 				}
 			}
 		}

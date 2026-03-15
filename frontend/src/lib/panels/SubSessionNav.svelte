@@ -2,7 +2,7 @@
   import type { SubSessionInfo } from '../stores/types';
   import { sessionStore } from '../stores/session.svelte';
   import { graphStore } from '../stores/graph.svelte';
-  import { queueStore } from '../stores/queue.svelte';
+
   import { refreshRenderer } from '../graph/renderer';
 
   interface TreeNode {
@@ -12,9 +12,24 @@
   }
 
   let subSessions = $state<SubSessionInfo[]>([]);
-  let collapsed = $state(true);
-  let activeSubSessionId = $state<string | null>(null);
-  let loading = $state(false);
+  let activeSubSessionId = $derived(graphStore.activeSubSessionId);
+  let leftOffset = $state(330);
+
+  // Track left panel width to position ourselves right next to it
+  $effect(() => {
+    function updateOffset() {
+      const savedWidth = localStorage.getItem('panel-left-width');
+      const savedCollapsed = localStorage.getItem('panel-left-collapsed');
+      const isCollapsed = savedCollapsed === 'true';
+      const w = isCollapsed ? 40 : (savedWidth ? parseInt(savedWidth) : 320);
+      leftOffset = w + 12; // panel left-2 (8px) + panel width + 4px gap
+    }
+    updateOffset();
+
+    // Poll for changes since FloatingPanel writes to localStorage on resize
+    const interval = setInterval(updateOffset, 300);
+    return () => clearInterval(interval);
+  });
 
   let tree = $derived.by(() => buildTree(subSessions));
 
@@ -22,24 +37,19 @@
     const byId = new Map(subs.map(s => [s.id, s]));
     const childrenMap = new Map<string, TreeNode[]>();
 
-    // Group subs by parent_id
     for (const sub of subs) {
       const parentKey = sub.parent_id;
       if (!childrenMap.has(parentKey)) childrenMap.set(parentKey, []);
       childrenMap.get(parentKey)!.push({ sub, children: [], depth: 0 });
     }
 
-    // Build tree recursively from roots (parent_id = session id, i.e. not in byId)
     function attachChildren(node: TreeNode, depth: number): void {
       node.depth = depth;
       const kids = childrenMap.get(node.sub.id) || [];
       node.children = kids;
-      for (const kid of kids) {
-        attachChildren(kid, depth + 1);
-      }
+      for (const kid of kids) attachChildren(kid, depth + 1);
     }
 
-    // Root nodes: parent_id is not a known sub-session id
     const roots: TreeNode[] = [];
     for (const sub of subs) {
       if (!byId.has(sub.parent_id)) {
@@ -79,76 +89,301 @@
   }
 
   function activateSubSession(sub: SubSessionInfo) {
-    activeSubSessionId = sub.id;
     graphStore.setGrayedNodes(sub.grayed_nodes, sub.cut_node, sub.cut_type, sub.ancestor_cuts);
     graphStore.setActiveSubSession(sub.id);
-    queueStore.removeByNodeNames(new Set(sub.grayed_nodes));
     refreshRenderer();
   }
 
   function activateRoot() {
-    activeSubSessionId = null;
     graphStore.clearGrayedNodes();
     graphStore.setActiveSubSession(null);
     refreshRenderer();
   }
 
+  async function deleteSubSession(e: MouseEvent, subId: string) {
+    e.stopPropagation();
+    const session = sessionStore.currentSession;
+    if (!session) return;
+
+    try {
+      const res = await fetch(`/api/sessions/${session.id}/sub-sessions/${subId}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        // If we deleted the active sub-session (or its ancestor), revert to root
+        const deletedIds = getSubTreeIds(subId);
+        if (activeSubSessionId && deletedIds.has(activeSubSessionId)) {
+          activateRoot();
+        }
+        subSessions = subSessions.filter(s => !deletedIds.has(s.id));
+      }
+    } catch (e) {
+      console.error('Failed to delete sub-session:', e);
+    }
+  }
+
+  function getSubTreeIds(rootId: string): Set<string> {
+    const ids = new Set([rootId]);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const s of subSessions) {
+        if (!ids.has(s.id) && ids.has(s.parent_id)) {
+          ids.add(s.id);
+          changed = true;
+        }
+      }
+    }
+    return ids;
+  }
+
   export function addSubSession(sub: SubSessionInfo) {
     subSessions = [...subSessions, sub];
     activateSubSession(sub);
-    collapsed = false;
   }
 
   $effect(() => {
-    if (sessionStore.currentSession) {
+    // Re-fetch when session changes or when a sub-session is created/deleted
+    const _session = sessionStore.currentSession;
+    const _version = graphStore.subSessionVersion;
+    if (_session) {
       fetchSubSessions();
     }
   });
 </script>
 
 {#if subSessions.length > 0}
-  <div class="absolute top-2 left-[340px] z-20">
-    <div class="bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-lg shadow-xl">
+  <div class="sub-session-panel" style="left: {leftOffset}px">
+    <div class="panel-header">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" class="shrink-0 opacity-60">
+        <path d="M2 3h12M2 8h8M2 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+      <span class="panel-title">Sessions</span>
+      <span class="count-badge">{subSessions.length}</span>
+    </div>
+
+    <div class="tree-list">
+      <!-- Root session -->
       <button
-        class="flex items-center gap-2 px-3 py-2 text-xs text-gray-300 hover:text-gray-100 w-full"
-        onclick={() => collapsed = !collapsed}
+        class="tree-item"
+        class:active={activeSubSessionId === null}
+        onclick={activateRoot}
       >
-        <span class="text-gray-500">{collapsed ? '>' : 'v'}</span>
-        <span>Sub-sessions ({subSessions.length})</span>
+        <span class="tree-indent" style="width: 0px"></span>
+        <span class="dot dot-root"></span>
+        <span class="tree-label">Full Model</span>
       </button>
 
-      {#if !collapsed}
-        <div class="border-t border-[--border-color] max-h-64 overflow-y-auto">
-          <!-- Root session -->
+      {#each flatTree as node (node.sub.id)}
+        <div
+          class="tree-item"
+          class:active={activeSubSessionId === node.sub.id}
+          onclick={() => activateSubSession(node.sub)}
+          role="button"
+          tabindex="0"
+        >
+          <span class="tree-indent" style="width: {node.depth * 14}px">
+            {#each Array(node.depth) as _, i}
+              <span class="tree-guide" style="left: {i * 14 + 6}px"></span>
+            {/each}
+          </span>
+          <span class="tree-connector"></span>
+          <span
+            class="dot"
+            class:dot-output={node.sub.cut_type === 'output'}
+            class:dot-input={node.sub.cut_type === 'input'}
+          ></span>
+          <span class="tree-label" title="{node.sub.cut_type} @ {node.sub.cut_node}">
+            {node.sub.cut_node}
+          </span>
+          <span class="cut-type-tag" class:tag-output={node.sub.cut_type === 'output'} class:tag-input={node.sub.cut_type === 'input'}>
+            {node.sub.cut_type === 'output' ? 'out' : 'in'}
+          </span>
           <button
-            class="w-full text-left px-3 py-1.5 text-xs hover:bg-[--bg-menu] flex items-center gap-2"
-            class:bg-[--bg-menu]={activeSubSessionId === null}
-            onclick={activateRoot}
+            class="delete-btn"
+            onclick={(e) => deleteSubSession(e, node.sub.id)}
+            title="Delete sub-session"
           >
-            <span class="w-1.5 h-1.5 rounded-full bg-accent"></span>
-            <span>Full Model (root)</span>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+              <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+            </svg>
           </button>
-
-          {#each flatTree as node (node.sub.id)}
-            <button
-              class="w-full text-left py-1.5 text-xs hover:bg-[--bg-menu] flex items-center gap-2"
-              class:bg-[--bg-menu]={activeSubSessionId === node.sub.id}
-              style="padding-left: {12 + node.depth * 12}px; padding-right: 12px;"
-              onclick={() => activateSubSession(node.sub)}
-            >
-              <span
-                class="w-1.5 h-1.5 rounded-full shrink-0"
-                class:bg-status-waiting={node.sub.cut_type === 'output'}
-                class:bg-accent={node.sub.cut_type === 'input'}
-              ></span>
-              <span class="flex-1 truncate">
-                {node.sub.cut_type === 'output' ? 'Output' : 'Input'} @ {node.sub.cut_node}
-              </span>
-              <span class="text-gray-500">{node.sub.task_count}</span>
-            </button>
-          {/each}
         </div>
-      {/if}
+      {/each}
     </div>
   </div>
 {/if}
+
+<style>
+  .sub-session-panel {
+    position: absolute;
+    top: 8px;
+    z-index: 20;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+    min-width: 180px;
+    max-width: 260px;
+    backdrop-filter: blur(12px);
+    overflow: hidden;
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-secondary);
+  }
+
+  .panel-title {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    flex: 1;
+  }
+
+  .count-badge {
+    font-size: 10px;
+    background: var(--bg-menu);
+    color: var(--text-secondary);
+    padding: 1px 6px;
+    border-radius: 8px;
+    line-height: 1.4;
+  }
+
+  .tree-list {
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 4px 0;
+  }
+
+  .tree-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 4px 8px 4px 10px;
+    border: none;
+    background: none;
+    color: var(--text-primary);
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+    position: relative;
+    transition: background 0.1s;
+  }
+
+  .tree-item:hover {
+    background: var(--bg-menu);
+  }
+
+  .tree-item.active {
+    background: rgba(76, 141, 255, 0.1);
+  }
+
+  .tree-item.active .tree-label {
+    color: #8bb4ff;
+  }
+
+  .tree-indent {
+    position: relative;
+    display: inline-block;
+    flex-shrink: 0;
+  }
+
+  .tree-guide {
+    position: absolute;
+    top: -10px;
+    bottom: -10px;
+    width: 1px;
+    background: var(--border-color);
+  }
+
+  .tree-connector {
+    width: 8px;
+    height: 1px;
+    background: var(--border-color);
+    flex-shrink: 0;
+  }
+
+  /* Root item has no connector */
+  .tree-item:first-child .tree-connector {
+    display: none;
+  }
+
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .dot-root {
+    background: #4C8DFF;
+  }
+
+  .dot-output {
+    background: #E5A820;
+  }
+
+  .dot-input {
+    background: #34C77B;
+  }
+
+  .tree-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 11px;
+  }
+
+  .cut-type-tag {
+    font-size: 9px;
+    padding: 0 4px;
+    border-radius: 3px;
+    line-height: 1.5;
+    flex-shrink: 0;
+    opacity: 0.7;
+  }
+
+  .tag-output {
+    background: rgba(229, 168, 32, 0.15);
+    color: #E5A820;
+  }
+
+  .tag-input {
+    background: rgba(52, 199, 123, 0.15);
+    color: #34C77B;
+  }
+
+  .delete-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.1s, background 0.1s, color 0.1s;
+    flex-shrink: 0;
+    padding: 0;
+  }
+
+  .tree-item:hover .delete-btn {
+    opacity: 0.6;
+  }
+
+  .delete-btn:hover {
+    opacity: 1 !important;
+    background: rgba(229, 77, 77, 0.15);
+    color: #E54D4D;
+  }
+</style>

@@ -25,6 +25,8 @@ class GraphStore {
   activeSubSessionId = $state<string | null>(null);
   /** Display overrides for nodes (e.g. cut node shown as Parameter) */
   nodeOverrides = $state<Map<string, { name: string; type: string; color: string }>>(new Map());
+  /** Bumped when a sub-session is created/deleted so watchers can re-fetch. */
+  subSessionVersion = $state(0);
 
   /** Returns the nodeStatusMap for the active sub-session. */
   get nodeStatusMap(): Map<string, NodeStatus> {
@@ -100,18 +102,16 @@ class GraphStore {
       s.delete(cutNode);
       const origNode = this.graphData?.nodes.find(n => n.name === cutNode);
       const origType = origNode?.type ?? cutNode;
-      overrides.set(cutNode, { name: `Parameter(${origType})`, type: `Parameter(${origType})`, color: '#eeeeee' });
+      overrides.set(cutNode, { name: 'Parameter', type: 'Parameter', color: '#eeeeee' });
     }
 
-    // Build overrides for ancestor input-cut nodes that are still visible
-    // (not grayed). If an ancestor cut node is in the grayed set, it means
-    // it's fully upstream of the current cut and should stay grayed.
+    // Ancestor input-cut nodes that are still reachable in the current sub-model
+    // should be shown as Parameters. If they're in the grayed set from the backend,
+    // it means they're upstream of the current cut and should stay grayed.
     if (ancestorCuts) {
       for (const ac of ancestorCuts) {
         if (ac.cut_type === 'input' && !s.has(ac.cut_node)) {
-          const origNode = this.graphData?.nodes.find(n => n.name === ac.cut_node);
-          const origType = origNode?.type ?? ac.cut_node;
-          overrides.set(ac.cut_node, { name: `Parameter(${origType})`, type: `Parameter(${origType})`, color: '#eeeeee' });
+          overrides.set(ac.cut_node, { name: 'Parameter', type: 'Parameter', color: '#eeeeee' });
         }
       }
     }

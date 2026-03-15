@@ -130,6 +130,7 @@ export interface InferenceTask {
   main_result?: DeviceResult;
   ref_result?: DeviceResult;
   metrics?: AccuracyMetrics;
+  sub_session_id?: string | null;
 }
 
 export interface TaskStatusMessage {

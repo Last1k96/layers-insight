@@ -32,7 +32,13 @@ def parse_cli_args() -> dict:
     parser.add_argument("--ref-device", help="Reference inference device (e.g., CPU)")
     parser.add_argument("--port", type=int, help="Server port")
     parser.add_argument("--host", help="Server host")
+    parser.add_argument("--sessions-dir", help="Directory for session storage")
 
     args = parser.parse_args()
-    # Only return explicitly set values
-    return {k: v for k, v in vars(args).items() if v is not None}
+    result = {k: v for k, v in vars(args).items() if v is not None}
+    # Resolve sessions_dir to absolute so CWD changes don't break paths
+    if "sessions_dir" in result:
+        result["sessions_dir"] = Path(result["sessions_dir"]).resolve()
+    else:
+        result["sessions_dir"] = Path("sessions").resolve()
+    return result

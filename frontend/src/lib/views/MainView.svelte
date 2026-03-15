@@ -36,7 +36,7 @@
         refResult: task.ref_result,
         errorDetail: task.error_detail,
       };
-      graphStore.updateNodeStatus(task.node_id, nodeStatus);
+      graphStore.updateNodeStatus(task.node_id, nodeStatus, task.sub_session_id);
 
       if (task.status === 'success' && task.metrics) {
         cacheMetrics(task.task_id, {

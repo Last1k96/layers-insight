@@ -2,10 +2,17 @@ import type { InferenceTask, TaskStatus } from './types';
 import { graphStore } from './graph.svelte';
 
 class QueueStore {
+  /** All tasks across all sub-sessions. */
   tasks = $state<InferenceTask[]>([]);
   selectedTaskId = $state<string | null>(null);
   filterText = $state('');
   filterStatus = $state<TaskStatus | 'all'>('all');
+
+  /** Tasks visible for the current active sub-session. */
+  get visibleTasks(): InferenceTask[] {
+    const activeSubId = graphStore.activeSubSessionId;
+    return this.tasks.filter(t => (t.sub_session_id ?? null) === activeSubId);
+  }
 
   get selectedIndex(): number {
     if (!this.selectedTaskId) return -1;
@@ -38,12 +45,14 @@ class QueueStore {
       nodes.forEach((n, i) => orderMap.set(n.id, i));
     }
 
-    const done = this.tasks
+    const visible = this.visibleTasks;
+
+    const done = visible
       .filter(t => t.status === 'success' || t.status === 'failed')
       .sort((a, b) => (orderMap.get(a.node_id) ?? 0) - (orderMap.get(b.node_id) ?? 0));
 
-    const executing = this.tasks.filter(t => t.status === 'executing');
-    const waiting = this.tasks.filter(t => t.status === 'waiting');
+    const executing = visible.filter(t => t.status === 'executing');
+    const waiting = visible.filter(t => t.status === 'waiting');
 
     return [...done, ...executing, ...waiting];
   }

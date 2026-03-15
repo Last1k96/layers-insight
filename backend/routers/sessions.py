@@ -63,24 +63,28 @@ async def cut_model(session_id: str, req: CutRequest, request: Request) -> SubSe
 
     # Resolve source model and parent metadata for chained cuts
     parent_sub = None
+    parent_sub_resolved = None
     parent_grayed: list[str] = []
     parent_input_configs: list[dict] = []
+    parent_input_configs_rel: list[dict] = []
     parent_ancestor_cuts: list[dict] = []
 
     if req.parent_sub_session_id:
         parent_sub = svc.get_sub_session_meta(session_id, req.parent_sub_session_id)
+        parent_sub_resolved = svc.get_sub_session_meta_resolved(session_id, req.parent_sub_session_id)
         if parent_sub is None:
             raise HTTPException(status_code=400, detail="Parent sub-session not found")
         parent_grayed = parent_sub.get("grayed_nodes", [])
-        parent_input_configs = parent_sub.get("input_configs", [])
+        parent_input_configs = parent_sub_resolved.get("input_configs", [])
+        parent_input_configs_rel = parent_sub.get("input_configs", [])
         parent_ancestor_cuts = parent_sub.get("ancestor_cuts", [])
 
     try:
         if req.cut_type == "output":
-            if req.parent_sub_session_id and parent_sub:
-                # Read the parent sub-session's cut model
+            if req.parent_sub_session_id and parent_sub_resolved:
+                # Read the parent sub-session's cut model (need absolute path)
                 import openvino as ov
-                parent_model_path = parent_sub.get("model_path")
+                parent_model_path = parent_sub_resolved.get("model_path")
                 if not parent_model_path:
                     raise HTTPException(status_code=400, detail="Parent sub-session has no model")
                 source_model = ov.Core().read_model(parent_model_path)
@@ -99,9 +103,9 @@ async def cut_model(session_id: str, req: CutRequest, request: Request) -> SubSe
             if npy_path is None:
                 raise HTTPException(status_code=400, detail="Main output tensor not found")
 
-            # Use parent sub-session's model path or root model path
-            if req.parent_sub_session_id and parent_sub:
-                source_model_path = parent_sub.get("model_path", session.config.model_path)
+            # Use parent sub-session's resolved model path or root model path
+            if req.parent_sub_session_id and parent_sub_resolved:
+                source_model_path = parent_sub_resolved.get("model_path", session.config.model_path)
             else:
                 source_model_path = session.config.model_path
 
@@ -117,14 +121,33 @@ async def cut_model(session_id: str, req: CutRequest, request: Request) -> SubSe
     # When cutting a sub-model, Parameter(X) nodes created by prior input cuts
     # appear with that wrapper name — map them back so the frontend can match.
     normalized_grayed = []
+    # Track which ancestor input-cut nodes are still reachable (present as
+    # Parameter(X) in the new cut model, i.e. NOT in the grayed list).
+    still_reachable_cuts = set()
     for name in new_grayed:
         if name.startswith("Parameter(") and name.endswith(")"):
             normalized_grayed.append(name[len("Parameter("):-1])
         else:
             normalized_grayed.append(name)
+    # Nodes that appear as Parameter(X) in the parent model and are NOT grayed
+    # by this cut are still reachable inputs.
+    new_grayed_set = set(new_grayed)
+    for ac in parent_ancestor_cuts:
+        if ac["cut_type"] == "input":
+            param_name = f"Parameter({ac['cut_node']})"
+            if param_name not in new_grayed_set:
+                still_reachable_cuts.add(ac["cut_node"])
+    # Also check the parent's own cut node
+    if parent_sub and parent_sub.get("cut_type") == "input":
+        param_name = f"Parameter({parent_sub['cut_node']})"
+        if param_name not in new_grayed_set:
+            still_reachable_cuts.add(parent_sub["cut_node"])
 
-    # Accumulate grayed nodes from parent
-    accumulated_grayed = list(set(parent_grayed + normalized_grayed))
+    # Accumulate grayed nodes from parent, but exclude ancestor input-cut
+    # nodes that are still reachable in the new sub-model
+    accumulated_grayed = list(
+        (set(parent_grayed) | set(normalized_grayed)) - still_reachable_cuts
+    )
 
     # Compute ancestor_cuts chain
     ancestor_cuts = parent_ancestor_cuts + [{
@@ -146,8 +169,11 @@ async def cut_model(session_id: str, req: CutRequest, request: Request) -> SubSe
     import openvino as ov
 
     sub_dir = svc._session_path(session_id) / "sub_sessions" / sub_session.id
-    cut_model_path = str(sub_dir / "cut_model.xml")
-    ov.save_model(cut_model, cut_model_path)
+    cut_model_abs = str(sub_dir / "cut_model.xml")
+    ov.save_model(cut_model, cut_model_abs)
+
+    # Store session-relative paths in metadata
+    rel_cut_model = f"sub_sessions/{sub_session.id}/cut_model.xml"
 
     # For input cuts, save the .npy input and store accumulated input_configs
     if req.cut_type == "input":
@@ -159,17 +185,19 @@ async def cut_model(session_id: str, req: CutRequest, request: Request) -> SubSe
         npy_save_path = str(inputs_dir / f"{safe_filename}.npy")
         np.save(npy_save_path, input_data)
 
-        new_config = {"name": param_name, "source": "file", "path": npy_save_path}
-        accumulated_configs = parent_input_configs + [new_config]
+        # Store session-relative path for input config
+        rel_npy_path = f"sub_sessions/{sub_session.id}/inputs/{safe_filename}.npy"
+        new_config = {"name": param_name, "source": "file", "path": rel_npy_path}
+        accumulated_configs = parent_input_configs_rel + [new_config]
 
         svc.update_sub_session_meta(session_id, sub_session.id, {
-            "model_path": cut_model_path,
+            "model_path": rel_cut_model,
             "input_configs": accumulated_configs,
         })
     else:
         svc.update_sub_session_meta(session_id, sub_session.id, {
-            "model_path": cut_model_path,
-            "input_configs": parent_input_configs,
+            "model_path": rel_cut_model,
+            "input_configs": parent_input_configs_rel,
         })
 
     # Broadcast sub-session creation via WS
@@ -192,3 +220,12 @@ async def list_sub_sessions(session_id: str, request: Request) -> list[SubSessio
     """List sub-sessions for a session."""
     svc = _get_session_service(request)
     return svc.list_sub_sessions(session_id)
+
+
+@router.delete("/{session_id}/sub-sessions/{sub_session_id}")
+async def delete_sub_session(session_id: str, sub_session_id: str, request: Request) -> dict:
+    """Delete a sub-session and all its descendants."""
+    svc = _get_session_service(request)
+    if svc.delete_sub_session(session_id, sub_session_id):
+        return {"deleted": True, "sub_session_id": sub_session_id}
+    raise HTTPException(status_code=404, detail="Sub-session not found")

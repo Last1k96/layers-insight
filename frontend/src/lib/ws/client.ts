@@ -86,9 +86,13 @@ function _scheduleReconnect(): void {
 
 function handleMessage(msg: any): void {
   if (msg.type === 'sub_session_created') {
+    // Cancel any waiting tasks from the previous context
+    for (const t of queueStore.tasks) {
+      if (t.status === 'waiting') queueStore.cancel(t.task_id);
+    }
     graphStore.setGrayedNodes(msg.grayed_nodes || [], msg.cut_node, msg.cut_type, msg.ancestor_cuts);
     graphStore.setActiveSubSession(msg.sub_session_id || null);
-    queueStore.removeByNodeNames(new Set(msg.grayed_nodes || []));
+    graphStore.subSessionVersion++;
     refreshRenderer();
   }
 
@@ -103,6 +107,7 @@ function handleMessage(msg: any): void {
       metrics: tsMsg.metrics,
       main_result: tsMsg.main_result,
       ref_result: tsMsg.ref_result,
+      sub_session_id: tsMsg.sub_session_id,
     });
 
     // Update graph node status
