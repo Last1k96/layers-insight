@@ -26,9 +26,10 @@ def generate_random_input(
 ) -> np.ndarray:
     """Generate random input data for a given shape and precision."""
     dtype = PRECISION_MAP.get(precision, np.float32)
+    rng = np.random.default_rng()
     if np.issubdtype(dtype, np.integer):
-        return np.random.randint(0, 255, size=shape, dtype=dtype)
-    return np.random.randn(*shape).astype(dtype)
+        return rng.integers(0, 11, size=shape, dtype=dtype)
+    return rng.random(shape).astype(dtype)
 
 
 def load_input_from_file(path: str, shape: list[int] | None = None) -> np.ndarray:

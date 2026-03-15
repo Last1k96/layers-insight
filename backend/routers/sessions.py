@@ -91,62 +91,58 @@ async def cut_model(session_id: str, req: CutRequest, request: Request) -> SubSe
                 cut_model, new_grayed = model_cut_svc.make_output_node(source_model, req.node_name)
             else:
                 cut_model, new_grayed = model_cut_svc.make_output_node(model, req.node_name)
-        elif req.cut_type == "input":
-            # Find the main output .npy for this node
-            task_id = svc.find_task_for_node(session_id, req.node_name, req.parent_sub_session_id)
-            if task_id is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"No successful inference found for node '{req.node_name}'. Run inference first.",
-                )
-            npy_path = svc.get_tensor_path(session_id, task_id, "main_output")
-            if npy_path is None:
-                raise HTTPException(status_code=400, detail="Main output tensor not found")
-
+        elif req.cut_type in ("input", "input_random"):
             # Use parent sub-session's resolved model path or root model path
             if req.parent_sub_session_id and parent_sub_resolved:
                 source_model_path = parent_sub_resolved.get("model_path", session.config.model_path)
             else:
                 source_model_path = session.config.model_path
 
-            cut_model, input_data, new_grayed = model_cut_svc.make_input_node(
-                source_model_path, req.node_name, str(npy_path), req.input_precision,
-            )
+            if req.cut_type == "input":
+                # Find the main output .npy for this node
+                task_id = svc.find_task_for_node(session_id, req.node_name, req.parent_sub_session_id)
+                if task_id is None:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"No successful inference found for node '{req.node_name}'. Run inference first.",
+                    )
+                npy_path = svc.get_tensor_path(session_id, task_id, "main_output")
+                if npy_path is None:
+                    raise HTTPException(status_code=400, detail="Main output tensor not found")
+
+                cut_model, input_data, new_grayed = model_cut_svc.make_input_node(
+                    source_model_path, req.node_name, str(npy_path), req.input_precision,
+                )
+            else:
+                cut_model, input_data, new_grayed = model_cut_svc.make_input_node_random(
+                    source_model_path, req.node_name, req.input_precision,
+                )
         else:
             raise HTTPException(status_code=400, detail=f"Invalid cut_type: {req.cut_type}")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Normalize sub-model node names back to original graph names.
-    # When cutting a sub-model, Parameter(X) nodes created by prior input cuts
-    # appear with that wrapper name — map them back so the frontend can match.
-    normalized_grayed = []
-    # Track which ancestor input-cut nodes are still reachable (present as
-    # Parameter(X) in the new cut model, i.e. NOT in the grayed list).
-    still_reachable_cuts = set()
-    for name in new_grayed:
-        if name.startswith("Parameter(") and name.endswith(")"):
-            normalized_grayed.append(name[len("Parameter("):-1])
-        else:
-            normalized_grayed.append(name)
-    # Nodes that appear as Parameter(X) in the parent model and are NOT grayed
-    # by this cut are still reachable inputs.
+    # After cutting, input_random behaves identically to input —
+    # normalize so all downstream code only needs to handle "input".
+    effective_cut_type = "input" if req.cut_type == "input_random" else req.cut_type
+
+    # Track which ancestor input-cut nodes are still reachable
+    # (present as a Parameter in the new cut model, i.e. NOT grayed).
     new_grayed_set = set(new_grayed)
+    still_reachable_cuts = set()
     for ac in parent_ancestor_cuts:
         if ac["cut_type"] == "input":
-            param_name = f"Parameter({ac['cut_node']})"
-            if param_name not in new_grayed_set:
+            if ac["cut_node"] not in new_grayed_set:
                 still_reachable_cuts.add(ac["cut_node"])
     # Also check the parent's own cut node
     if parent_sub and parent_sub.get("cut_type") == "input":
-        param_name = f"Parameter({parent_sub['cut_node']})"
-        if param_name not in new_grayed_set:
+        if parent_sub["cut_node"] not in new_grayed_set:
             still_reachable_cuts.add(parent_sub["cut_node"])
 
     # Accumulate grayed nodes from parent, but exclude ancestor input-cut
     # nodes that are still reachable in the new sub-model
     accumulated_grayed = list(
-        (set(parent_grayed) | set(normalized_grayed)) - still_reachable_cuts
+        (set(parent_grayed) | set(new_grayed)) - still_reachable_cuts
     )
 
     # Compute ancestor_cuts chain
@@ -158,7 +154,7 @@ async def cut_model(session_id: str, req: CutRequest, request: Request) -> SubSe
     # Store cut model
     sub_session = svc.create_sub_session(
         session_id=session_id,
-        cut_type=req.cut_type,
+        cut_type=effective_cut_type,
         cut_node=req.node_name,
         grayed_nodes=accumulated_grayed,
         parent_sub_session_id=req.parent_sub_session_id,
@@ -176,11 +172,11 @@ async def cut_model(session_id: str, req: CutRequest, request: Request) -> SubSe
     rel_cut_model = f"sub_sessions/{sub_session.id}/cut_model.xml"
 
     # For input cuts, save the .npy input and store accumulated input_configs
-    if req.cut_type == "input":
+    if effective_cut_type == "input":
         inputs_dir = sub_dir / "inputs"
         inputs_dir.mkdir(exist_ok=True)
         import numpy as np
-        param_name = f"Parameter({req.node_name})"
+        param_name = req.node_name
         safe_filename = param_name.replace("/", "_").replace("\\", "_")
         npy_save_path = str(inputs_dir / f"{safe_filename}.npy")
         np.save(npy_save_path, input_data)
@@ -195,9 +191,30 @@ async def cut_model(session_id: str, req: CutRequest, request: Request) -> SubSe
             "input_configs": accumulated_configs,
         })
     else:
+        # For output cuts, copy parent's input .npy files into this sub-session
+        # so each sub-session is self-contained. Only copy inputs that are still
+        # reachable (not grayed out by this cut).
+        import shutil
+        copied_configs = []
+        for cfg in parent_input_configs_rel:
+            if cfg.get("source") != "file" or not cfg.get("path"):
+                copied_configs.append(cfg)
+                continue
+            # Skip inputs for nodes that got grayed out by this cut
+            if cfg["name"] in new_grayed_set:
+                continue
+            inputs_dir = sub_dir / "inputs"
+            inputs_dir.mkdir(exist_ok=True)
+            src_abs = str(svc._session_path(session_id) / cfg["path"])
+            safe_filename = cfg["name"].replace("/", "_").replace("\\", "_")
+            dst_rel = f"sub_sessions/{sub_session.id}/inputs/{safe_filename}.npy"
+            dst_abs = str(svc._session_path(session_id) / dst_rel)
+            shutil.copy2(src_abs, dst_abs)
+            copied_configs.append({**cfg, "path": dst_rel})
+
         svc.update_sub_session_meta(session_id, sub_session.id, {
             "model_path": rel_cut_model,
-            "input_configs": parent_input_configs_rel,
+            "input_configs": copied_configs,
         })
 
     # Broadcast sub-session creation via WS
@@ -206,7 +223,7 @@ async def cut_model(session_id: str, req: CutRequest, request: Request) -> SubSe
         "type": "sub_session_created",
         "sub_session_id": sub_session.id,
         "parent_sub_session_id": req.parent_sub_session_id,
-        "cut_type": req.cut_type,
+        "cut_type": effective_cut_type,
         "cut_node": req.node_name,
         "grayed_nodes": accumulated_grayed,
         "ancestor_cuts": ancestor_cuts,

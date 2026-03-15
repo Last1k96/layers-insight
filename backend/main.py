@@ -148,6 +148,13 @@ async def lifespan(app: FastAPI):
             stage_callback=stage_callback,
         )
 
+        # If the task was deleted while executing, skip saving results
+        if queue_service.is_deleted(task.task_id):
+            if isinstance(result, tuple):
+                import shutil
+                shutil.rmtree(result[1], ignore_errors=True)
+            return task
+
         # Handle tuple result (task, artifacts_dir)
         if isinstance(result, tuple):
             updated_task, artifacts_dir = result

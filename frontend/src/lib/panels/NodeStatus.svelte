@@ -60,15 +60,9 @@
 
   let cutting = $state(false);
 
-  function handleRerun() {
+  function handleDelete() {
     if (nodeStatus?.taskId) {
-      queueStore.rerun(nodeStatus.taskId);
-    }
-  }
-
-  function handleCancel() {
-    if (nodeStatus?.taskId) {
-      queueStore.cancel(nodeStatus.taskId);
+      queueStore.deleteTask(nodeStatus.taskId);
     }
   }
 
@@ -84,7 +78,7 @@
     onshowaccuracy();
   }
 
-  async function handleCut(cutType: 'output' | 'input') {
+  async function handleCut(cutType: 'output' | 'input' | 'input_random') {
     const session = sessionStore.currentSession;
     if (!session || !selectedNode) return;
 
@@ -144,7 +138,37 @@
     </div>
 
     {#if !nodeStatus}
-      <div class="text-gray-500 text-xs">Not yet inferred</div>
+      <div class="space-y-2">
+        <button
+          class="w-full py-1.5 bg-accent hover:bg-accent-hover rounded text-xs transition-colors"
+          onclick={() => {
+            const session = sessionStore.currentSession;
+            if (session && selectedNode) {
+              queueStore.enqueue(session.id, selectedNode.id, selectedNode.name, selectedNode.type, graphStore.activeSubSessionId);
+            }
+          }}
+        >
+          Infer
+        </button>
+        <button
+          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+          onclick={() => handleCut('output')}
+        >
+          Convert into Output
+        </button>
+        <button
+          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+          onclick={() => handleCut('input_random')}
+        >
+          Convert into Parameter (random)
+        </button>
+        <button
+          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+          onclick={onshowbatchqueue}
+        >
+          Batch Queue
+        </button>
+      </div>
 
     {:else if nodeStatus.status === 'waiting'}
       <div class="flex items-center gap-2 text-amber-400">
@@ -152,10 +176,10 @@
         Waiting in queue
       </div>
       <button
-        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors"
-        onclick={handleCancel}
+        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors text-red-400"
+        onclick={handleDelete}
       >
-        Cancel
+        Delete
       </button>
 
     {:else if nodeStatus.status === 'executing'}
@@ -166,6 +190,12 @@
       {#if nodeStatus.stage}
         <div class="text-gray-400 text-xs mt-1">{nodeStatus.stage}</div>
       {/if}
+      <button
+        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors text-red-400"
+        onclick={handleDelete}
+      >
+        Delete
+      </button>
 
     {:else if nodeStatus.status === 'success'}
       <div class="flex items-center gap-2 text-green-400 mb-3">
@@ -247,15 +277,15 @@
         </button>
         <button
           class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
-          onclick={() => handleCut('output')}
+          onclick={() => handleCut('input')}
         >
-          Make Output Node
+          Convert into Parameter
         </button>
         <button
           class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
-          onclick={() => handleCut('input')}
+          onclick={() => handleCut('output')}
         >
-          Make Input Node
+          Convert into Output
         </button>
         <button
           class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
@@ -266,10 +296,10 @@
       </div>
 
       <button
-        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors"
-        onclick={handleRerun}
+        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors text-red-400"
+        onclick={handleDelete}
       >
-        Re-run
+        Delete
       </button>
 
     {:else if nodeStatus.status === 'failed'}
@@ -284,10 +314,10 @@
         <pre class="bg-[--bg-panel] rounded p-2 text-xs text-red-300 overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{nodeStatus.errorDetail}</pre>
       {/if}
       <button
-        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors"
-        onclick={handleRerun}
+        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors text-red-400"
+        onclick={handleDelete}
       >
-        Retry
+        Delete
       </button>
     {/if}
 

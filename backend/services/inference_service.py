@@ -35,6 +35,18 @@ class InferenceService:
     def __init__(self, ov_core: Any, ov_path: str | None = None):
         self.core = ov_core
         self.ov_path = ov_path
+        self._current_proc: Optional[subprocess.Popen] = None
+        self._current_task_id: Optional[str] = None
+
+    def kill_current(self, task_id: str) -> bool:
+        """Kill the running subprocess for the given task. Returns True if killed."""
+        if self._current_task_id == task_id and self._current_proc is not None:
+            try:
+                self._current_proc.kill()
+                return True
+            except OSError:
+                return False
+        return False
 
     def cut_and_infer(
         self,
@@ -114,6 +126,8 @@ class InferenceService:
                     stderr=subprocess.PIPE,
                     text=True,
                 )
+                self._current_proc = proc
+                self._current_task_id = task.task_id
 
                 # Write config to stdin and close it
                 proc.stdin.write(json.dumps(worker_cfg))
@@ -226,6 +240,8 @@ class InferenceService:
             success = True
             return task, tmp_dir
         finally:
+            self._current_proc = None
+            self._current_task_id = None
             if not success:
                 import shutil
                 shutil.rmtree(tmp_dir, ignore_errors=True)

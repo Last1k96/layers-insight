@@ -14,6 +14,7 @@
   let subSessions = $state<SubSessionInfo[]>([]);
   let activeSubSessionId = $derived(graphStore.activeSubSessionId);
   let leftOffset = $state(330);
+  let collapsed = $state(true);
 
   // Track left panel width to position ourselves right next to it
   $effect(() => {
@@ -154,63 +155,72 @@
 
 {#if subSessions.length > 0}
   <div class="sub-session-panel" style="left: {leftOffset}px">
-    <div class="panel-header">
+    <button class="panel-header" onclick={() => collapsed = !collapsed}>
+      <svg
+        width="10" height="10" viewBox="0 0 10 10" fill="none"
+        class="chevron shrink-0 opacity-60"
+        class:chevron-collapsed={collapsed}
+      >
+        <path d="M3 2l4 3-4 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" class="shrink-0 opacity-60">
         <path d="M2 3h12M2 8h8M2 13h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
       </svg>
       <span class="panel-title">Sessions</span>
       <span class="count-badge">{subSessions.length}</span>
-    </div>
+    </button>
 
-    <div class="tree-list">
-      <!-- Root session -->
-      <button
-        class="tree-item"
-        class:active={activeSubSessionId === null}
-        onclick={activateRoot}
-      >
-        <span class="tree-indent" style="width: 0px"></span>
-        <span class="dot dot-root"></span>
-        <span class="tree-label">Full Model</span>
-      </button>
-
-      {#each flatTree as node (node.sub.id)}
-        <div
+    {#if !collapsed}
+      <div class="tree-list">
+        <!-- Root session -->
+        <button
           class="tree-item"
-          class:active={activeSubSessionId === node.sub.id}
-          onclick={() => activateSubSession(node.sub)}
-          role="button"
-          tabindex="0"
+          class:active={activeSubSessionId === null}
+          onclick={activateRoot}
         >
-          <span class="tree-indent" style="width: {node.depth * 14}px">
-            {#each Array(node.depth) as _, i}
-              <span class="tree-guide" style="left: {i * 14 + 6}px"></span>
-            {/each}
-          </span>
-          <span class="tree-connector"></span>
-          <span
-            class="dot"
-            class:dot-output={node.sub.cut_type === 'output'}
-            class:dot-input={node.sub.cut_type === 'input'}
-          ></span>
-          <span class="tree-label" title="{node.sub.cut_type} @ {node.sub.cut_node}">
-            {node.sub.cut_node}
-          </span>
-          <span class="cut-type-tag" class:tag-output={node.sub.cut_type === 'output'} class:tag-input={node.sub.cut_type === 'input'}>
-            {node.sub.cut_type === 'output' ? 'out' : 'in'}
-          </span>
-          <button
-            class="delete-btn"
-            onclick={(e) => deleteSubSession(e, node.sub.id)}
-            title="Delete sub-session"
+          <span class="tree-indent" style="width: 0px"></span>
+          <span class="dot dot-root"></span>
+          <span class="tree-label">Full Model</span>
+        </button>
+
+        {#each flatTree as node (node.sub.id)}
+          <div
+            class="tree-item"
+            class:active={activeSubSessionId === node.sub.id}
+            onclick={() => activateSubSession(node.sub)}
+            role="button"
+            tabindex="0"
           >
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-              <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
-            </svg>
-          </button>
-        </div>
-      {/each}
-    </div>
+            <span class="tree-indent" style="width: {node.depth * 14}px">
+              {#each Array(node.depth) as _, i}
+                <span class="tree-guide" style="left: {i * 14 + 6}px"></span>
+              {/each}
+            </span>
+            <span class="tree-connector"></span>
+            <span
+              class="dot"
+              class:dot-output={node.sub.cut_type === 'output'}
+              class:dot-input={node.sub.cut_type === 'input'}
+            ></span>
+            <span class="tree-label" title="{node.sub.cut_type} @ {node.sub.cut_node}">
+              {node.sub.cut_node}
+            </span>
+            <span class="cut-type-tag" class:tag-output={node.sub.cut_type === 'output'} class:tag-input={node.sub.cut_type === 'input'}>
+              {node.sub.cut_type === 'output' ? 'out' : 'in'}
+            </span>
+            <button
+              class="delete-btn"
+              onclick={(e) => deleteSubSession(e, node.sub.id)}
+              title="Delete sub-session"
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                <path d="M2.5 2.5l5 5M7.5 2.5l-5 5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </button>
+          </div>
+        {/each}
+      </div>
+    {/if}
   </div>
 {/if}
 
@@ -236,6 +246,25 @@
     padding: 7px 10px;
     border-bottom: 1px solid var(--border-color);
     color: var(--text-secondary);
+    width: 100%;
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    background: none;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+
+  .panel-header:hover {
+    background: var(--bg-menu);
+  }
+
+  .chevron {
+    transition: transform 0.15s ease;
+    transform: rotate(90deg);
+  }
+
+  .chevron-collapsed {
+    transform: rotate(0deg);
   }
 
   .panel-title {

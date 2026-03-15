@@ -51,6 +51,59 @@ class ModelCutService:
 
         Returns (cut_model, input_data, grayed_node_ids).
         """
+        input_data = np.load(input_npy_path)
+        return self._build_input_cut(model_path, target_node_name, input_data)
+
+    def make_input_node_random(
+        self,
+        model_path: str,
+        target_node_name: str,
+        precision: str = "f16",
+    ) -> tuple[Any, np.ndarray, list[str]]:
+        """Cut model so target node becomes a new input parameter with random data.
+
+        Like make_input_node but generates random data from the node's
+        shape/dtype instead of loading from .npy.
+
+        Returns (cut_model, input_data, grayed_node_ids).
+        """
+        import openvino as ov
+        from backend.utils.input_generator import generate_random_input, PRECISION_MAP
+
+        model = self.core.read_model(model_path)
+        target_op = self._find_op(model, target_node_name)
+        if target_op is None:
+            raise ValueError(f"Node '{target_node_name}' not found in model")
+
+        # Get shape — must be static
+        partial_shape = target_op.get_output_partial_shape(0)
+        if partial_shape.is_dynamic:
+            raise ValueError(
+                f"Node '{target_node_name}' has dynamic shape — cannot generate random data"
+            )
+        shape = [d.get_length() for d in partial_shape]
+
+        # Map OV element type to precision string for generate_random_input
+        ov_type = target_op.get_output_element_type(0)
+        ov_type_str = ov_type.to_dtype().name  # e.g. 'float32', 'int64'
+        # Reverse-map numpy dtype name to our precision key
+        dtype_to_precision = {v.__name__: k for k, v in PRECISION_MAP.items()}
+        # numpy dtype names: 'float32', 'float16', 'int32', 'int64', 'uint8', 'int8', 'bool_'
+        prec = dtype_to_precision.get(ov_type_str, precision)
+
+        input_data = generate_random_input(shape, prec)
+        return self._build_input_cut(model_path, target_node_name, input_data)
+
+    def _build_input_cut(
+        self,
+        model_path: str,
+        target_node_name: str,
+        input_data: np.ndarray,
+    ) -> tuple[Any, np.ndarray, list[str]]:
+        """Shared logic for input cuts: replace target node with a Parameter.
+
+        Returns (cut_model, input_data, grayed_node_ids).
+        """
         import openvino as ov
 
         # Read a fresh copy — never mutate the cached original
@@ -63,9 +116,6 @@ class ModelCutService:
         # Capture all node names BEFORE mutation
         all_node_names = {op.get_friendly_name() for op in model.get_ordered_ops()}
 
-        # Load the saved output to use as input data
-        input_data = np.load(input_npy_path)
-
         # Use the target node's actual output element type so the new
         # Parameter is type-compatible with downstream consumers.
         ov_type = target_op.get_output_element_type(0)
@@ -75,7 +125,7 @@ class ModelCutService:
             shape=ov.PartialShape(list(input_data.shape)),
             dtype=ov_type,
         )
-        new_param.set_friendly_name(f"Parameter({target_node_name})")
+        new_param.set_friendly_name(target_node_name)
 
         # Replace target's output consumers with the new parameter
         target_output = target_op.output(0)

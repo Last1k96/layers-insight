@@ -116,6 +116,20 @@ class QueueService:
             return True
         return False
 
+    def is_deleted(self, task_id: str) -> bool:
+        """Check if a task has been removed (deleted by user)."""
+        return task_id not in self._tasks
+
+    def remove_task(self, task_id: str) -> bool:
+        """Remove a task from the in-memory store."""
+        task = self._tasks.get(task_id)
+        if task is None:
+            return False
+        del self._tasks[task_id]
+        if task_id in self._task_order:
+            self._task_order.remove(task_id)
+        return True
+
     def get_task(self, task_id: str) -> Optional[InferenceTask]:
         """Get a task by ID."""
         return self._tasks.get(task_id)
@@ -142,20 +156,26 @@ class QueueService:
                 self._queue.task_done()
                 continue
 
+            # Skip tasks deleted while waiting
+            if task.task_id not in self._tasks:
+                self._queue.task_done()
+                continue
+
             task.status = TaskStatus.EXECUTING
             await self._notify(task)
 
             try:
                 if self._infer_callback:
                     result = await self._infer_callback(task)
-                    # Result is the updated task
-                    if isinstance(result, InferenceTask):
+                    # Only store/notify if not deleted during execution
+                    if task.task_id in self._tasks and isinstance(result, InferenceTask):
                         self._tasks[task.task_id] = result
                         await self._notify(result)
             except Exception as e:
-                task.status = TaskStatus.FAILED
-                task.error_detail = f"Worker error: {e}"
-                await self._notify(task)
+                if task.task_id in self._tasks:
+                    task.status = TaskStatus.FAILED
+                    task.error_detail = f"Worker error: {e}"
+                    await self._notify(task)
             finally:
                 self._queue.task_done()
 

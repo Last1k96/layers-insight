@@ -122,6 +122,17 @@ class QueueStore {
     }
   }
 
+  async deleteTask(taskId: string): Promise<void> {
+    try {
+      const res = await fetch(`/api/inference/${taskId}`, { method: 'DELETE' });
+      if (res.ok) {
+        this.removeTask(taskId);
+      }
+    } catch (e) {
+      console.error('Delete task failed:', e);
+    }
+  }
+
   loadTasks(tasks: InferenceTask[]): void {
     this.tasks = tasks;
     this.selectedTaskId = null;

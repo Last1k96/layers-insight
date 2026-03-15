@@ -41,6 +41,7 @@ class SessionInfo(BaseModel):
     task_count: int = 0
     success_count: int = 0
     failed_count: int = 0
+    folder_size: int = 0
     # Phase 2 extensibility
     sub_sessions: list["SubSessionInfo"] = []
 
@@ -62,7 +63,7 @@ class SubSessionInfo(BaseModel):
 class CutRequest(BaseModel):
     """Request to cut the model at a node."""
     node_name: str
-    cut_type: str  # "output" or "input"
+    cut_type: str  # "output", "input", or "input_random"
     input_precision: str = "f16"  # for make_input_node
     parent_sub_session_id: Optional[str] = None  # cut from a sub-session's model
 

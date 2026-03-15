@@ -132,6 +132,16 @@ function handleMessage(msg: any): void {
     }
   }
 
+  if (msg.type === 'task_deleted') {
+    queueStore.removeTask(msg.task_id);
+    // Find the node_id from graph data by node_name
+    const node = graphStore.graphData?.nodes.find(n => n.name === msg.node_name);
+    if (node) {
+      graphStore.removeNodeStatus(node.id, graphStore.activeSubSessionId);
+      refreshRenderer();
+    }
+  }
+
   if (msg.type === 'inference_log') {
     console.log('[WS] inference_log:', msg.level, msg.message);
     logStore.addEntry({

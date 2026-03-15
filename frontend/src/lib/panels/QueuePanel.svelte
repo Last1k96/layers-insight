@@ -69,16 +69,14 @@
             <span class="text-xs text-gray-400 font-mono">{formatMse(task.metrics.mse)}</span>
           {/if}
 
-          <!-- Rerun button -->
-          {#if task.status === 'success' || task.status === 'failed'}
-            <button
-              class="text-gray-500 hover:text-gray-300 text-xs px-1"
-              title="Re-run"
-              onclick={(e) => { e.stopPropagation(); queueStore.rerun(task.task_id); }}
-            >
-              &#x21bb;
-            </button>
-          {/if}
+          <!-- Delete button -->
+          <button
+            class="text-gray-500 hover:text-red-400 text-xs px-1 shrink-0"
+            title="Delete"
+            onclick={(e) => { e.stopPropagation(); queueStore.deleteTask(task.task_id); }}
+          >
+            &#x2715;
+          </button>
         </div>
       {/each}
     {/if}

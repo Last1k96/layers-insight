@@ -87,9 +87,34 @@ async def get_task(task_id: str, request: Request) -> InferenceTask:
 
 
 @router.delete("/{task_id}")
-async def cancel_task(task_id: str, request: Request) -> dict:
-    """Cancel a waiting task."""
+async def delete_task(task_id: str, request: Request) -> dict:
+    """Delete a task — cancels waiting, kills executing, removes completed."""
     queue_svc = request.app.state.queue_service
-    if await queue_svc.cancel(task_id):
-        return {"cancelled": True}
-    raise HTTPException(status_code=400, detail="Task not cancellable (not in waiting state)")
+    task = queue_svc.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.status == "waiting":
+        await queue_svc.cancel(task_id)
+    elif task.status == "executing":
+        inference_svc = request.app.state.inference_service
+        if inference_svc:
+            inference_svc.kill_current(task_id)
+        # Worker loop will handle the killed process and mark it failed
+
+    # Remove from queue service in-memory store
+    queue_svc.remove_task(task_id)
+
+    # Remove persisted task data and tensor files
+    session_svc = request.app.state.session_service
+    session_svc.delete_task(task.session_id, task_id)
+
+    # Notify frontend to remove the task
+    from backend.ws.handler import ws_manager
+    await ws_manager.broadcast(task.session_id, {
+        "type": "task_deleted",
+        "task_id": task_id,
+        "node_name": task.node_name,
+    })
+
+    return {"deleted": True}

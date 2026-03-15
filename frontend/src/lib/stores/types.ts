@@ -8,6 +8,8 @@ export interface SessionInfo {
   task_count: number;
   success_count: number;
   failed_count: number;
+  folder_size: number;
+  sub_sessions: any[];
 }
 
 export interface InputConfig {

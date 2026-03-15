@@ -35,17 +35,47 @@ class SessionService:
         """Resolve a session-relative path to absolute."""
         return self._session_path(session_id) / rel_path
 
+    def _sanitize_name(self, name: str) -> str:
+        """Sanitize a name for use as a folder name."""
+        import re
+        safe = name.replace("/", "_").replace("\\", "_").replace(" ", "_")
+        safe = re.sub(r'[^\w\-.]', '_', safe)
+        # Collapse multiple underscores
+        safe = re.sub(r'_+', '_', safe).strip('_')
+        return safe or "unnamed"
+
+    def get_session_folder_size(self, session_id: str) -> int:
+        """Calculate total disk usage of a session folder in bytes."""
+        session_path = self._session_path(session_id)
+        if not session_path.exists():
+            return 0
+        total = 0
+        for f in session_path.rglob("*"):
+            try:
+                total += f.lstat().st_size
+            except OSError:
+                pass
+        return total
+
     def create_session(self, config: SessionConfig) -> SessionInfo:
         """Create a new session directory with metadata."""
-        session_id = str(uuid.uuid4())[:8]
+        original_xml = Path(config.model_path)
+        model_name = original_xml.stem
+        now = datetime.now(timezone.utc)
+        safe_model = self._sanitize_name(model_name)
+        session_id = f"{now.strftime('%Y%m%d_%H%M%S')}_{safe_model}"
+        # Ensure uniqueness
+        base_id = session_id
+        counter = 2
+        while self._session_path(session_id).exists():
+            session_id = f"{base_id}_{counter}"
+            counter += 1
         session_path = self._session_path(session_id)
         session_path.mkdir(parents=True)
         (session_path / "tasks").mkdir()
         (session_path / "tensors").mkdir()
 
         # Copy model .xml into session, symlink .bin weights
-        original_xml = Path(config.model_path)
-        model_name = original_xml.stem
         local_xml = session_path / original_xml.name
         shutil.copy2(str(original_xml), str(local_xml))
 
@@ -125,6 +155,7 @@ class SessionService:
                         info_data["model_path"] = str(
                             self._resolve_path(p.name, info_data["model_path"])
                         )
+                    info_data["folder_size"] = self.get_session_folder_size(p.name)
                     sessions.append(SessionInfo(**info_data))
                 except Exception:
                     continue
@@ -238,6 +269,33 @@ class SessionService:
         meta = self._read_metadata(session_id)
         return meta.get("tasks", {}).get(task_id, {})
 
+    def delete_task(self, session_id: str, task_id: str) -> bool:
+        """Delete a task's metadata and tensor files."""
+        meta = self._read_metadata(session_id)
+        task_data = meta.get("tasks", {}).get(task_id)
+        if task_data is None:
+            return False
+
+        # Remove tensor directory if it exists
+        folder_name = task_data.get("tensor_dir")
+        if folder_name:
+            tensor_base = task_data.get("tensor_base")
+            if tensor_base:
+                tensor_dir = self._session_path(session_id) / tensor_base / folder_name
+            else:
+                tensor_dir = self._session_path(session_id) / "tensors" / folder_name
+            if tensor_dir.exists():
+                shutil.rmtree(tensor_dir, ignore_errors=True)
+
+        # Remove from metadata
+        del meta["tasks"][task_id]
+        tasks = meta["tasks"]
+        meta["info"]["task_count"] = len(tasks)
+        meta["info"]["success_count"] = sum(1 for t in tasks.values() if t.get("status") == "success")
+        meta["info"]["failed_count"] = sum(1 for t in tasks.values() if t.get("status") == "failed")
+        self._write_metadata(session_id, meta)
+        return True
+
     def find_task_for_node(
         self,
         session_id: str,
@@ -292,7 +350,16 @@ class SessionService:
         """Create a sub-session within an existing session."""
         from backend.schemas.session import SubSessionInfo
 
-        sub_id = str(uuid.uuid4())[:8]
+        safe_cut = self._sanitize_name(cut_node)
+        sub_id = safe_cut
+        # Ensure uniqueness among existing sub-sessions
+        meta = self._read_metadata(session_id)
+        existing_ids = {s["id"] for s in meta.get("sub_sessions", [])}
+        base_id = sub_id
+        counter = 2
+        while sub_id in existing_ids:
+            sub_id = f"{base_id}_{counter}"
+            counter += 1
         sub_path = self._session_path(session_id) / "sub_sessions" / sub_id
         sub_path.mkdir(parents=True, exist_ok=True)
         (sub_path / "tensors").mkdir(exist_ok=True)
@@ -307,8 +374,7 @@ class SessionService:
             created_at=datetime.now(timezone.utc).isoformat(),
         )
 
-        # Add to session metadata
-        meta = self._read_metadata(session_id)
+        # Add to session metadata (reuse meta from uniqueness check above)
         meta.setdefault("sub_sessions", []).append(sub_info.model_dump())
         meta["info"]["sub_sessions"] = meta["sub_sessions"]
         self._write_metadata(session_id, meta)

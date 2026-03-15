@@ -13,6 +13,13 @@
   let confirmingDelete: string | null = $state(null);
   let selectedIndex = $state(-1);
 
+  function formatSize(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     const len = sessionStore.sessions.length;
     if (len === 0) return;
@@ -92,8 +99,16 @@
                   <div class="text-sm text-content-secondary">
                     {session.success_count}/{session.task_count} tasks
                   </div>
+                  {#if session.sub_sessions?.length > 0}
+                    <div class="text-xs text-content-secondary/60">
+                      {session.sub_sessions.length} sub-session{session.sub_sessions.length > 1 ? 's' : ''}
+                    </div>
+                  {/if}
                   <div class="text-xs text-content-secondary/60 mt-1">
                     {new Date(session.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                    {#if session.folder_size > 0}
+                      <span class="ml-2">{formatSize(session.folder_size)}</span>
+                    {/if}
                   </div>
                 </div>
                 {#if confirmingDelete === session.id}
