@@ -43,6 +43,89 @@ async def get_defaults(request: Request) -> AppDefaults:
     )
 
 
+class OvValidationResult(BaseModel):
+    valid: bool
+    devices: list[str]
+    error: Optional[str] = None
+
+
+@router.get("/validate-ov-path", response_model=OvValidationResult)
+async def validate_ov_path(
+    ov_path: Optional[str] = Query(None, description="Path to custom OpenVINO build"),
+) -> OvValidationResult:
+    """Validate an OV path by creating a fresh Core and registering plugins."""
+    if not ov_path or not ov_path.strip():
+        return OvValidationResult(valid=True, devices=["CPU"], error=None)
+
+    ov_dir = Path(ov_path)
+    if not ov_dir.exists():
+        return OvValidationResult(valid=False, devices=["CPU"], error=f"Directory not found: {ov_path}")
+    if not ov_dir.is_dir():
+        return OvValidationResult(valid=False, devices=["CPU"], error=f"Not a directory: {ov_path}")
+
+    plugins = list(ov_dir.glob("libopenvino_*_plugin.so"))
+    if not plugins:
+        return OvValidationResult(valid=False, devices=["CPU"], error=f"No OpenVINO plugins found in {ov_path}")
+
+    try:
+        import openvino as ov
+        from backend.utils.ov_helpers import register_plugins
+
+        core = ov.Core()
+        devices = register_plugins(core, ov_path)
+        return OvValidationResult(valid=True, devices=devices, error=None)
+    except ImportError:
+        return OvValidationResult(valid=False, devices=["CPU"], error="OpenVINO not installed")
+    except Exception as e:
+        return OvValidationResult(valid=False, devices=["CPU"], error=str(e))
+
+
+class BrowseEntry(BaseModel):
+    name: str
+    path: str
+    is_dir: bool
+
+
+class BrowseResult(BaseModel):
+    current: str
+    parent: Optional[str]
+    entries: list[BrowseEntry]
+
+
+@router.get("/browse", response_model=BrowseResult)
+async def browse_path(
+    path: str = Query("", description="Directory to list"),
+    mode: str = Query("file", description="'directory' or 'file'"),
+) -> BrowseResult:
+    """List directory contents for the file/directory picker."""
+    if not path or not path.strip():
+        path = str(Path.home())
+
+    dir_path = Path(path).expanduser().resolve()
+    if not dir_path.exists():
+        raise HTTPException(status_code=404, detail=f"Path not found: {path}")
+    if not dir_path.is_dir():
+        raise HTTPException(status_code=400, detail=f"Not a directory: {path}")
+
+    entries: list[BrowseEntry] = []
+    try:
+        for item in sorted(dir_path.iterdir(), key=lambda p: p.name.lower()):
+            if item.name.startswith("."):
+                continue
+            if mode == "directory" and not item.is_dir():
+                continue
+            entries.append(BrowseEntry(name=item.name, path=str(item), is_dir=item.is_dir()))
+    except PermissionError:
+        raise HTTPException(status_code=403, detail=f"Permission denied: {path}")
+
+    # Sort: directories first, then files
+    entries.sort(key=lambda e: (not e.is_dir, e.name.lower()))
+
+    parent = str(dir_path.parent) if dir_path.parent != dir_path else None
+
+    return BrowseResult(current=str(dir_path), parent=parent, entries=entries)
+
+
 class ModelInputInfo(BaseModel):
     name: str
     shape: list[int]
@@ -56,9 +139,22 @@ async def get_model_inputs(
     ov_path: Optional[str] = Query(None, description="Custom OpenVINO path"),
 ) -> list[ModelInputInfo]:
     """Read a model file and return its input parameter info."""
-    ov_core = request.app.state.ov_core
-    if ov_core is None:
-        raise HTTPException(status_code=503, detail="OpenVINO not available")
+    # Use a fresh Core with custom OV path if provided, otherwise fall back to app core
+    if ov_path and ov_path.strip():
+        try:
+            import openvino as ov
+            from backend.utils.ov_helpers import register_plugins
+
+            ov_core = ov.Core()
+            register_plugins(ov_core, ov_path)
+        except ImportError:
+            raise HTTPException(status_code=503, detail="OpenVINO not installed")
+        except Exception as e:
+            raise HTTPException(status_code=503, detail=f"Failed to initialize OV with path {ov_path}: {e}")
+    else:
+        ov_core = request.app.state.ov_core
+        if ov_core is None:
+            raise HTTPException(status_code=503, detail="OpenVINO not available")
 
     xml_path = Path(model_path)
     if not xml_path.exists():

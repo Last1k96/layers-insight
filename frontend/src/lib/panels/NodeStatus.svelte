@@ -152,15 +152,15 @@
         </button>
         <button
           class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
-          onclick={() => handleCut('output')}
-        >
-          Convert into Output
-        </button>
-        <button
-          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
           onclick={() => handleCut('input_random')}
         >
           Convert into Parameter (random)
+        </button>
+        <button
+          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+          onclick={() => handleCut('output')}
+        >
+          Convert into Output
         </button>
         <button
           class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
@@ -277,15 +277,15 @@
         </button>
         <button
           class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
-          onclick={() => handleCut('input')}
-        >
-          Convert into Parameter
-        </button>
-        <button
-          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
           onclick={() => handleCut('output')}
         >
           Convert into Output
+        </button>
+        <button
+          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+          onclick={() => handleCut('input')}
+        >
+          Convert into Parameter
         </button>
         <button
           class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"

@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.config import AppConfig, parse_cli_args
 from backend.routers import devices, graph, inference, sessions, tensors
 from backend.services.inference_service import InferenceService
+from backend.utils.ov_helpers import register_plugins
 from backend.services.queue_service import QueueService
 from backend.services.session_service import SessionService
 from backend.ws.handler import ws_manager
@@ -29,18 +30,7 @@ async def lifespan(app: FastAPI):
         ov_core = ov.Core()
 
         # Register plugins from custom OV build path if provided
-        if config.ov_path:
-            ov_lib_dir = Path(config.ov_path)
-            for so_file in ov_lib_dir.glob("libopenvino_*_plugin.so"):
-                # Extract device name: libopenvino_template_plugin.so -> TEMPLATE
-                name = so_file.stem  # libopenvino_template_plugin
-                parts = name.replace("libopenvino_", "").replace("_plugin", "")
-                device_name = parts.upper().replace("INTEL_", "")
-                if device_name not in ov_core.available_devices:
-                    try:
-                        ov_core.register_plugin(str(so_file), device_name)
-                    except Exception as e:
-                        print(f"  Could not register {device_name} plugin: {e}", file=sys.stderr)
+        register_plugins(ov_core, config.ov_path)
 
         print(f"OpenVINO initialized. Available devices: {ov_core.available_devices}")
     except ImportError:

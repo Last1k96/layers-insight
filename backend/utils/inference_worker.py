@@ -96,17 +96,8 @@ def main() -> None:
         # --- Phase 2: Reload model with fresh Core ---
         core = ov.Core()
 
-        if ov_path:
-            ov_lib_dir = Path(ov_path)
-            for so_file in ov_lib_dir.glob("libopenvino_*_plugin.so"):
-                name = so_file.stem
-                parts = name.replace("libopenvino_", "").replace("_plugin", "")
-                device_name = parts.upper().replace("INTEL_", "")
-                if device_name not in core.available_devices:
-                    try:
-                        core.register_plugin(str(so_file), device_name)
-                    except Exception:
-                        pass
+        from backend.utils.ov_helpers import register_plugins
+        register_plugins(core, ov_path)
 
         _log("info", f"Fresh core devices: {core.available_devices}")
 

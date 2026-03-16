@@ -1,4 +1,4 @@
-import type { AppDefaults, ModelInputInfo } from './types';
+import type { AppDefaults, ModelInputInfo, OvValidationResult } from './types';
 
 class ConfigStore {
   devices = $state<string[]>([]);
@@ -48,6 +48,23 @@ class ConfigStore {
       console.error('Failed to fetch defaults:', e);
     }
     return null;
+  }
+
+  async validateOvPath(ovPath: string): Promise<OvValidationResult> {
+    try {
+      const params = new URLSearchParams({ ov_path: ovPath });
+      const res = await fetch(`/api/validate-ov-path?${params}`);
+      if (res.ok) {
+        const result: OvValidationResult = await res.json();
+        if (result.valid) {
+          this.devices = result.devices;
+        }
+        return result;
+      }
+    } catch (e) {
+      console.error('Failed to validate OV path:', e);
+    }
+    return { valid: false, devices: ['CPU'], error: 'Request failed' };
   }
 
   async fetchModelInputs(modelPath: string, ovPath?: string): Promise<ModelInputInfo[]> {

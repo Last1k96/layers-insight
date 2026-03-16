@@ -28,6 +28,12 @@ export interface ModelInputInfo {
   element_type: string;
 }
 
+export interface OvValidationResult {
+  valid: boolean;
+  devices: string[];
+  error: string | null;
+}
+
 export interface AppDefaults {
   ov_path?: string;
   model_path?: string;

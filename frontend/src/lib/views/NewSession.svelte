@@ -3,6 +3,7 @@
   import { configStore } from '../stores/config.svelte';
   import { onMount } from 'svelte';
   import type { InputConfig, ModelInputInfo } from '../stores/types';
+  import FileBrowser from '../components/FileBrowser.svelte';
 
   let {
     onsessioncreated,
@@ -19,11 +20,44 @@
   let submitting = $state(false);
   let error = $state<string | null>(null);
 
+  // OV path validation
+  let ovValidating = $state(false);
+  let ovError = $state<string | null>(null);
+
   // Model inputs
   let modelInputs = $state<InputConfig[]>([]);
   let loadingInputs = $state(false);
   let inputsError = $state<string | null>(null);
   let inspectedModelPath = $state('');
+
+  // File browser state
+  let showBrowser = $state(false);
+  let browserMode = $state<'directory' | 'file'>('directory');
+  let browserInitialPath = $state('');
+  let browserTarget = $state<'ov' | 'model'>('ov');
+
+  function openBrowser(target: 'ov' | 'model') {
+    browserTarget = target;
+    if (target === 'ov') {
+      browserMode = 'directory';
+      browserInitialPath = ovPath || '';
+    } else {
+      browserMode = 'file';
+      browserInitialPath = modelPath ? modelPath.substring(0, modelPath.lastIndexOf('/')) : '';
+    }
+    showBrowser = true;
+  }
+
+  function onBrowserSelect(path: string) {
+    showBrowser = false;
+    if (browserTarget === 'ov') {
+      ovPath = path;
+      onOvPathInput();
+    } else {
+      modelPath = path;
+      onModelPathInput();
+    }
+  }
 
   const PRECISIONS = ['fp32', 'fp16', 'i32', 'i64', 'u8', 'i8'];
 
@@ -58,31 +92,45 @@
     return options[0] || '...';
   }
 
-  onMount(async () => {
-    // Fetch devices and defaults in parallel
-    const [defaults] = await Promise.all([
-      configStore.fetchDefaults(),
-      configStore.fetchDevices(),
-    ]);
+  // --- Debounce utility ---
+  function debounce<T extends (...args: any[]) => void>(fn: T, ms: number): T {
+    let timer: ReturnType<typeof setTimeout>;
+    return ((...args: any[]) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), ms);
+    }) as unknown as T;
+  }
 
-    // Pre-fill from CLI defaults
-    if (defaults) {
-      if (defaults.ov_path) ovPath = defaults.ov_path;
-      if (defaults.model_path) modelPath = defaults.model_path;
-      if (defaults.main_device) mainDevice = defaults.main_device;
-      if (defaults.ref_device) refDevice = defaults.ref_device;
-
-      // Auto-inspect model if provided via CLI
-      if (defaults.model_path) {
-        await inspectModel();
-      }
+  // --- Reactive OV path validation ---
+  async function doValidateOvPath(path: string) {
+    ovValidating = true;
+    ovError = null;
+    const result = await configStore.validateOvPath(path);
+    ovValidating = false;
+    if (!result.valid) {
+      ovError = result.error || 'Invalid OpenVINO path';
     }
-  });
+  }
 
-  async function inspectModel() {
-    const path = modelPath.trim();
-    if (!path || path === inspectedModelPath) return;
+  const debouncedValidateOv = debounce((path: string) => {
+    doValidateOvPath(path);
+  }, 500);
 
+  function onOvPathInput() {
+    const path = ovPath.trim();
+    if (!path) {
+      // Empty path is valid (system OV)
+      ovError = null;
+      configStore.devices = ['CPU'];
+      return;
+    }
+    ovValidating = true;
+    debouncedValidateOv(path);
+  }
+
+  // --- Reactive model inspection ---
+  async function doInspectModel(path: string) {
+    if (!path) return;
     loadingInputs = true;
     inputsError = null;
     modelInputs = [];
@@ -105,6 +153,47 @@
     }
     loadingInputs = false;
   }
+
+  const debouncedInspectModel = debounce((path: string) => {
+    doInspectModel(path);
+  }, 500);
+
+  function onModelPathInput() {
+    const path = modelPath.trim();
+    if (!path) {
+      modelInputs = [];
+      inputsError = null;
+      inspectedModelPath = '';
+      return;
+    }
+    if (path === inspectedModelPath) return;
+    loadingInputs = true;
+    debouncedInspectModel(path);
+  }
+
+  onMount(async () => {
+    // Fetch defaults to pre-fill form
+    const defaults = await configStore.fetchDefaults();
+
+    if (defaults) {
+      if (defaults.ov_path) ovPath = defaults.ov_path;
+      if (defaults.model_path) modelPath = defaults.model_path;
+      if (defaults.main_device) mainDevice = defaults.main_device;
+      if (defaults.ref_device) refDevice = defaults.ref_device;
+
+      // Validate OV path to populate devices from the pre-filled path
+      if (defaults.ov_path) {
+        await doValidateOvPath(defaults.ov_path);
+      } else {
+        configStore.devices = ['CPU'];
+      }
+
+      // Auto-inspect model if provided via CLI
+      if (defaults.model_path) {
+        await doInspectModel(defaults.model_path);
+      }
+    }
+  });
 
   /** Extract the inner type name from OV strings like "<Type: 'float32'>" or plain "f32" */
   function normalizeElementType(et: string): string {
@@ -157,7 +246,7 @@
   }
 </script>
 
-<div class="flex-1 flex items-center justify-center p-8 bg-[--bg-primary]">
+<div class="flex-1 flex items-start justify-center p-8 pt-[15vh] bg-[--bg-primary]">
   <div class="max-w-lg w-full">
     <div class="flex items-center gap-4 mb-6">
       <button class="text-content-secondary hover:text-content-primary" onclick={onback}>&larr; Back</button>
@@ -167,32 +256,58 @@
     <form class="space-y-4" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
       <div>
         <label class="block text-sm text-content-secondary mb-1">OpenVINO Path (optional)</label>
-        <input
-          type="text"
-          bind:value={ovPath}
-          placeholder="/opt/intel/openvino"
-          class="w-full px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none"
-        />
+        <div class="relative flex gap-1">
+          <input
+            type="text"
+            bind:value={ovPath}
+            oninput={onOvPathInput}
+            placeholder="/opt/intel/openvino"
+            class="flex-1 px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none"
+          />
+          <button
+            type="button"
+            class="px-2 py-2 bg-[--bg-input] border border-[--border-color] rounded hover:bg-[--bg-panel] transition-colors text-sm"
+            title="Browse directories"
+            onclick={() => openBrowser('ov')}
+          >&#128194;</button>
+          {#if ovValidating}
+            <div class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-content-secondary">
+              Checking...
+            </div>
+          {:else if ovError}
+            <div class="absolute right-3 top-1/2 -translate-y-1/2 text-yellow-400 cursor-help" title={ovError}>
+              &#9888;
+            </div>
+          {/if}
+        </div>
       </div>
 
       <div>
         <label class="block text-sm text-content-secondary mb-1">Model Path (.xml) *</label>
-        <div class="flex gap-2">
+        <div class="relative flex gap-1">
           <input
             type="text"
             bind:value={modelPath}
+            oninput={onModelPathInput}
             placeholder="/path/to/model.xml"
             class="flex-1 px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none"
             required
           />
           <button
             type="button"
-            onclick={inspectModel}
-            disabled={loadingInputs || !modelPath.trim()}
-            class="px-3 py-2 bg-surface-elevated hover:bg-surface-panel disabled:bg-[--bg-input] disabled:text-content-secondary rounded text-sm transition-colors"
-          >
-            {loadingInputs ? 'Reading...' : 'Inspect'}
-          </button>
+            class="px-2 py-2 bg-[--bg-input] border border-[--border-color] rounded hover:bg-[--bg-panel] transition-colors text-sm"
+            title="Browse files"
+            onclick={() => openBrowser('model')}
+          >&#128194;</button>
+          {#if loadingInputs}
+            <div class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-content-secondary">
+              Reading...
+            </div>
+          {:else if inputsError}
+            <div class="absolute right-3 top-1/2 -translate-y-1/2 text-yellow-400 cursor-help" title={inputsError}>
+              &#9888;
+            </div>
+          {/if}
         </div>
       </div>
 
@@ -255,14 +370,6 @@
             </div>
           {/each}
         </div>
-      {:else if inputsError}
-        <div class="p-3 bg-yellow-900/30 border border-yellow-800 rounded text-yellow-400 text-sm">
-          {inputsError}
-        </div>
-      {:else if !loadingInputs && modelPath.trim()}
-        <div class="text-sm text-content-secondary">
-          Click "Inspect" to read model inputs.
-        </div>
       {/if}
 
       <div class="grid grid-cols-2 gap-4">
@@ -300,3 +407,12 @@
     </form>
   </div>
 </div>
+
+{#if showBrowser}
+  <FileBrowser
+    mode={browserMode}
+    initialPath={browserInitialPath}
+    onselect={onBrowserSelect}
+    oncancel={() => showBrowser = false}
+  />
+{/if}
