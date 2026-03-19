@@ -71,13 +71,13 @@
     {#if sessionStore.loading}
       <div class="text-content-secondary">Loading sessions...</div>
     {:else if sessionStore.sessions.length === 0}
-      <div class="text-center py-12">
-        <p class="text-content-secondary mb-4">No sessions found</p>
+      <div class="py-12">
+        <p class="text-content-secondary mb-4 text-center">No sessions found</p>
         <button
-          class="px-6 py-3 bg-accent hover:bg-accent-hover rounded-lg font-medium transition-colors"
+          class="w-full py-3 border border-dashed border-edge hover:border-content-secondary/50 rounded-lg text-content-secondary hover:text-content-primary transition-colors"
           onclick={onnewsession}
         >
-          New Session
+          + New Session
         </button>
       </div>
     {:else}
