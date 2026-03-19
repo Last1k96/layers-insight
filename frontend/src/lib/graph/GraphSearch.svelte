@@ -3,8 +3,8 @@
   import { sessionStore } from '../stores/session.svelte';
   import { centerOnNode, refreshRenderer } from './renderer';
 
-  let inputEl: HTMLInputElement;
-  let listEl: HTMLDivElement;
+  let inputEl: HTMLInputElement = $state()!;
+  let listEl: HTMLDivElement = $state()!;
   let query = $state('');
   let debounceTimer: ReturnType<typeof setTimeout>;
 

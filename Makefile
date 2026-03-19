@@ -1,7 +1,7 @@
 .PHONY: dev-backend dev-frontend test setup
 
 setup:
-	./setup.sh
+	./start.sh --help
 
 dev-backend:
 	source .venv/bin/activate && uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000

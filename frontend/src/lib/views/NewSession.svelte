@@ -4,6 +4,7 @@
   import { onMount } from 'svelte';
   import type { InputConfig, ModelInputInfo } from '../stores/types';
   import FileBrowser from '../components/FileBrowser.svelte';
+  import PathInput from '../components/PathInput.svelte';
 
   let {
     onsessioncreated,
@@ -255,14 +256,15 @@
 
     <form class="space-y-4" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
       <div>
-        <label class="block text-sm text-content-secondary mb-1">OpenVINO Path (optional)</label>
+        <label for="ov-path" class="block text-sm text-content-secondary mb-1">OpenVINO Path (optional)</label>
         <div class="relative flex gap-1">
-          <input
-            type="text"
+          <PathInput
             bind:value={ovPath}
-            oninput={onOvPathInput}
+            mode="directory"
             placeholder="/opt/intel/openvino"
-            class="flex-1 px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none"
+            class="flex-1"
+            id="ov-path"
+            oninput={onOvPathInput}
           />
           <button
             type="button"
@@ -271,11 +273,11 @@
             onclick={() => openBrowser('ov')}
           >&#128194;</button>
           {#if ovValidating}
-            <div class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-content-secondary">
+            <div class="absolute right-12 top-1/2 -translate-y-1/2 text-xs text-content-secondary">
               Checking...
             </div>
           {:else if ovError}
-            <div class="absolute right-3 top-1/2 -translate-y-1/2 text-yellow-400 cursor-help" title={ovError}>
+            <div class="absolute right-12 top-1/2 -translate-y-1/2 text-yellow-400 cursor-help" title={ovError}>
               &#9888;
             </div>
           {/if}
@@ -283,15 +285,15 @@
       </div>
 
       <div>
-        <label class="block text-sm text-content-secondary mb-1">Model Path (.xml) *</label>
+        <label for="model-path" class="block text-sm text-content-secondary mb-1">Model Path (.xml) *</label>
         <div class="relative flex gap-1">
-          <input
-            type="text"
+          <PathInput
             bind:value={modelPath}
-            oninput={onModelPathInput}
+            mode="file"
             placeholder="/path/to/model.xml"
-            class="flex-1 px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none"
-            required
+            class="flex-1"
+            id="model-path"
+            oninput={onModelPathInput}
           />
           <button
             type="button"
@@ -300,11 +302,11 @@
             onclick={() => openBrowser('model')}
           >&#128194;</button>
           {#if loadingInputs}
-            <div class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-content-secondary">
+            <div class="absolute right-12 top-1/2 -translate-y-1/2 text-xs text-content-secondary">
               Reading...
             </div>
           {:else if inputsError}
-            <div class="absolute right-3 top-1/2 -translate-y-1/2 text-yellow-400 cursor-help" title={inputsError}>
+            <div class="absolute right-12 top-1/2 -translate-y-1/2 text-yellow-400 cursor-help" title={inputsError}>
               &#9888;
             </div>
           {/if}
@@ -325,8 +327,9 @@
               </div>
               <div class="flex gap-3 items-center">
                 <div class="flex-1">
-                  <label class="block text-xs text-content-secondary mb-0.5">Source</label>
+                  <label for="source-{i}" class="block text-xs text-content-secondary mb-0.5">Source</label>
                   <select
+                    id="source-{i}"
                     bind:value={modelInputs[i].source}
                     class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
                   >
@@ -335,8 +338,9 @@
                   </select>
                 </div>
                 <div class="flex-1">
-                  <label class="block text-xs text-content-secondary mb-0.5">Data Type</label>
+                  <label for="dtype-{i}" class="block text-xs text-content-secondary mb-0.5">Data Type</label>
                   <select
+                    id="dtype-{i}"
                     bind:value={modelInputs[i].data_type}
                     class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
                   >
@@ -346,8 +350,9 @@
                   </select>
                 </div>
                 <div class="flex-1">
-                  <label class="block text-xs text-content-secondary mb-0.5">Layout</label>
+                  <label for="layout-{i}" class="block text-xs text-content-secondary mb-0.5">Layout</label>
                   <select
+                    id="layout-{i}"
                     bind:value={modelInputs[i].layout}
                     class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
                   >
@@ -374,16 +379,16 @@
 
       <div class="grid grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm text-content-secondary mb-1">Main Device</label>
-          <select bind:value={mainDevice} class="w-full px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none">
+          <label for="main-device" class="block text-sm text-content-secondary mb-1">Main Device</label>
+          <select id="main-device" bind:value={mainDevice} class="w-full px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none">
             {#each configStore.devices as device (device)}
               <option value={device}>{device}</option>
             {/each}
           </select>
         </div>
         <div>
-          <label class="block text-sm text-content-secondary mb-1">Reference Device</label>
-          <select bind:value={refDevice} class="w-full px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none">
+          <label for="ref-device" class="block text-sm text-content-secondary mb-1">Reference Device</label>
+          <select id="ref-device" bind:value={refDevice} class="w-full px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none">
             {#each configStore.devices as device (device)}
               <option value={device}>{device}</option>
             {/each}

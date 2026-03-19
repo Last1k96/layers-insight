@@ -27,7 +27,7 @@
   }
 </script>
 
-<div class="flex flex-col h-full" onkeydown={handleKeydown} tabindex="-1">
+<div class="flex flex-col h-full" role="listbox" onkeydown={handleKeydown} tabindex="-1">
   <!-- Task list -->
   <div class="flex-1 overflow-y-auto">
     {#if queueStore.filteredTasks.length === 0}

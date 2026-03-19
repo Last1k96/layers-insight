@@ -1,4 +1,6 @@
 <script lang="ts">
+  import PathInput from './PathInput.svelte';
+
   interface BrowseEntry {
     name: string;
     path: string;
@@ -24,6 +26,7 @@
   } = $props();
 
   let currentPath = $state('');
+  let pathInputValue = $state('');
   let entries = $state<BrowseEntry[]>([]);
   let parentPath = $state<string | null>(null);
   let loading = $state(false);
@@ -44,12 +47,19 @@
       }
       const result: BrowseResult = await res.json();
       currentPath = result.current;
+      pathInputValue = result.current;
       parentPath = result.parent;
       entries = result.entries;
     } catch (e) {
       error = 'Failed to browse directory';
     } finally {
       loading = false;
+    }
+  }
+
+  function handlePathNavigate(path: string) {
+    if (path.trim()) {
+      browse(path.replace(/\/+$/, ''));
     }
   }
 
@@ -93,13 +103,17 @@
   class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
   onmousedown={(e) => { if (e.target === e.currentTarget) oncancel(); }}
 >
-  <div class="bg-[--bg-panel] border border-[--border-color] rounded-lg shadow-2xl w-[36rem] max-h-[70vh] flex flex-col">
+  <div class="bg-[--bg-panel] border border-[--border-color] rounded-lg shadow-2xl w-[36rem] h-[70vh] flex flex-col">
     <!-- header -->
-    <div class="px-4 py-3 border-b border-[--border-color] flex items-center justify-between">
-      <div class="text-sm font-medium text-content-secondary truncate flex-1 mr-4" title={currentPath}>
-        {currentPath || '...'}
-      </div>
-      <div class="text-xs text-content-secondary">
+    <div class="px-4 py-3 border-b border-[--border-color] flex items-center gap-3">
+      <PathInput
+        bind:value={pathInputValue}
+        mode={mode === 'directory' ? 'directory' : 'file'}
+        placeholder="Type a path..."
+        class="flex-1"
+        onnavigate={handlePathNavigate}
+      />
+      <div class="text-xs text-content-secondary whitespace-nowrap">
         {mode === 'directory' ? 'Select directory' : 'Select file'}
       </div>
     </div>

@@ -83,9 +83,13 @@
     {:else}
       <div class="space-y-3 mb-6 max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin">
         {#each sessionStore.sessions as session, i (session.id)}
-          <button
-            class="group w-full text-left p-4 bg-surface-panel hover:bg-surface-elevated rounded-lg border transition-colors {i === selectedIndex ? 'border-accent bg-surface-elevated' : 'border-edge hover:border-content-secondary/30'}"
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div
+            class="group w-full text-left p-4 bg-surface-panel hover:bg-surface-elevated rounded-lg border transition-colors cursor-pointer {i === selectedIndex ? 'border-accent bg-surface-elevated' : 'border-edge hover:border-content-secondary/30'}"
+            role="button"
+            tabindex="0"
             onclick={() => onsessionselected(session.id)}
+            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onsessionselected(session.id); }}}
           >
             <div class="flex justify-between items-start">
               <div class="min-w-0 flex-1">
@@ -139,7 +143,7 @@
                 {/if}
               </div>
             </div>
-          </button>
+          </div>
         {/each}
       </div>
 

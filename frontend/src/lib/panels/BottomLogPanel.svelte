@@ -4,7 +4,7 @@
 
   let height = $state(200);
   let resizing = $state(false);
-  let scrollContainer: HTMLDivElement;
+  let scrollContainer: HTMLDivElement = $state()!;
   let autoScroll = $state(true);
 
   const LEVEL_COLORS: Record<string, string> = {
@@ -99,8 +99,11 @@
     style:height={`${height}px`}
   >
     <!-- Resize handle -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
       class="h-1 cursor-row-resize hover:bg-blue-500/50 transition-colors shrink-0"
+      role="separator"
+      aria-orientation="horizontal"
       onmousedown={startResize}
     ></div>
 

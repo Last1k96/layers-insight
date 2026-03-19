@@ -188,6 +188,7 @@
             class="tree-item"
             class:active={activeSubSessionId === node.sub.id}
             onclick={() => activateSubSession(node.sub)}
+            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activateSubSession(node.sub); }}}
             role="button"
             tabindex="0"
           >

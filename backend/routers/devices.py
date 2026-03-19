@@ -126,6 +126,65 @@ async def browse_path(
     return BrowseResult(current=str(dir_path), parent=parent, entries=entries)
 
 
+class PathSuggestion(BaseModel):
+    name: str
+    path: str
+    is_dir: bool
+
+
+class PathSuggestResult(BaseModel):
+    suggestions: list[PathSuggestion]
+
+
+@router.get("/path-suggest", response_model=PathSuggestResult)
+async def path_suggest(
+    partial: str = Query("", description="Partial path to autocomplete"),
+    mode: str = Query("file", description="'directory' or 'file'"),
+) -> PathSuggestResult:
+    """Suggest path completions for autocomplete."""
+    if not partial or not partial.strip():
+        return PathSuggestResult(suggestions=[])
+
+    partial_path = Path(partial).expanduser()
+    suggestions: list[PathSuggestion] = []
+
+    # If partial is a valid directory, list its children
+    if partial_path.is_dir() and partial.endswith("/"):
+        try:
+            for item in sorted(partial_path.iterdir(), key=lambda p: p.name.lower()):
+                if item.name.startswith("."):
+                    continue
+                if mode == "directory" and not item.is_dir():
+                    continue
+                suggestions.append(PathSuggestion(name=item.name, path=str(item), is_dir=item.is_dir()))
+                if len(suggestions) >= 20:
+                    break
+        except PermissionError:
+            pass
+    else:
+        # Split into parent + prefix, match entries starting with prefix
+        parent = partial_path.parent
+        prefix = partial_path.name.lower()
+        if parent.is_dir():
+            try:
+                for item in sorted(parent.iterdir(), key=lambda p: p.name.lower()):
+                    if item.name.startswith("."):
+                        continue
+                    if not item.name.lower().startswith(prefix):
+                        continue
+                    if mode == "directory" and not item.is_dir():
+                        continue
+                    suggestions.append(PathSuggestion(name=item.name, path=str(item), is_dir=item.is_dir()))
+                    if len(suggestions) >= 20:
+                        break
+            except PermissionError:
+                pass
+
+    # Sort: directories first, then files
+    suggestions.sort(key=lambda s: (not s.is_dir, s.name.lower()))
+    return PathSuggestResult(suggestions=suggestions)
+
+
 class ModelInputInfo(BaseModel):
     name: str
     shape: list[int]

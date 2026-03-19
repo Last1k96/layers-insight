@@ -15,8 +15,8 @@
     children: Snippet;
   } = $props();
 
-  let width = $state(initialWidth);
-  let collapsed = $state(initialCollapsed);
+  let width = $state(320);
+  let collapsed = $state(false);
   let resizing = $state(false);
 
   function startResize(e: MouseEvent) {
@@ -34,7 +34,6 @@
       resizing = false;
       document.removeEventListener('mousemove', onMouseMove);
       document.removeEventListener('mouseup', onMouseUp);
-      // Save to localStorage
       localStorage.setItem(`panel-${side}-width`, String(width));
     }
 
@@ -47,12 +46,12 @@
     localStorage.setItem(`panel-${side}-collapsed`, String(collapsed));
   }
 
-  // Restore from localStorage
+  // Restore from localStorage, falling back to props
   $effect(() => {
     const savedWidth = localStorage.getItem(`panel-${side}-width`);
-    if (savedWidth) width = parseInt(savedWidth);
+    width = savedWidth ? parseInt(savedWidth) : initialWidth;
     const savedCollapsed = localStorage.getItem(`panel-${side}-collapsed`);
-    if (savedCollapsed) collapsed = savedCollapsed === 'true';
+    collapsed = savedCollapsed ? savedCollapsed === 'true' : initialCollapsed;
   });
 </script>
 
@@ -65,7 +64,10 @@
   <!-- Header -->
   <div
     class="flex items-center justify-between px-3 py-2 border-b border-[--border-color] cursor-pointer select-none shrink-0"
+    role="button"
+    tabindex="0"
     onclick={toggleCollapse}
+    onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapse(); }}}
   >
     {#if !collapsed}
       <span class="text-sm font-medium text-content-primary">{title}</span>
@@ -80,10 +82,13 @@
     </div>
 
     <!-- Resize handle -->
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
       class="absolute top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 transition-colors"
       class:right-0={side === 'left'}
       class:left-0={side === 'right'}
+      role="separator"
+      aria-orientation="vertical"
       onmousedown={startResize}
     ></div>
   {/if}

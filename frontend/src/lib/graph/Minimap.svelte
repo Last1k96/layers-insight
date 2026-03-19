@@ -3,7 +3,7 @@
   import { graphStore } from '../stores/graph.svelte';
   import { getCamera, getGPURenderer, getNodeSize } from './renderer';
 
-  let canvas: HTMLCanvasElement;
+  let canvas: HTMLCanvasElement = $state()!;
   let collapsed = $state(false);
   let cleanupFn: (() => void) | null = null;
 
