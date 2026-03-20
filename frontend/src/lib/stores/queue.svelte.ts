@@ -124,7 +124,9 @@ class QueueStore {
 
   async deleteTask(taskId: string): Promise<void> {
     try {
-      const res = await fetch(`/api/inference/${taskId}`, { method: 'DELETE' });
+      const task = this.tasks.find(t => t.task_id === taskId);
+      const sessionParam = task?.session_id ? `?session_id=${task.session_id}` : '';
+      const res = await fetch(`/api/inference/${taskId}${sessionParam}`, { method: 'DELETE' });
       if (res.ok) {
         this.removeTask(taskId);
       }

@@ -42,14 +42,22 @@ def load_input_from_file(path: str, shape: list[int] | None = None) -> np.ndarra
         if shape:
             data = data.reshape(shape)
         return data
-    # Try loading as image via numpy (basic support)
+    # Try loading as image via PIL
     if p.suffix in (".png", ".jpg", ".jpeg", ".bmp"):
         try:
             from PIL import Image
-            img = np.array(Image.open(str(p)))
-            return img.astype(np.float32)
         except ImportError:
             raise ValueError(f"PIL required for image loading: {p}")
+        img = Image.open(str(p)).convert("RGB")
+        if shape and len(shape) == 4:
+            # Assume NCHW layout: [N, C, H, W]
+            _, c, h, w = shape
+            img = img.resize((w, h), Image.LANCZOS)
+            arr = np.array(img, dtype=np.float32)  # [H, W, C]
+            arr = arr.transpose(2, 0, 1)  # [C, H, W]
+            arr = np.expand_dims(arr, 0)  # [1, C, H, W]
+            return arr
+        return np.array(img, dtype=np.float32)
     raise ValueError(f"Unsupported input file format: {p.suffix}")
 
 

@@ -281,8 +281,8 @@
 		// Hit-test for tooltip — project each voxel center, find closest to mouse
 		if (!gpuCanvas || !renderParams) return;
 		const rect = gpuCanvas.getBoundingClientRect();
-		const mouseX = (e.clientX - rect.left) * (gpuCanvas.width / rect.width);
-		const mouseY = (e.clientY - rect.top) * (gpuCanvas.height / rect.height);
+		const mouseX = e.clientX - rect.left;
+		const mouseY = e.clientY - rect.top;
 
 		const rp = renderParams;
 		const { C, H, W, scale, cosY, sinY, cosX, sinX, centerX, centerY, depthExtent, dsC, dsH, dsW } = rp;

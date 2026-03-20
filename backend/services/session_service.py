@@ -57,8 +57,12 @@ class SessionService:
                 pass
         return total
 
-    def create_session(self, config: SessionConfig) -> SessionInfo:
-        """Create a new session directory with metadata."""
+    def create_session(self, config: SessionConfig, converted_dir: Optional[Path] = None) -> SessionInfo:
+        """Create a new session directory with metadata.
+
+        If converted_dir is provided, moves pre-converted .xml/.bin from that
+        temp directory into the session folder instead of copying from original path.
+        """
         original_xml = Path(config.model_path)
         model_name = original_xml.stem
         now = datetime.now(timezone.utc)
@@ -75,17 +79,24 @@ class SessionService:
         (session_path / "tasks").mkdir()
         (session_path / "tensors").mkdir()
 
-        # Copy model .xml into session, symlink .bin weights
-        local_xml = session_path / original_xml.name
-        shutil.copy2(str(original_xml), str(local_xml))
+        if converted_dir is not None:
+            # Move pre-converted IR files from temp dir into session
+            for f in converted_dir.iterdir():
+                if f.is_file() and f.suffix in (".xml", ".bin"):
+                    shutil.move(str(f), str(session_path / f.name))
+            rel_model_path = "model.xml"
+        else:
+            # Copy model .xml into session, symlink .bin weights
+            local_xml = session_path / original_xml.name
+            shutil.copy2(str(original_xml), str(local_xml))
 
-        original_bin = original_xml.with_suffix(".bin")
-        if original_bin.exists():
-            local_bin = session_path / original_bin.name
-            local_bin.symlink_to(original_bin.resolve())
+            original_bin = original_xml.with_suffix(".bin")
+            if original_bin.exists():
+                local_bin = session_path / original_bin.name
+                local_bin.symlink_to(original_bin.resolve())
 
-        # Store session-relative model path (just the filename)
-        rel_model_path = original_xml.name
+            # Store session-relative model path (just the filename)
+            rel_model_path = original_xml.name
         config = config.model_copy(update={"model_path": rel_model_path})
 
         # Generate and persist random inputs so they are reused across inferences

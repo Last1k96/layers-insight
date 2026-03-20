@@ -1,9 +1,14 @@
 """Session management routes."""
 from __future__ import annotations
 
+import shutil
+import tempfile
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Request
 
 from backend.schemas.session import CutRequest, SessionConfig, SessionDetail, SessionInfo, SubSessionInfo
+from backend.utils.model_converter import convert_to_ir, detect_model_format
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -14,9 +19,40 @@ def _get_session_service(request: Request):
 
 @router.post("", response_model=SessionInfo)
 async def create_session(config: SessionConfig, request: Request) -> SessionInfo:
-    """Create a new session."""
+    """Create a new session. Non-IR models are converted to IR automatically."""
     svc = _get_session_service(request)
-    return svc.create_session(config)
+
+    model_path = Path(config.model_path)
+    try:
+        fmt = detect_model_format(model_path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if fmt == "ir":
+        return svc.create_session(config)
+
+    # Non-IR: convert to temporary IR, then pass converted files to session service
+    ov_core = request.app.state.ov_core
+    if ov_core is None:
+        raise HTTPException(status_code=503, detail="OpenVINO not available — cannot convert model")
+
+    tmp_dir = tempfile.mkdtemp(prefix="li_convert_")
+    try:
+        try:
+            converted_xml = convert_to_ir(model_path, Path(tmp_dir), ov_core)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Failed to convert {fmt} model to IR: {e}",
+            )
+
+        config = config.model_copy(update={
+            "model_path": str(converted_xml),
+            "original_format": fmt,
+        })
+        return svc.create_session(config, converted_dir=Path(tmp_dir))
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 @router.get("", response_model=list[SessionInfo])

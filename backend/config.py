@@ -26,7 +26,8 @@ def parse_cli_args() -> dict:
     """Parse CLI arguments, returning only explicitly provided values."""
     parser = argparse.ArgumentParser(description="Layers-Insight: Neural Network Graph Debugger")
     parser.add_argument("--ov-path", help="Path to OpenVINO binaries")
-    parser.add_argument("--model", dest="model_path", help="Path to model .xml file")
+    parser.add_argument("--model", dest="model_path",
+                        help="Path to model file (.xml, .onnx, .pb, .tflite, .pt) or SavedModel directory")
     parser.add_argument("--input", dest="input_path", help="Input data path or 'random'")
     parser.add_argument("--main-device", help="Main inference device (e.g., GPU)")
     parser.add_argument("--ref-device", help="Reference inference device (e.g., CPU)")

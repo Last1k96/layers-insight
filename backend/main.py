@@ -33,6 +33,13 @@ async def lifespan(app: FastAPI):
         register_plugins(ov_core, config.ov_path)
 
         print(f"OpenVINO initialized. Available devices: {ov_core.available_devices}")
+
+        from backend.utils.model_converter import get_available_frontends
+        frontends = get_available_frontends(ov_core)
+        if frontends:
+            print(f"Available model frontends: {', '.join(frontends)}")
+        else:
+            print("No model frontends detected (only IR format supported)")
     except ImportError:
         print("WARNING: OpenVINO not installed. Running in UI-only mode.", file=sys.stderr)
     except Exception as e:

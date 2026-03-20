@@ -191,10 +191,37 @@ class ModelInputInfo(BaseModel):
     element_type: str
 
 
+class FrontendInfo(BaseModel):
+    frontends: list[str]
+    supported_formats: list[str]
+
+
+_FRONTEND_FORMAT_MAP = {
+    "onnx": [".onnx"],
+    "tf": [".pb", ".pbtxt", "SavedModel"],
+    "tflite": [".tflite"],
+    "pytorch": [".pt", ".pth"],
+    "paddle": [".pdmodel"],
+}
+
+
+@router.get("/frontends", response_model=FrontendInfo)
+async def get_frontends(request: Request) -> FrontendInfo:
+    """List available OpenVINO frontends and the model formats they support."""
+    from backend.utils.model_converter import get_available_frontends
+
+    ov_core = request.app.state.ov_core
+    frontends = get_available_frontends(ov_core) if ov_core else []
+    formats = [".xml"]  # IR is always supported
+    for fe in frontends:
+        formats.extend(_FRONTEND_FORMAT_MAP.get(fe, []))
+    return FrontendInfo(frontends=frontends, supported_formats=sorted(set(formats)))
+
+
 @router.get("/model-inputs", response_model=list[ModelInputInfo])
 async def get_model_inputs(
     request: Request,
-    model_path: str = Query(..., description="Path to model .xml file"),
+    model_path: str = Query(..., description="Path to model file"),
     ov_path: Optional[str] = Query(None, description="Custom OpenVINO path"),
 ) -> list[ModelInputInfo]:
     """Read a model file and return its input parameter info."""

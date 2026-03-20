@@ -90,31 +90,46 @@ async def get_task(task_id: str, request: Request) -> InferenceTask:
 async def delete_task(task_id: str, request: Request) -> dict:
     """Delete a task — cancels waiting, kills executing, removes completed."""
     queue_svc = request.app.state.queue_service
-    task = queue_svc.get_task(task_id)
-    if task is None:
-        raise HTTPException(status_code=404, detail="Task not found")
-
-    if task.status == "waiting":
-        await queue_svc.cancel(task_id)
-    elif task.status == "executing":
-        inference_svc = request.app.state.inference_service
-        if inference_svc:
-            inference_svc.kill_current(task_id)
-        # Worker loop will handle the killed process and mark it failed
-
-    # Remove from queue service in-memory store
-    queue_svc.remove_task(task_id)
-
-    # Remove persisted task data and tensor files
     session_svc = request.app.state.session_service
-    session_svc.delete_task(task.session_id, task_id)
+    task = queue_svc.get_task(task_id)
 
-    # Notify frontend to remove the task
-    from backend.ws.handler import ws_manager
-    await ws_manager.broadcast(task.session_id, {
-        "type": "task_deleted",
-        "task_id": task_id,
-        "node_name": task.node_name,
-    })
+    if task is not None:
+        # Task is in memory — handle live queue operations
+        if task.status == "waiting":
+            await queue_svc.cancel(task_id)
+        elif task.status == "executing":
+            inference_svc = request.app.state.inference_service
+            if inference_svc:
+                inference_svc.kill_current(task_id)
+
+        queue_svc.remove_task(task_id)
+        session_svc.delete_task(task.session_id, task_id)
+
+        from backend.ws.handler import ws_manager
+        await ws_manager.broadcast(task.session_id, {
+            "type": "task_deleted",
+            "task_id": task_id,
+            "node_name": task.node_name,
+        })
+    else:
+        # Task not in memory (e.g. after server restart) — try persisted data
+        session_id = request.query_params.get("session_id", "")
+        if not session_id:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        meta = session_svc._read_metadata(session_id)
+        task_data = meta.get("tasks", {}).get(task_id)
+        if task_data is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        node_name = task_data.get("node_name", "")
+        session_svc.delete_task(session_id, task_id)
+
+        from backend.ws.handler import ws_manager
+        await ws_manager.broadcast(session_id, {
+            "type": "task_deleted",
+            "task_id": task_id,
+            "node_name": node_name,
+        })
 
     return {"deleted": True}
