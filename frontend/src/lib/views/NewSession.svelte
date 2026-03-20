@@ -192,9 +192,44 @@
       // Auto-inspect model if provided via CLI
       if (defaults.model_path) {
         await doInspectModel(defaults.model_path);
+
+        // Apply CLI --input flags to model inputs
+        if (defaults.cli_inputs?.length && modelInputs.length > 0) {
+          applyCliInputs(defaults.cli_inputs);
+        }
       }
     }
   });
+
+  function applyCliInputs(cliInputs: string[]) {
+    // Build a map of named inputs (name=path) and a list of positional inputs
+    const named = new Map<string, string>();
+    const positional: string[] = [];
+    for (const entry of cliInputs) {
+      const eq = entry.indexOf('=');
+      if (eq > 0) {
+        named.set(entry.slice(0, eq), entry.slice(eq + 1));
+      } else if (entry !== 'random') {
+        positional.push(entry);
+      }
+    }
+
+    // Apply named inputs first
+    for (let i = 0; i < modelInputs.length; i++) {
+      const path = named.get(modelInputs[i].name);
+      if (path) {
+        modelInputs[i] = { ...modelInputs[i], source: 'file', path };
+      }
+    }
+
+    // Apply remaining positional inputs in order to unassigned slots
+    let posIdx = 0;
+    for (let i = 0; i < modelInputs.length && posIdx < positional.length; i++) {
+      if (modelInputs[i].source === 'random') {
+        modelInputs[i] = { ...modelInputs[i], source: 'file', path: positional[posIdx++] };
+      }
+    }
+  }
 
   /** Extract the inner type name from OV strings like "<Type: 'float32'>" or plain "f32" */
   function normalizeElementType(et: string): string {

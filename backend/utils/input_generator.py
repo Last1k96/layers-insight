@@ -98,7 +98,7 @@ def prepare_inputs(
             p = Path(input_path)
             if p.is_dir():
                 # Look for matching file by param name
-                for ext in (".npy", ".bin"):
+                for ext in (".npy", ".bin", ".png", ".jpg", ".jpeg", ".bmp"):
                     candidate = p / f"{name}{ext}"
                     if candidate.exists():
                         inputs[name] = load_input_from_file(str(candidate), shape)

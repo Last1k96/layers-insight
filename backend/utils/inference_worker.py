@@ -181,12 +181,18 @@ def _prepare_model_for_device(ov, model, device: str):
 
 
 def _extract_graph_data(model) -> tuple[list[dict], str]:
-    """Extract an OV model graph as pure python/numpy data."""
+    """Extract an OV model graph as pure python/numpy data.
+
+    Uses op.get_name() (unique internal name like 'Constant_12345')
+    for graph references instead of get_friendly_name() which can
+    have duplicates (especially among Constants).
+    """
     ops_data = []
     result_target = ""
     for op in model.get_ordered_ops():
         t = op.get_type_name()
-        name = op.get_friendly_name()
+        # Use get_name() for unique identity; keep friendly name for display
+        name = op.get_name()
         entry: dict = {"type": t, "name": name}
         if t == "Constant":
             entry["data"] = op.get_data().copy()
@@ -194,13 +200,14 @@ def _extract_graph_data(model) -> tuple[list[dict], str]:
         elif t == "Parameter":
             entry["shape"] = list(op.get_output_partial_shape(0).get_shape())
             entry["et"] = str(op.get_output_element_type(0))
+            entry["friendly_name"] = op.get_friendly_name()
         elif t == "Result":
-            result_target = op.input(0).get_source_output().get_node().get_friendly_name()
+            result_target = op.input(0).get_source_output().get_node().get_name()
             continue
         else:
             entry["attrs"] = op.get_attributes()
             entry["inputs"] = [
-                op.input(i).get_source_output().get_node().get_friendly_name()
+                op.input(i).get_source_output().get_node().get_name()
                 for i in range(op.get_input_size())
             ]
             entry["n_outputs"] = op.get_output_size()
@@ -303,7 +310,9 @@ def _rebuild_model_from_data(ov, ops_data: list[dict], result_target: str):
         if t == "Parameter":
             et = _et(e.get("et", "f32"))
             p = ov.opset13.parameter(shape=e["shape"], dtype=et)
-            p.set_friendly_name(name)
+            # Use original friendly name for input matching
+            friendly = e.get("friendly_name", name)
+            p.set_friendly_name(friendly)
             node_map[name] = p.output(0)
             params.append(p)
         elif t == "Constant":
@@ -316,6 +325,8 @@ def _rebuild_model_from_data(ov, ops_data: list[dict], result_target: str):
         else:
             inputs = [node_map[n] for n in e["inputs"] if n in node_map]
             if len(inputs) != len(e["inputs"]):
+                missing = [n for n in e["inputs"] if n not in node_map]
+                _log("info", f"Skip {t} '{name}': missing inputs {missing}")
                 skipped.append((t, name))
                 continue
             a = e.get("attrs", {})

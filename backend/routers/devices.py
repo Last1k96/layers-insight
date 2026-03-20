@@ -26,6 +26,7 @@ class AppDefaults(BaseModel):
     ov_path: Optional[str] = None
     model_path: Optional[str] = None
     input_path: Optional[str] = None
+    cli_inputs: list[str] = []
     main_device: str = "CPU"
     ref_device: str = "CPU"
 
@@ -38,6 +39,7 @@ async def get_defaults(request: Request) -> AppDefaults:
         ov_path=config.ov_path,
         model_path=config.model_path,
         input_path=config.input_path,
+        cli_inputs=config.cli_inputs,
         main_device=config.main_device,
         ref_device=config.ref_device,
     )

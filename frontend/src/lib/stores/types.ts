@@ -38,6 +38,7 @@ export interface AppDefaults {
   ov_path?: string;
   model_path?: string;
   input_path?: string;
+  cli_inputs?: string[];
   main_device: string;
   ref_device: string;
 }
