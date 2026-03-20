@@ -10,6 +10,13 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/api", tags=["devices"])
 
 
+def _add_virtual_devices(devices: list[str]) -> list[str]:
+    """Append virtual device names derived from real devices."""
+    if "CPU" in devices and "CPU_fp16" not in devices:
+        devices.append("CPU_fp16")
+    return devices
+
+
 @router.get("/devices")
 async def list_devices(request: Request) -> list[str]:
     """List available OpenVINO devices."""
@@ -17,9 +24,10 @@ async def list_devices(request: Request) -> list[str]:
     if ov_core is None:
         return ["CPU"]
     try:
-        return ov_core.available_devices
+        devices = list(ov_core.available_devices)
     except Exception:
         return ["CPU"]
+    return _add_virtual_devices(devices)
 
 
 class AppDefaults(BaseModel):
@@ -75,7 +83,7 @@ async def validate_ov_path(
 
         core = ov.Core()
         devices = register_plugins(core, ov_path)
-        return OvValidationResult(valid=True, devices=devices, error=None)
+        return OvValidationResult(valid=True, devices=_add_virtual_devices(devices), error=None)
     except ImportError:
         return OvValidationResult(valid=False, devices=["CPU"], error="OpenVINO not installed")
     except Exception as e:

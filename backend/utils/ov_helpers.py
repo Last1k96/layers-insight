@@ -16,7 +16,7 @@ def register_plugins(core, ov_path: str | None) -> list[str]:
 
     ov_lib_dir = Path(ov_path)
     for so_file in ov_lib_dir.glob("libopenvino_*_plugin.so"):
-        name = so_file.stem  # libopenvino_template_plugin
+        name = so_file.stem
         parts = name.replace("libopenvino_", "").replace("_plugin", "")
         device_name = parts.upper().replace("INTEL_", "")
         if device_name not in core.available_devices:

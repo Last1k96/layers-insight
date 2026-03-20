@@ -51,10 +51,8 @@ def main() -> None:
         import openvino as ov
 
         # --- Phase 1: Read model, cut subgraph, serialize to temp file ---
-        # We use a dedicated Core for reading because core.read_model() can
-        # corrupt internal state for some plugins (e.g. TEMPLATE).  By
-        # serializing the cut model and reloading with a fresh Core we avoid
-        # SIGSEGV during compile_model.
+        # We use a dedicated Core for reading so that the compile Core starts
+        # clean — avoids potential state leaks between read and compile phases.
         read_core = ov.Core()
 
         _log("info", f"Reading model: {Path(model_path).name}")
@@ -118,8 +116,7 @@ def main() -> None:
 
         # Infer on main device
         _log("info", f"Compiling model for {main_device}...")
-        main_model = _prepare_model_for_device(ov, cut_model, main_device)
-        main_out, main_result, main_err = _run_on_device(core, main_model, main_device, inputs)
+        main_out, main_result, main_err = _run_on_device(core, cut_model, main_device, inputs)
         if main_err:
             _log("error", main_err)
             _emit({"error": main_err})
@@ -128,8 +125,7 @@ def main() -> None:
 
         # Infer on reference device
         _log("info", f"Compiling model for {ref_device}...")
-        ref_model = _prepare_model_for_device(ov, cut_model, ref_device)
-        ref_out, ref_result, ref_err = _run_on_device(core, ref_model, ref_device, inputs)
+        ref_out, ref_result, ref_err = _run_on_device(core, cut_model, ref_device, inputs)
         if ref_err:
             _log("error", ref_err)
             _emit({"error": ref_err})
@@ -157,376 +153,6 @@ def main() -> None:
         _log("error", f"{type(e).__name__}: {e}")
         _emit({"error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()})
 
-
-
-def _prepare_model_for_device(ov, model, device: str):
-    """Return a model suitable for the given device.
-
-    The TEMPLATE plugin crashes on ANY IR-deserialized node.  Only models
-    built entirely from fresh opset13 API calls work.  For TEMPLATE we
-    extract the graph as pure data and rebuild every node from scratch.
-
-    For well-behaved plugins (CPU, GPU, etc.) we return the original
-    IR-loaded model so inference sees the exact original subgraph.
-    """
-    if device != "TEMPLATE":
-        return model
-
-    _log("info", f"Rebuilding model from scratch for {device}...")
-    ops_data, result_target = _extract_graph_data(model)
-    rebuilt = _rebuild_model_from_data(ov, ops_data, result_target)
-    _log("info", f"Rebuilt model: {len(list(rebuilt.get_ordered_ops()))} ops "
-         f"(original: {len(list(model.get_ordered_ops()))})")
-    return rebuilt
-
-
-def _extract_graph_data(model) -> tuple[list[dict], str]:
-    """Extract an OV model graph as pure python/numpy data.
-
-    Uses op.get_name() (unique internal name like 'Constant_12345')
-    for graph references instead of get_friendly_name() which can
-    have duplicates (especially among Constants).
-    """
-    ops_data = []
-    result_target = ""
-    for op in model.get_ordered_ops():
-        t = op.get_type_name()
-        # Use get_name() for unique identity; keep friendly name for display
-        name = op.get_name()
-        entry: dict = {"type": t, "name": name}
-        if t == "Constant":
-            entry["data"] = op.get_data().copy()
-            entry["et"] = str(op.get_output_element_type(0))
-        elif t == "Parameter":
-            entry["shape"] = list(op.get_output_partial_shape(0).get_shape())
-            entry["et"] = str(op.get_output_element_type(0))
-            entry["friendly_name"] = op.get_friendly_name()
-        elif t == "Result":
-            result_target = op.input(0).get_source_output().get_node().get_name()
-            continue
-        else:
-            entry["attrs"] = op.get_attributes()
-            entry["inputs"] = [
-                op.input(i).get_source_output().get_node().get_name()
-                for i in range(op.get_input_size())
-            ]
-            entry["n_outputs"] = op.get_output_size()
-            for oi in range(op.get_output_size()):
-                entry[f"out_et_{oi}"] = str(op.get_output_element_type(oi))
-        ops_data.append(entry)
-    return ops_data, result_target
-
-
-def _rebuild_model_from_data(ov, ops_data: list[dict], result_target: str):
-    """Rebuild an OV model from extracted data using opset13 API."""
-    _OV_ET = {
-        "f32": ov.Type.f32, "f16": ov.Type.f16,
-        "i32": ov.Type.i32, "i64": ov.Type.i64,
-        "i8": ov.Type.i8, "u8": ov.Type.u8,
-        "boolean": ov.Type.boolean,
-    }
-
-    def _et(s):
-        for k, v in _OV_ET.items():
-            if k in s:
-                return v
-        return ov.Type.f32
-
-    # First pass: fold all-constant subexpressions so they become
-    # single Constants (avoids needing to rebuild Convert, Reshape, etc.
-    # on constant-only paths).
-    _NP = {
-        'float32': np.float32, 'float16': np.float16,
-        'int32': np.int32, 'int64': np.int64,
-        'int8_t': np.int8, 'uint8_t': np.uint8,
-    }
-
-    def _npt(et_str):
-        for k, v in _NP.items():
-            if k in et_str:
-                return v
-        return np.float32
-
-    const_data: dict[str, tuple[np.ndarray, str]] = {}
-    for e in ops_data:
-        if e["type"] == "Constant":
-            const_data[e["name"]] = (e["data"], e.get("et", "f32"))
-
-    changed = True
-    while changed:
-        changed = False
-        new_ops = []
-        for e in ops_data:
-            t = e["type"]
-            if t in ("Parameter", "Constant"):
-                new_ops.append(e)
-                continue
-            inputs = e.get("inputs", [])
-            if not inputs or not all(n in const_data for n in inputs):
-                new_ops.append(e)
-                continue
-            # All inputs are constants — try to fold
-            inp = [const_data[n][0] for n in inputs]
-            out_et_str = e.get("out_et_0", "f32")
-            npt = _npt(out_et_str)
-            r = None
-            try:
-                if t == 'Convert':
-                    r = inp[0].astype(npt)
-                elif t == 'Multiply':
-                    r = (inp[0].astype(np.float64) * inp[1].astype(np.float64)).astype(npt)
-                elif t == 'Add':
-                    r = (inp[0].astype(np.float64) + inp[1].astype(np.float64)).astype(npt)
-                elif t == 'Subtract':
-                    r = (inp[0].astype(np.float64) - inp[1].astype(np.float64)).astype(npt)
-                elif t == 'Concat':
-                    r = np.concatenate(inp, axis=e["attrs"].get('axis', 0)).astype(npt)
-                elif t == 'Reshape':
-                    r = inp[0].reshape(inp[1].tolist()).astype(npt)
-                elif t == 'Gather':
-                    r = np.take(inp[0], inp[1], axis=int(inp[2])).astype(npt)
-                elif t == 'ShapeOf':
-                    src_e = next((x for x in ops_data if x["name"] == inputs[0]), None)
-                    if src_e and src_e["type"] == "Constant":
-                        r = np.array(list(src_e["data"].shape), dtype=npt)
-            except Exception:
-                pass
-            if r is not None:
-                const_data[e["name"]] = (r, out_et_str)
-                new_ops.append({"type": "Constant", "name": e["name"], "data": r, "et": out_et_str})
-                changed = True
-            else:
-                new_ops.append(e)
-        ops_data = new_ops
-
-    # Second pass: build fresh opset13 nodes
-    node_map: dict[str, object] = {}
-    params = []
-    skipped = []
-
-    for e in ops_data:
-        t = e["type"]
-        name = e["name"]
-        if t == "Parameter":
-            et = _et(e.get("et", "f32"))
-            p = ov.opset13.parameter(shape=e["shape"], dtype=et)
-            # Use original friendly name for input matching
-            friendly = e.get("friendly_name", name)
-            p.set_friendly_name(friendly)
-            node_map[name] = p.output(0)
-            params.append(p)
-        elif t == "Constant":
-            data = e["data"]
-            if data.ndim == 0:
-                data = data.reshape([1])
-            et = _et(e.get("et", "f32"))
-            c = ov.opset13.constant(data, dtype=et)
-            node_map[name] = c.output(0)
-        else:
-            inputs = [node_map[n] for n in e["inputs"] if n in node_map]
-            if len(inputs) != len(e["inputs"]):
-                missing = [n for n in e["inputs"] if n not in node_map]
-                _log("info", f"Skip {t} '{name}': missing inputs {missing}")
-                skipped.append((t, name))
-                continue
-            a = e.get("attrs", {})
-            try:
-                node = _build_op(ov, t, inputs, a)
-                if node is None:
-                    skipped.append((t, name))
-                    continue
-                node_map[name] = node.output(0)
-            except Exception as exc:
-                _log("info", f"Failed to build {t} '{name}': {exc}")
-                skipped.append((t, name))
-
-    if skipped:
-        _log("info", f"Skipped {len(skipped)} ops during rebuild: {skipped[:10]}")
-
-    if result_target not in node_map:
-        raise RuntimeError(
-            f"Cannot rebuild model for TEMPLATE: target node '{result_target}' "
-            f"could not be built. Skipped ops: {skipped}"
-        )
-
-    m = ov.Model([node_map[result_target]], params, f"rebuilt_{result_target}")
-    m.validate_nodes_and_infer_types()
-    return m
-
-
-def _ensure_i64(ov, inp):
-    """If input is a float constant, cast its data to i64 and return a new constant."""
-    node = inp.get_node()
-    if node.get_type_name() == "Constant" and "int" not in str(node.get_output_element_type(0)):
-        data = node.get_data().astype(np.int64)
-        return ov.opset13.constant(data, dtype=ov.Type.i64).output(0)
-    return inp
-
-
-def _build_op(ov, op_type: str, inputs: list, attrs: dict):
-    """Build a single opset13 op node from type, inputs and attributes."""
-    o = ov.opset13
-    if op_type == "FakeQuantize":
-        return o.fake_quantize(inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], attrs["levels"])
-    elif op_type == "Convolution":
-        return o.convolution(inputs[0], inputs[1], attrs["strides"], attrs["pads_begin"], attrs["pads_end"], attrs["dilations"])
-    elif op_type == "GroupConvolution":
-        return o.group_convolution(inputs[0], inputs[1], attrs["strides"], attrs["pads_begin"], attrs["pads_end"], attrs["dilations"])
-    elif op_type == "Add":
-        return o.add(inputs[0], inputs[1])
-    elif op_type == "Subtract":
-        return o.subtract(inputs[0], inputs[1])
-    elif op_type == "Multiply":
-        return o.multiply(inputs[0], inputs[1])
-    elif op_type == "Divide":
-        return o.divide(inputs[0], inputs[1])
-    elif op_type == "Relu":
-        return o.relu(inputs[0])
-    elif op_type == "PRelu":
-        return o.prelu(inputs[0], inputs[1])
-    elif op_type == "Clamp":
-        return o.clamp(inputs[0], attrs["min"], attrs["max"])
-    elif op_type == "MaxPool":
-        return o.max_pool(inputs[0], attrs["strides"], attrs["pads_begin"], attrs["pads_end"], attrs["kernel"])
-    elif op_type == "AvgPool":
-        return o.avg_pool(inputs[0], attrs["strides"], attrs["pads_begin"], attrs["pads_end"], attrs["kernel"], attrs.get("exclude-pad", True))
-    elif op_type == "MatMul":
-        return o.matmul(inputs[0], inputs[1], attrs.get("transpose_a", False), attrs.get("transpose_b", False))
-    elif op_type == "Reshape":
-        return o.reshape(inputs[0], _ensure_i64(ov, inputs[1]), attrs.get("special_zero", False))
-    elif op_type == "Concat":
-        return o.concat(inputs, attrs["axis"])
-    elif op_type == "Softmax":
-        return o.softmax(inputs[0], attrs.get("axis", 1))
-    elif op_type == "Sigmoid":
-        return o.sigmoid(inputs[0])
-    elif op_type == "Tanh":
-        return o.tanh(inputs[0])
-    elif op_type == "Convert":
-        _OV_ET = {"f32": ov.Type.f32, "f16": ov.Type.f16, "i32": ov.Type.i32, "i64": ov.Type.i64, "i8": ov.Type.i8, "u8": ov.Type.u8}
-        dest = ov.Type.f32
-        for k, v in _OV_ET.items():
-            if k in attrs.get("destination_type", "f32"):
-                dest = v; break
-        return o.convert(inputs[0], dest)
-    elif op_type == "Interpolate":
-        mode = attrs.get("mode", "nearest")
-        return o.interpolate(inputs[0], inputs[1], inputs[2] if len(inputs) > 2 else inputs[1], mode)
-    elif op_type == "ShapeOf":
-        return o.shape_of(inputs[0])
-    elif op_type == "Squeeze":
-        return o.squeeze(inputs[0], inputs[1]) if len(inputs) > 1 else o.squeeze(inputs[0])
-    elif op_type == "Unsqueeze":
-        return o.unsqueeze(inputs[0], inputs[1])
-    elif op_type == "Transpose":
-        return o.transpose(inputs[0], _ensure_i64(ov, inputs[1]))
-    elif op_type == "Gather":
-        return o.gather(inputs[0], _ensure_i64(ov, inputs[1]), _ensure_i64(ov, inputs[2]))
-    elif op_type == "StridedSlice":
-        return o.strided_slice(
-            inputs[0], _ensure_i64(ov, inputs[1]), _ensure_i64(ov, inputs[2]),
-            _ensure_i64(ov, inputs[3]) if len(inputs) > 3 else _ensure_i64(ov, inputs[2]),
-            attrs.get("begin_mask", []), attrs.get("end_mask", []),
-        )
-    elif op_type == "ReduceMean":
-        return o.reduce_mean(inputs[0], inputs[1], attrs.get("keep_dims", False))
-    elif op_type == "ReduceMax":
-        return o.reduce_max(inputs[0], inputs[1], attrs.get("keep_dims", False))
-    elif op_type == "ReduceSum":
-        return o.reduce_sum(inputs[0], inputs[1], attrs.get("keep_dims", False))
-    elif op_type == "Power":
-        return o.power(inputs[0], inputs[1])
-    elif op_type == "Sqrt":
-        return o.sqrt(inputs[0])
-    elif op_type == "Exp":
-        return o.exp(inputs[0])
-    elif op_type == "Log":
-        return o.log(inputs[0])
-    elif op_type == "Abs":
-        return o.abs(inputs[0])
-    elif op_type == "Negative":
-        return o.negative(inputs[0])
-    elif op_type == "Floor":
-        return o.floor(inputs[0])
-    elif op_type == "Ceiling":
-        return o.ceiling(inputs[0])
-    elif op_type == "Maximum":
-        return o.maximum(inputs[0], inputs[1])
-    elif op_type == "Minimum":
-        return o.minimum(inputs[0], inputs[1])
-    elif op_type == "Pad":
-        pad_mode = attrs.get("pad_mode", "constant")
-        if len(inputs) > 3:
-            return o.pad(inputs[0], inputs[1], inputs[2], inputs[3], pad_mode)
-        return o.pad(inputs[0], inputs[1], inputs[2], pad_mode)
-    elif op_type == "Split":
-        return o.split(inputs[0], inputs[1], attrs.get("num_splits", 2))
-    elif op_type == "VariadicSplit":
-        return o.variadic_split(inputs[0], inputs[1], inputs[2])
-    elif op_type == "Broadcast":
-        return o.broadcast(inputs[0], inputs[1])
-    elif op_type == "Tile":
-        return o.tile(inputs[0], inputs[1])
-    elif op_type == "BatchNormInference":
-        return o.batch_norm_inference(inputs[0], inputs[1], inputs[2], inputs[3], inputs[4], attrs.get("epsilon", 1e-5))
-    elif op_type == "MVN":
-        return o.mvn(inputs[0], inputs[1], attrs.get("normalize_variance", True), attrs.get("eps", 1e-9), attrs.get("eps_mode", "inside_sqrt"))
-    elif op_type == "Swish":
-        return o.swish(inputs[0])
-    elif op_type == "HSigmoid":
-        return o.hsigmoid(inputs[0])
-    elif op_type == "HSwish":
-        return o.hswish(inputs[0])
-    elif op_type == "Mish":
-        return o.mish(inputs[0])
-    elif op_type == "SoftPlus":
-        return o.softplus(inputs[0])
-    elif op_type == "DetectionOutput":
-        return o.detection_output(
-            inputs[0], inputs[1], inputs[2],
-            attrs,
-        )
-    elif op_type == "ROIPooling":
-        return o.roi_pooling(inputs[0], inputs[1], attrs["output_size"], attrs["spatial_scale"], attrs.get("method", "max"))
-    elif op_type == "PSROIPooling":
-        return o.psroi_pooling(inputs[0], inputs[1], attrs["output_dim"], attrs["group_size"], attrs["spatial_scale"], attrs.get("spatial_bins_x", 1), attrs.get("spatial_bins_y", 1), attrs.get("mode", "average"))
-    elif op_type == "RegionYolo":
-        return o.region_yolo(inputs[0], attrs["coords"], attrs["classes"], attrs["num"], attrs.get("do_softmax", True), attrs.get("mask", []), attrs.get("axis", 1), attrs.get("end_axis", 3), attrs.get("anchors", []))
-    elif op_type == "Elu":
-        return o.elu(inputs[0], attrs.get("alpha", 1.0))
-    elif op_type == "Selu":
-        return o.selu(inputs[0], inputs[1], inputs[2])
-    elif op_type == "Erf":
-        return o.erf(inputs[0])
-    elif op_type == "Equal":
-        return o.equal(inputs[0], inputs[1])
-    elif op_type == "NotEqual":
-        return o.not_equal(inputs[0], inputs[1])
-    elif op_type == "Greater":
-        return o.greater(inputs[0], inputs[1])
-    elif op_type == "GreaterEqual":
-        return o.greater_equal(inputs[0], inputs[1])
-    elif op_type == "Less":
-        return o.less(inputs[0], inputs[1])
-    elif op_type == "LessEqual":
-        return o.less_equal(inputs[0], inputs[1])
-    elif op_type == "Select":
-        return o.select(inputs[0], inputs[1], inputs[2])
-    elif op_type == "LogicalNot":
-        return o.logical_not(inputs[0])
-    elif op_type == "LogicalAnd":
-        return o.logical_and(inputs[0], inputs[1])
-    elif op_type == "LogicalOr":
-        return o.logical_or(inputs[0], inputs[1])
-    elif op_type == "PriorBox":
-        return o.prior_box(inputs[0], inputs[1], attrs)
-    elif op_type == "PriorBoxClustered":
-        return o.prior_box_clustered(inputs[0], inputs[1], attrs)
-    elif op_type == "NormalizeL2":
-        return o.normalize_l2(inputs[0], inputs[1], attrs.get("eps", 1e-10), attrs.get("eps_mode", "add"))
-    elif op_type == "Flatten":
-        return o.reshape(inputs[0], _ensure_i64(ov, inputs[1]), False) if len(inputs) > 1 else None
-    return None
 
 
 def _get_reachable_params(model, target_outputs) -> list:
@@ -571,10 +197,23 @@ def _extract_params(model) -> list[dict]:
     return params
 
 
+def _parse_virtual_device(device: str) -> tuple[str, dict]:
+    """Parse virtual device names into (actual_device, config).
+
+    Supported virtual devices:
+      CPU_fp16 → CPU with INFERENCE_PRECISION_HINT=f16
+    """
+    _VIRTUAL_DEVICES = {
+        "CPU_fp16": ("CPU", {"INFERENCE_PRECISION_HINT": "f16"}),
+    }
+    return _VIRTUAL_DEVICES.get(device, (device, {}))
+
+
 def _run_on_device(core, model, device: str, inputs: dict):
+    actual_device, config = _parse_virtual_device(device)
     try:
         _log("info", f"Compiling on {device}...")
-        compiled = core.compile_model(model, device)
+        compiled = core.compile_model(model, actual_device, config)
         _log("info", f"Compilation on {device} succeeded")
     except Exception as e:
         return None, None, f"Compilation on {device} failed: {e}"
