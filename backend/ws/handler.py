@@ -1,12 +1,25 @@
 """WebSocket endpoint and message dispatch."""
 from __future__ import annotations
 
-import json
+import math
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
 
 from backend.schemas.inference import InferenceTask
+
+
+def _sanitize_for_json(obj):
+    """Replace float inf/nan with None for JavaScript JSON.parse compatibility."""
+    if isinstance(obj, float):
+        if math.isinf(obj) or math.isnan(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_for_json(v) for v in obj]
+    return obj
 
 
 class ConnectionManager:
@@ -55,7 +68,7 @@ class ConnectionManager:
             "ref_result": task.ref_result.model_dump() if task.ref_result else None,
             "sub_session_id": task.sub_session_id,
         }
-        await self.broadcast(task.session_id, message)
+        await self.broadcast(task.session_id, _sanitize_for_json(message))
 
 
 # Global instance

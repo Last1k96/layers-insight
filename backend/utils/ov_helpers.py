@@ -19,6 +19,8 @@ def register_plugins(core, ov_path: str | None) -> list[str]:
         name = so_file.stem
         parts = name.replace("libopenvino_", "").replace("_plugin", "")
         device_name = parts.upper().replace("INTEL_", "")
+        if device_name == "TEMPLATE":
+            continue
         if device_name not in core.available_devices:
             try:
                 core.register_plugin(str(so_file), device_name)

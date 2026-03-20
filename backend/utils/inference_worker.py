@@ -88,6 +88,16 @@ def main() -> None:
         model_params = _extract_params(cut_model)
         _log("info", f"Serialized cut model to {tmp_xml}")
 
+        # If either device is a virtual fp16 device, also save an fp16-compressed
+        # copy.  Weight compression (compress_to_fp16) actually quantises constants
+        # so even single-op subgraphs show precision differences.
+        needs_fp16_model = _is_fp16_device(main_device) or _is_fp16_device(ref_device)
+        fp16_xml = None
+        if needs_fp16_model:
+            fp16_xml = str(Path(out_dir) / "cut_model_fp16.xml")
+            ov.save_model(cut_model, fp16_xml, compress_to_fp16=True)
+            _log("info", "Saved fp16-compressed cut model")
+
         del cut_model, model, target_op, read_core
         gc.collect()
 
@@ -101,6 +111,11 @@ def main() -> None:
 
         cut_model = core.read_model(tmp_xml)
         _log("info", f"Reloaded cut model: {len(list(cut_model.get_ordered_ops()))} ops")
+
+        fp16_cut_model = None
+        if fp16_xml:
+            fp16_cut_model = core.read_model(fp16_xml)
+            _log("info", f"Reloaded fp16 cut model: {len(list(fp16_cut_model.get_ordered_ops()))} ops")
 
         # Prepare inputs (use cut_model's params, not original model's)
         _log("info", "Preparing inputs...")
@@ -116,7 +131,8 @@ def main() -> None:
 
         # Infer on main device
         _log("info", f"Compiling model for {main_device}...")
-        main_out, main_result, main_err = _run_on_device(core, cut_model, main_device, inputs)
+        main_model = fp16_cut_model if _is_fp16_device(main_device) else cut_model
+        main_out, main_result, main_err = _run_on_device(core, main_model, main_device, inputs)
         if main_err:
             _log("error", main_err)
             _emit({"error": main_err})
@@ -125,7 +141,8 @@ def main() -> None:
 
         # Infer on reference device
         _log("info", f"Compiling model for {ref_device}...")
-        ref_out, ref_result, ref_err = _run_on_device(core, cut_model, ref_device, inputs)
+        ref_model = fp16_cut_model if _is_fp16_device(ref_device) else cut_model
+        ref_out, ref_result, ref_err = _run_on_device(core, ref_model, ref_device, inputs)
         if ref_err:
             _log("error", ref_err)
             _emit({"error": ref_err})
@@ -197,16 +214,23 @@ def _extract_params(model) -> list[dict]:
     return params
 
 
+_FP16_DEVICES = {"CPU_fp16"}
+
+
+def _is_fp16_device(device: str) -> bool:
+    """Check if device is a virtual fp16 device that uses weight compression."""
+    return device in _FP16_DEVICES
+
+
 def _parse_virtual_device(device: str) -> tuple[str, dict]:
     """Parse virtual device names into (actual_device, config).
 
     Supported virtual devices:
-      CPU_fp16 → CPU with INFERENCE_PRECISION_HINT=f16
+      CPU_fp16 → CPU with fp16-compressed weights (model-level, not runtime hint)
     """
-    _VIRTUAL_DEVICES = {
-        "CPU_fp16": ("CPU", {"INFERENCE_PRECISION_HINT": "f16"}),
-    }
-    return _VIRTUAL_DEVICES.get(device, (device, {}))
+    if device in _FP16_DEVICES:
+        return ("CPU", {})
+    return (device, {})
 
 
 def _run_on_device(core, model, device: str, inputs: dict):
@@ -222,14 +246,15 @@ def _run_on_device(core, model, device: str, inputs: dict):
         req = compiled.create_infer_request()
         req.infer(inputs)
         output = req.get_output_tensor(0).data.copy()
+        out64 = output.astype(np.float64)
         result = {
             "device": device,
             "output_shapes": [list(output.shape)],
             "dtype": str(output.dtype),
-            "min_val": float(np.min(output)),
-            "max_val": float(np.max(output)),
-            "mean_val": float(np.mean(output)),
-            "std_val": float(np.std(output)),
+            "min_val": float(np.min(out64)),
+            "max_val": float(np.max(out64)),
+            "mean_val": float(np.mean(out64)),
+            "std_val": float(np.std(out64)),
         }
         return output, result, None
     except Exception as e:
@@ -252,8 +277,22 @@ def _compute_metrics(main: np.ndarray, ref: np.ndarray) -> dict:
     return {"mse": mse, "max_abs_diff": max_abs_diff, "cosine_similarity": cosine_sim}
 
 
+def _sanitize_for_json(obj):
+    """Replace inf/nan with None so output is valid JSON for all parsers."""
+    if isinstance(obj, float):
+        import math
+        if math.isinf(obj) or math.isnan(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_sanitize_for_json(v) for v in obj]
+    return obj
+
+
 def _emit(data: dict) -> None:
-    json.dump(data, sys.stdout)
+    json.dump(_sanitize_for_json(data), sys.stdout)
     sys.stdout.flush()
 
 
