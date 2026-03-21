@@ -20,6 +20,33 @@ PRECISION_MAP = {
 }
 
 
+def resolve_shape(shape: list[int | str], resolved: list[int] | None = None) -> list[int]:
+    """Return concrete shape. Uses resolved values for dynamic dims."""
+    result = []
+    res_idx = 0
+    for i, d in enumerate(shape):
+        if isinstance(d, int):
+            result.append(d)
+        elif resolved and res_idx < len(resolved):
+            result.append(resolved[res_idx])
+            res_idx += 1
+        else:
+            raise ValueError(f"Dimension {i} is dynamic ('{d}') and no concrete value provided.")
+    return result
+
+
+def has_dynamic_dims(shape: list[int | str]) -> bool:
+    """Check if a shape contains any dynamic dimensions."""
+    return any(isinstance(d, str) for d in shape)
+
+
+def validate_shape_bounds(shape: list[int], lower: list[int], upper: list[int]) -> None:
+    """Validate that each dimension of shape is within [lower, upper] bounds."""
+    for i, (val, lo, hi) in enumerate(zip(shape, lower, upper)):
+        if val < lo or val > hi:
+            raise ValueError(f"Dimension {i} value {val} is outside bounds [{lo}, {hi}]")
+
+
 def generate_random_input(
     shape: list[int],
     precision: str = "fp32",
@@ -91,9 +118,27 @@ def prepare_inputs(
             # Use per-input config
             dt = cfg.get("data_type", precision)
             if cfg.get("source") == "file" and cfg.get("path"):
-                inputs[name] = load_input_from_file(cfg["path"], shape)
+                # For file inputs, shape comes from the file itself
+                file_shape = None if has_dynamic_dims(shape) else shape
+                tensor = load_input_from_file(cfg["path"], file_shape)
+                # Validate file input shape against bounds if provided
+                lo = cfg.get("lower_bounds", [])
+                hi = cfg.get("upper_bounds", [])
+                if lo and hi:
+                    validate_shape_bounds(list(tensor.shape), lo, hi)
+                inputs[name] = tensor
             else:
-                inputs[name] = generate_random_input(shape, dt)
+                # Resolve dynamic shapes for random generation
+                if has_dynamic_dims(shape):
+                    concrete_shape = resolve_shape(shape, cfg.get("resolved_shape"))
+                else:
+                    concrete_shape = shape
+                # Validate concrete shape against bounds if provided
+                lo = cfg.get("lower_bounds", [])
+                hi = cfg.get("upper_bounds", [])
+                if lo and hi:
+                    validate_shape_bounds(concrete_shape, lo, hi)
+                inputs[name] = generate_random_input(concrete_shape, dt)
         elif input_path and input_path != "random":
             p = Path(input_path)
             if p.is_dir():

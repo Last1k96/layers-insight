@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -30,6 +31,13 @@ def _compute_node_size(op_type: str) -> tuple[float, float]:
 def load_model(model_path: str, ov_core: Any) -> Any:
     """Load an OpenVINO model from XML path."""
     return ov_core.read_model(model_path)
+
+
+def _normalize_element_type(et: Any) -> str:
+    """Extract inner type name from OV's str(element_type) like \"<Type: 'float32'>\"."""
+    s = str(et)
+    m = re.search(r"'([^']+)'", s)
+    return m.group(1) if m else s
 
 
 def _find_root_constant(op: Any) -> str | None:
@@ -96,8 +104,8 @@ def extract_graph(model: Any) -> GraphData:
                 if pshape.is_static:
                     shape = list(pshape.get_shape())
                 else:
-                    shape = [str(d) for d in pshape]
-                element_type = str(op.output(0).get_element_type())
+                    shape = [d.get_length() if d.is_static else "?" for d in pshape]
+                element_type = _normalize_element_type(op.output(0).get_element_type())
         except Exception:
             pass
 
@@ -132,8 +140,8 @@ def extract_graph(model: Any) -> GraphData:
                         if ps.is_static:
                             src_shape = list(ps.get_shape())
                         else:
-                            src_shape = [str(d) for d in ps]
-                        src_etype = str(source_node.output(0).get_element_type())
+                            src_shape = [d.get_length() if d.is_static else "?" for d in ps]
+                        src_etype = _normalize_element_type(source_node.output(0).get_element_type())
                 except Exception:
                     pass
 

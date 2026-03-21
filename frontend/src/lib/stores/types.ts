@@ -14,17 +14,20 @@ export interface SessionInfo {
 
 export interface InputConfig {
   name: string;
-  shape: number[];
+  shape: (number | string)[];
   element_type: string;
   data_type: string;
   source: 'random' | 'file';
   path?: string;
   layout: string;
+  resolved_shape?: number[];
+  lower_bounds?: number[];
+  upper_bounds?: number[];
 }
 
 export interface ModelInputInfo {
   name: string;
-  shape: number[];
+  shape: (number | string)[];
   element_type: string;
 }
 
@@ -107,6 +110,8 @@ export interface GraphEdge {
 export interface GraphData {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /** Propagated shapes from resolved dynamic inputs: node_name -> concrete shape */
+  propagated_shapes?: Record<string, number[]>;
 }
 
 export interface DeviceResult {

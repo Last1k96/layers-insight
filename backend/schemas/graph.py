@@ -10,7 +10,7 @@ class NodeInput(BaseModel):
     """Describes one input port of a node."""
     name: str  # source node/constant name
     port: int = 0  # target port index
-    shape: Optional[list] = None
+    shape: Optional[list[int | str]] = None
     element_type: Optional[str] = None
     is_const: bool = False  # True when source is a filtered constant/weight-prep chain
     const_node_name: Optional[str] = None  # root Constant node name for data lookup
@@ -21,7 +21,7 @@ class GraphNode(BaseModel):
     id: str
     name: str
     type: str
-    shape: Optional[list[int]] = None
+    shape: Optional[list[int | str]] = None
     element_type: Optional[str] = None
     category: str = "Other"
     color: str = "#78909C"

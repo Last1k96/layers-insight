@@ -11,7 +11,12 @@ from typing import Any, Optional
 import numpy as np
 
 from backend.schemas.session import SessionConfig, SessionDetail, SessionInfo
-from backend.utils.input_generator import generate_random_input
+from backend.utils.input_generator import (
+    generate_random_input,
+    has_dynamic_dims,
+    resolve_shape,
+    validate_shape_bounds,
+)
 
 
 class SessionService:
@@ -119,9 +124,21 @@ class SessionService:
                         updated_inputs.append(inp)
                 elif inp.shape:
                     # Random source with known shape: generate and save
+                    # Resolve dynamic dims if present
+                    if has_dynamic_dims(inp.shape):
+                        if not inp.resolved_shape:
+                            # Can't generate random without concrete dims — defer to inference time
+                            updated_inputs.append(inp)
+                            continue
+                        concrete = resolve_shape(inp.shape, inp.resolved_shape)
+                        # Validate against bounds if provided
+                        if inp.lower_bounds and inp.upper_bounds:
+                            validate_shape_bounds(concrete, inp.lower_bounds, inp.upper_bounds)
+                    else:
+                        concrete = [d for d in inp.shape if isinstance(d, int)]
                     safe_name = inp.name.replace("/", "_").replace("\\", "_")
                     npy_path = inputs_dir / f"{safe_name}.npy"
-                    data = generate_random_input(inp.shape, inp.data_type)
+                    data = generate_random_input(concrete, inp.data_type)
                     np.save(str(npy_path), data)
                     updated_inputs.append(inp.model_copy(update={
                         "source": "file",

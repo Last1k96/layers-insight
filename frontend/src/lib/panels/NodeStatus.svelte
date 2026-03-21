@@ -2,11 +2,19 @@
   import { graphStore } from '../stores/graph.svelte';
   import { queueStore } from '../stores/queue.svelte';
   import { sessionStore } from '../stores/session.svelte';
+  import { refreshRenderer, centerOnNode } from '../graph/renderer';
   import type { ConstantData } from '../stores/types';
 
   let selectedNode = $derived(graphStore.selectedNode);
   let nodeStatus = $derived(graphStore.selectedNodeStatus);
   let nodeOverride = $derived(selectedNode ? graphStore.nodeOverrides.get(selectedNode.name) : undefined);
+
+  /** Propagated (concrete) shape for the selected node, if available */
+  let propagatedShape = $derived(
+    selectedNode && graphStore.graphData?.propagated_shapes
+      ? graphStore.graphData.propagated_shapes[selectedNode.name] ?? null
+      : null
+  );
 
   let outputs = $derived.by(() => {
     if (!selectedNode || !graphStore.graphData) return [];
@@ -135,6 +143,37 @@
     <div class="mb-4">
       <div class="font-mono font-medium text-gray-200 break-all">{selectedNode.name}</div>
       <div class="text-gray-400 mt-1">{selectedNode.type}</div>
+      {#if (selectedNode.inputs && selectedNode.inputs.length > 0) || selectedNode.shape}
+        <div class="mt-1.5 grid grid-cols-[auto_1fr] gap-x-1.5 gap-y-0.5 text-xs items-baseline">
+          {#if selectedNode.inputs}
+            {#each selectedNode.inputs as inp}
+              {@const inpPropagated = graphStore.graphData?.propagated_shapes?.[inp.name] ?? null}
+              {@const inpOrigShape = inp.shape}
+              <span class="text-gray-600 shrink-0">in</span>
+              <span>
+                {#if inp.is_const}<span class="px-1 py-0.5 bg-amber-900/40 text-amber-400 rounded text-[10px] leading-none mr-1">const</span>{/if}
+                {#if inpPropagated && inpOrigShape}
+                  <span class="font-mono text-gray-400">[{#each inpPropagated as dim, idx}{#if idx > 0}, {/if}{#if inpOrigShape[idx] !== undefined && typeof inpOrigShape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
+                {:else if inpOrigShape}
+                  <span class="font-mono text-gray-400">[{#each inpOrigShape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
+                {/if}
+                {#if inp.element_type}<span class="text-gray-600 ml-1">{inp.element_type}</span>{/if}
+              </span>
+            {/each}
+          {/if}
+          {#if selectedNode.shape}
+            <span class="text-gray-600 shrink-0">out</span>
+            <span>
+              {#if propagatedShape}
+                <span class="font-mono text-gray-400">[{#each propagatedShape as dim, idx}{#if idx > 0}, {/if}{#if selectedNode.shape[idx] !== undefined && typeof selectedNode.shape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
+              {:else}
+                <span class="font-mono text-gray-400">[{#each selectedNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
+              {/if}
+              {#if selectedNode.element_type}<span class="text-gray-600 ml-1">{selectedNode.element_type}</span>{/if}
+            </span>
+          {/if}
+        </div>
+      {/if}
     </div>
 
     {#if !nodeStatus}
@@ -202,6 +241,13 @@
         <div class="w-2 h-2 rounded-full bg-green-400"></div>
         Success
       </div>
+
+      {#if nodeStatus.mainResult?.output_shapes?.[0]}
+        <div class="text-xs text-gray-500 mb-2">
+          Output: <span class="font-mono text-gray-400">[{nodeStatus.mainResult.output_shapes[0].join(', ')}]</span>
+          {#if nodeStatus.mainResult.dtype} <span class="text-gray-600">{nodeStatus.mainResult.dtype}</span>{/if}
+        </div>
+      {/if}
 
       {#if nodeStatus.metrics}
         <div class="space-y-2">
@@ -352,7 +398,22 @@
                 {#if inp.is_const}
                   <span class="px-1 py-0.5 bg-amber-900/40 text-amber-400 rounded text-[10px] leading-none">const</span>
                 {/if}
-                <span class="text-gray-300 font-mono truncate" title={inp.name}>{inp.name}</span>
+                {#if !inp.is_const}
+                  <button
+                    class="text-blue-400 hover:text-blue-300 font-mono truncate transition-colors text-left"
+                    title={inp.name}
+                    onclick={(e) => {
+                      const nodeId = graphStore.graphData?.nodes.find(n => n.name === inp.name)?.id;
+                      if (nodeId) {
+                        graphStore.selectNode(nodeId);
+                        refreshRenderer();
+                        if (e.ctrlKey || e.metaKey) centerOnNode(nodeId);
+                      }
+                    }}
+                  >{inp.name}</button>
+                {:else}
+                  <span class="text-gray-300 font-mono truncate" title={inp.name}>{inp.name}</span>
+                {/if}
               </div>
               {#if inp.shape}
                 <div class="text-gray-500 ml-5 mt-0.5">
@@ -414,7 +475,11 @@
                 <button
                   class="text-blue-400 hover:text-blue-300 font-mono truncate transition-colors text-left"
                   title={out.targetNode?.name ?? out.targetId}
-                  onclick={() => graphStore.selectNode(out.targetId)}
+                  onclick={(e) => {
+                    graphStore.selectNode(out.targetId);
+                    refreshRenderer();
+                    if (e.ctrlKey || e.metaKey) centerOnNode(out.targetId);
+                  }}
                 >
                   {out.targetNode?.name ?? out.targetId}
                 </button>

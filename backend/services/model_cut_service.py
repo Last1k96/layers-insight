@@ -78,8 +78,10 @@ class ModelCutService:
         # Get shape — must be static
         partial_shape = target_op.get_output_partial_shape(0)
         if partial_shape.is_dynamic:
+            dim_str = ", ".join(str(d) if d.is_static else "?" for d in partial_shape)
             raise ValueError(
-                f"Node '{target_node_name}' has dynamic shape — cannot generate random data"
+                f"Node '{target_node_name}' has dynamic shape [{dim_str}] — "
+                f"cannot generate random data. Use 'input' cut type with a file instead."
             )
         shape = [d.get_length() for d in partial_shape]
 

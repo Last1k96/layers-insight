@@ -1,11 +1,14 @@
 """Device discovery and app defaults routes."""
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
+
+from backend.services.graph_service import _normalize_element_type
 
 router = APIRouter(prefix="/api", tags=["devices"])
 
@@ -200,7 +203,7 @@ async def path_suggest(
 
 class ModelInputInfo(BaseModel):
     name: str
-    shape: list[int]
+    shape: list[int | str]
     element_type: str
 
 
@@ -267,10 +270,13 @@ async def get_model_inputs(
     inputs = []
     for param in model.get_parameters():
         pshape = param.get_output_partial_shape(0)
-        shape = list(pshape.get_shape()) if pshape.is_static else []
+        if pshape.is_static:
+            shape = [d.get_length() for d in pshape]
+        else:
+            shape = [d.get_length() if d.is_static else "?" for d in pshape]
         inputs.append(ModelInputInfo(
             name=param.get_friendly_name(),
             shape=shape,
-            element_type=str(param.get_output_element_type(0)),
+            element_type=_normalize_element_type(param.get_output_element_type(0)),
         ))
     return inputs

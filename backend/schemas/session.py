@@ -10,12 +10,15 @@ from pydantic import BaseModel, Field
 class InputConfig(BaseModel):
     """Per-input configuration for model inputs."""
     name: str
-    shape: list[int] = []
+    shape: list[int | str] = []  # original shape from model, may have "?" for dynamic dims
     element_type: str = ""
     data_type: str = "fp32"  # precision to use for generation
     source: str = "random"  # "random" or "file"
     path: Optional[str] = None  # file path if source is "file"
     layout: str = ""  # e.g. "NCHW", "NHWC", "NCW", "NWC", etc.
+    resolved_shape: list[int] = []  # user-specified concrete shape for random generation (dynamic dims)
+    lower_bounds: list[int] = []  # per-dim lower bounds for model reshape
+    upper_bounds: list[int] = []  # per-dim upper bounds for model reshape
 
 
 class SessionConfig(BaseModel):

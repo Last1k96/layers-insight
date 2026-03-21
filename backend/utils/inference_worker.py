@@ -117,6 +117,14 @@ def main() -> None:
             fp16_cut_model = core.read_model(fp16_xml)
             _log("info", f"Reloaded fp16 cut model: {len(list(fp16_cut_model.get_ordered_ops()))} ops")
 
+        # Apply bounded reshape if input_configs have bounds (dynamic shapes)
+        _apply_bounded_reshape(cut_model, input_configs)
+        if fp16_cut_model:
+            _apply_bounded_reshape(fp16_cut_model, input_configs)
+
+        # Re-extract params after reshape (shapes may now be bounded/static)
+        model_params = _extract_params(cut_model)
+
         # Prepare inputs (use cut_model's params, not original model's)
         _log("info", "Preparing inputs...")
         from backend.utils.input_generator import prepare_inputs
@@ -205,13 +213,43 @@ def _extract_params(model) -> list[dict]:
     params = []
     for param in model.get_parameters():
         pshape = param.get_output_partial_shape(0)
-        shape = list(pshape.get_shape()) if pshape.is_static else [1, 3, 224, 224]
+        if pshape.is_static:
+            shape = [d.get_length() for d in pshape]
+        else:
+            shape = [d.get_length() if d.is_static else "?" for d in pshape]
         params.append({
             "name": param.get_friendly_name(),
             "shape": shape,
             "element_type": str(param.get_output_element_type(0)),
         })
     return params
+
+
+def _apply_bounded_reshape(model, input_configs):
+    """Reshape model with bounded dimensions before compilation.
+
+    For each input that has lower_bounds and upper_bounds, creates
+    ov.Dimension(lo, hi) for dynamic dims and ov.Dimension(d) for static dims.
+    """
+    import openvino as ov
+
+    if not input_configs:
+        return
+    reshape_map = {}
+    for cfg in input_configs:
+        lo = cfg.get("lower_bounds", [])
+        hi = cfg.get("upper_bounds", [])
+        if lo and hi:
+            orig_shape = cfg.get("shape", [])
+            dims = []
+            for i, d in enumerate(orig_shape):
+                if isinstance(d, str):  # dynamic dim
+                    dims.append(ov.Dimension(lo[i], hi[i]))
+                else:
+                    dims.append(ov.Dimension(d))
+            reshape_map[cfg["name"]] = ov.PartialShape(dims)
+    if reshape_map:
+        model.reshape(reshape_map)
 
 
 _FP16_DEVICES = {"CPU_fp16"}

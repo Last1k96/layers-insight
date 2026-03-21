@@ -35,16 +35,25 @@
   let showBrowser = $state(false);
   let browserMode = $state<'directory' | 'file'>('directory');
   let browserInitialPath = $state('');
-  let browserTarget = $state<'ov' | 'model'>('ov');
+  let browserTarget = $state<'ov' | 'model' | 'input'>('ov');
+  let browserInputIndex = $state(0);
 
-  function openBrowser(target: 'ov' | 'model') {
-    browserTarget = target;
+  function openBrowser(target: 'ov' | 'model', inputIndex?: number) {
     if (target === 'ov') {
+      browserTarget = 'ov';
       browserMode = 'directory';
       browserInitialPath = ovPath || '';
     } else {
       browserMode = 'file';
-      browserInitialPath = modelPath ? modelPath.substring(0, modelPath.lastIndexOf('/')) : '';
+      if (inputIndex !== undefined) {
+        browserTarget = 'input';
+        browserInputIndex = inputIndex;
+        const p = modelInputs[inputIndex]?.path || '';
+        browserInitialPath = p ? p.substring(0, p.lastIndexOf('/')) : '';
+      } else {
+        browserTarget = 'model';
+        browserInitialPath = modelPath ? modelPath.substring(0, modelPath.lastIndexOf('/')) : '';
+      }
     }
     showBrowser = true;
   }
@@ -54,6 +63,8 @@
     if (browserTarget === 'ov') {
       ovPath = path;
       onOvPathInput();
+    } else if (browserTarget === 'input') {
+      modelInputs[browserInputIndex] = { ...modelInputs[browserInputIndex], path };
     } else {
       modelPath = path;
       onModelPathInput();
@@ -84,13 +95,24 @@
     5: ['NCDHW', 'NDHWC'],
   };
 
-  function getLayoutOptions(shape: number[]): string[] {
+  function getLayoutOptions(shape: (number | string)[]): string[] {
     return LAYOUTS_BY_RANK[shape.length] || ['...'];
   }
 
-  function getDefaultLayout(shape: number[]): string {
+  function getDefaultLayout(shape: (number | string)[]): string {
     const options = getLayoutOptions(shape);
     return options[0] || '...';
+  }
+
+  function hasDynamicDims(shape: (number | string)[]): boolean {
+    return shape.some(d => typeof d === 'string');
+  }
+
+  function handleDimWheel(e: WheelEvent, getValue: () => number, setValue: (v: number) => void, min = 1) {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 1 : -1;
+    const step = e.shiftKey ? 10 : 1;
+    setValue(Math.max(min, getValue() + delta * step));
   }
 
   // --- Debounce utility ---
@@ -141,15 +163,22 @@
     if (infos.length === 0) {
       inputsError = 'Could not read model inputs. Check the model path.';
     } else {
-      modelInputs = infos.map((info) => ({
-        name: info.name,
-        shape: info.shape,
-        element_type: info.element_type,
-        data_type: elementTypeToDataType(info.element_type),
-        source: 'random' as const,
-        path: undefined,
-        layout: getDefaultLayout(info.shape),
-      }));
+      modelInputs = infos.map((info) => {
+        const dynDims = hasDynamicDims(info.shape);
+        return {
+          name: info.name,
+          shape: info.shape,
+          element_type: info.element_type,
+          data_type: elementTypeToDataType(info.element_type),
+          source: 'random' as const,
+          path: undefined,
+          layout: getDefaultLayout(info.shape),
+          // Initialize dynamic shape fields
+          resolved_shape: dynDims ? info.shape.map(d => typeof d === 'string' ? 1 : d as number) : undefined,
+          lower_bounds: dynDims ? info.shape.map(d => typeof d === 'string' ? 1 : d as number) : undefined,
+          upper_bounds: dynDims ? info.shape.map(d => typeof d === 'string' ? 1024 : d as number) : undefined,
+        };
+      });
       inspectedModelPath = path;
     }
     loadingInputs = false;
@@ -250,9 +279,9 @@
     return map[norm] || 'fp32';
   }
 
-  function formatShape(shape: number[]): string {
+  function formatShape(shape: (number | string)[]): string {
     if (shape.length === 0) return 'dynamic';
-    return `[${shape.join(', ')}]`;
+    return `[${shape.map(d => typeof d === 'string' ? '?' : d).join(', ')}]`;
   }
 
   async function handleSubmit() {
@@ -260,6 +289,32 @@
       error = 'Model path is required';
       return;
     }
+
+    // Validate dynamic shape inputs
+    for (const input of modelInputs) {
+      if (!hasDynamicDims(input.shape)) continue;
+
+      const rs = input.resolved_shape ?? [];
+      const lo = input.lower_bounds ?? [];
+      const hi = input.upper_bounds ?? [];
+
+      for (let d = 0; d < input.shape.length; d++) {
+        if (typeof input.shape[d] !== 'string') continue; // static dim
+        if (input.source === 'random' && (!rs[d] || rs[d] < 1)) {
+          error = `Input "${input.name}": dimension ${d} requires a concrete value`;
+          return;
+        }
+        if (lo[d] > hi[d]) {
+          error = `Input "${input.name}": dimension ${d} min (${lo[d]}) > max (${hi[d]})`;
+          return;
+        }
+        if (input.source === 'random' && (rs[d] < lo[d] || rs[d] > hi[d])) {
+          error = `Input "${input.name}": dimension ${d} value (${rs[d]}) outside bounds [${lo[d]}, ${hi[d]}]`;
+          return;
+        }
+      }
+    }
+
     submitting = true;
     error = null;
 
@@ -397,14 +452,97 @@
                   </select>
                 </div>
               </div>
+              {#if hasDynamicDims(input.shape)}
+                <div class="border border-yellow-700/50 rounded p-2 space-y-1">
+                  <div class="text-xs text-yellow-400 font-medium">Dynamic Shape — specify dimensions</div>
+                  <div class="grid gap-1" style="grid-template-columns: auto 1fr 1fr 1fr;">
+                    <div class="text-xs text-content-secondary font-medium px-1">Dim</div>
+                    {#if input.source === 'random'}
+                      <div class="text-xs text-content-secondary font-medium px-1">Value</div>
+                    {:else}
+                      <div></div>
+                    {/if}
+                    <div class="text-xs text-content-secondary font-medium px-1">Min</div>
+                    <div class="text-xs text-content-secondary font-medium px-1">Max</div>
+                    {#each input.shape as dim, d}
+                      <div class="text-xs text-content-secondary px-1 py-1.5 font-mono">[{d}]</div>
+                      {#if typeof dim === 'string'}
+                        {#if input.source === 'random'}
+                          <input
+                            type="number"
+                            min="1"
+                            value={input.resolved_shape?.[d] ?? 1}
+                            oninput={(e) => {
+                              const rs = [...(modelInputs[i].resolved_shape ?? [])];
+                              rs[d] = parseInt((e.target as HTMLInputElement).value) || 1;
+                              modelInputs[i] = { ...modelInputs[i], resolved_shape: rs };
+                            }}
+                            onwheel={(e) => handleDimWheel(e,
+                              () => modelInputs[i].resolved_shape?.[d] ?? 1,
+                              (v) => { const rs = [...(modelInputs[i].resolved_shape ?? [])]; rs[d] = v; modelInputs[i] = { ...modelInputs[i], resolved_shape: rs }; }
+                            )}
+                            class="w-full px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
+                          />
+                        {:else}
+                          <div></div>
+                        {/if}
+                        <input
+                          type="number"
+                          min="1"
+                          value={input.lower_bounds?.[d] ?? 1}
+                          oninput={(e) => {
+                            const lb = [...(modelInputs[i].lower_bounds ?? [])];
+                            lb[d] = parseInt((e.target as HTMLInputElement).value) || 1;
+                            modelInputs[i] = { ...modelInputs[i], lower_bounds: lb };
+                          }}
+                          onwheel={(e) => handleDimWheel(e,
+                            () => modelInputs[i].lower_bounds?.[d] ?? 1,
+                            (v) => { const lb = [...(modelInputs[i].lower_bounds ?? [])]; lb[d] = v; modelInputs[i] = { ...modelInputs[i], lower_bounds: lb }; }
+                          )}
+                          class="w-full px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
+                        />
+                        <input
+                          type="number"
+                          min="1"
+                          value={input.upper_bounds?.[d] ?? 1024}
+                          oninput={(e) => {
+                            const ub = [...(modelInputs[i].upper_bounds ?? [])];
+                            ub[d] = parseInt((e.target as HTMLInputElement).value) || 1;
+                            modelInputs[i] = { ...modelInputs[i], upper_bounds: ub };
+                          }}
+                          onwheel={(e) => handleDimWheel(e,
+                            () => modelInputs[i].upper_bounds?.[d] ?? 1024,
+                            (v) => { const ub = [...(modelInputs[i].upper_bounds ?? [])]; ub[d] = v; modelInputs[i] = { ...modelInputs[i], upper_bounds: ub }; }
+                          )}
+                          class="w-full px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
+                        />
+                      {:else}
+                        {#if input.source === 'random'}
+                          <div class="text-xs text-content-secondary px-1.5 py-1.5 font-mono">{dim}</div>
+                        {:else}
+                          <div></div>
+                        {/if}
+                        <div class="text-xs text-content-secondary px-1.5 py-1.5 font-mono">{dim}</div>
+                        <div class="text-xs text-content-secondary px-1.5 py-1.5 font-mono">{dim}</div>
+                      {/if}
+                    {/each}
+                  </div>
+                </div>
+              {/if}
               {#if input.source === 'file'}
-                <div>
+                <div class="flex gap-1">
                   <input
                     type="text"
                     bind:value={modelInputs[i].path}
                     placeholder="/path/to/input.npy"
-                    class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
+                    class="flex-1 px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
                   />
+                  <button
+                    type="button"
+                    class="px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded hover:bg-[--bg-panel] transition-colors text-sm"
+                    title="Browse files"
+                    onclick={() => openBrowser('model', i)}
+                  >&#128194;</button>
                 </div>
               {/if}
             </div>
