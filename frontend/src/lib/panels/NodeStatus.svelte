@@ -2,7 +2,7 @@
   import { graphStore } from '../stores/graph.svelte';
   import { queueStore } from '../stores/queue.svelte';
   import { sessionStore } from '../stores/session.svelte';
-  import { refreshRenderer, centerOnNode } from '../graph/renderer';
+  import { refreshRenderer, centerOnNode, setHoveredNode } from '../graph/renderer';
   import type { ConstantData } from '../stores/types';
 
   let selectedNode = $derived(graphStore.selectedNode);
@@ -149,9 +149,8 @@
             {#each selectedNode.inputs as inp}
               {@const inpPropagated = graphStore.graphData?.propagated_shapes?.[inp.name] ?? null}
               {@const inpOrigShape = inp.shape}
-              <span class="text-gray-600 shrink-0">in</span>
+              <span class="text-gray-600 shrink-0">{inp.is_const ? 'const' : 'input'}</span>
               <span>
-                {#if inp.is_const}<span class="px-1 py-0.5 bg-amber-900/40 text-amber-400 rounded text-[10px] leading-none mr-1">const</span>{/if}
                 {#if inpPropagated && inpOrigShape}
                   <span class="font-mono text-gray-400">[{#each inpPropagated as dim, idx}{#if idx > 0}, {/if}{#if inpOrigShape[idx] !== undefined && typeof inpOrigShape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
                 {:else if inpOrigShape}
@@ -162,7 +161,7 @@
             {/each}
           {/if}
           {#if selectedNode.shape}
-            <span class="text-gray-600 shrink-0">out</span>
+            <span class="text-gray-600 shrink-0">output</span>
             <span>
               {#if propagatedShape}
                 <span class="font-mono text-gray-400">[{#each propagatedShape as dim, idx}{#if idx > 0}, {/if}{#if selectedNode.shape[idx] !== undefined && typeof selectedNode.shape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
@@ -392,22 +391,23 @@
         </summary>
         <div class="mt-1 space-y-1">
           {#each selectedNode.inputs as inp, idx}
+            {@const sourceNode = graphStore.graphData?.nodes.find(n => n.name === inp.name)}
             <div class="bg-[--bg-panel] rounded p-2 text-xs">
               <div class="flex items-center gap-1.5">
                 <span class="text-gray-600 font-mono w-4 shrink-0">{idx}</span>
-                {#if inp.is_const}
-                  <span class="px-1 py-0.5 bg-amber-900/40 text-amber-400 rounded text-[10px] leading-none">const</span>
-                {/if}
                 {#if !inp.is_const}
                   <button
                     class="text-blue-400 hover:text-blue-300 font-mono truncate transition-colors text-left"
                     title={inp.name}
+                    onmouseenter={() => {
+                      if (sourceNode) setHoveredNode(sourceNode.id);
+                    }}
+                    onmouseleave={() => setHoveredNode(null)}
                     onclick={(e) => {
-                      const nodeId = graphStore.graphData?.nodes.find(n => n.name === inp.name)?.id;
-                      if (nodeId) {
-                        graphStore.selectNode(nodeId);
+                      if (sourceNode) {
+                        graphStore.selectNode(sourceNode.id);
                         refreshRenderer();
-                        if (e.ctrlKey || e.metaKey) centerOnNode(nodeId);
+                        if (e.ctrlKey || e.metaKey) centerOnNode(sourceNode.id);
                       }
                     }}
                   >{inp.name}</button>
@@ -415,9 +415,14 @@
                   <span class="text-gray-300 font-mono truncate" title={inp.name}>{inp.name}</span>
                 {/if}
               </div>
+              {#if sourceNode}
+                <div class="text-gray-500 ml-5 mt-0.5">{sourceNode.type}</div>
+              {:else if inp.is_const}
+                <div class="ml-5 mt-0.5"><span class="px-1 py-0.5 bg-amber-900/40 text-amber-400 rounded text-[10px] leading-none">const</span></div>
+              {/if}
               {#if inp.shape}
                 <div class="text-gray-500 ml-5 mt-0.5">
-                  [{inp.shape.join(', ')}]{#if inp.element_type} <span class="text-gray-600">{inp.element_type}</span>{/if}
+                  [{inp.shape.join(', ')}] {#if inp.element_type}<span class="text-gray-600">{inp.element_type}</span>{/if}
                 </div>
               {/if}
               {#if inp.is_const && inp.const_node_name}
@@ -475,6 +480,8 @@
                 <button
                   class="text-blue-400 hover:text-blue-300 font-mono truncate transition-colors text-left"
                   title={out.targetNode?.name ?? out.targetId}
+                  onmouseenter={() => setHoveredNode(out.targetId)}
+                  onmouseleave={() => setHoveredNode(null)}
                   onclick={(e) => {
                     graphStore.selectNode(out.targetId);
                     refreshRenderer();
@@ -485,10 +492,12 @@
                 </button>
               </div>
               {#if out.targetNode}
-                <div class="text-gray-500 ml-5 mt-0.5">
-                  {out.targetNode.type}{#if out.targetNode.shape} [{out.targetNode.shape.join(', ')}]{/if}
-                  <span class="text-gray-600">port {out.target_port}</span>
-                </div>
+                <div class="text-gray-500 ml-5 mt-0.5">{out.targetNode.type}</div>
+                {#if out.targetNode.shape}
+                  <div class="text-gray-500 ml-5 mt-0.5">
+                    [{out.targetNode.shape.join(', ')}] {#if out.targetNode.element_type}<span class="text-gray-600">{out.targetNode.element_type}</span>{/if}
+                  </div>
+                {/if}
               {/if}
             </div>
           {/each}
