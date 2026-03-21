@@ -112,10 +112,13 @@ async def browse_path(
         path = str(Path.home())
 
     dir_path = Path(path).expanduser().resolve()
+    # Walk up to the nearest existing directory
+    if not dir_path.is_dir():
+        dir_path = dir_path.parent
+    while not dir_path.exists() and dir_path != dir_path.parent:
+        dir_path = dir_path.parent
     if not dir_path.exists():
         raise HTTPException(status_code=404, detail=f"Path not found: {path}")
-    if not dir_path.is_dir():
-        raise HTTPException(status_code=400, detail=f"Not a directory: {path}")
 
     entries: list[BrowseEntry] = []
     try:
