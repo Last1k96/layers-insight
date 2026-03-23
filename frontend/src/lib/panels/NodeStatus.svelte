@@ -62,6 +62,7 @@
 
   function formatFloat(v: number): string {
     if (v === 0) return '0';
+    if (Number.isInteger(v)) return v.toString();
     if (Math.abs(v) < 0.0001 || Math.abs(v) >= 1e6) return v.toExponential(3);
     return v.toPrecision(4);
   }
