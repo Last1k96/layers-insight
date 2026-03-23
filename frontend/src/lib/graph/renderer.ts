@@ -1,5 +1,5 @@
 /**
- * Graph renderer facade — delegates to WebGPU renderer.
+ * Graph renderer facade — tries WebGPU first, falls back to Canvas 2D.
  * Maintains the same public API for consumers.
  */
 import type { GraphData } from '../stores/types';
@@ -7,10 +7,13 @@ import { graphStore } from '../stores/graph.svelte';
 import { GraphModel } from './graphModel';
 import { PanZoom } from './panZoom';
 import { WebGPURenderer } from './webgpu/WebGPURenderer';
+import { Canvas2DRenderer } from './canvas2d/Canvas2DRenderer';
+
+type Renderer = WebGPURenderer | Canvas2DRenderer;
 
 let graphModel: GraphModel | null = null;
 let panZoom: PanZoom | null = null;
-let gpuRenderer: WebGPURenderer | null = null;
+let gpuRenderer: Renderer | null = null;
 let refreshScheduled = false;
 let hoveredNodeId: string | null = null;
 let currentGraphData: GraphData | null = null;
@@ -30,7 +33,7 @@ export function getCamera(): PanZoom | null {
   return panZoom;
 }
 
-export function getGPURenderer(): WebGPURenderer | null {
+export function getGPURenderer(): Renderer | null {
   return gpuRenderer;
 }
 
@@ -76,14 +79,20 @@ export async function initRenderer(container: HTMLElement, graphData: GraphData)
     }
   }
 
-  // Create canvas and init WebGPU
+  // Create canvas and init renderer (WebGPU → Canvas 2D fallback)
   const canvas = document.createElement('canvas');
   canvas.style.width = '100%';
   canvas.style.height = '100%';
   canvas.style.display = 'block';
   container.appendChild(canvas);
 
-  const renderer = await WebGPURenderer.create(canvas);
+  let renderer: Renderer;
+  try {
+    renderer = await WebGPURenderer.create(canvas);
+  } catch (e) {
+    console.warn('[Renderer] WebGPU unavailable, falling back to Canvas 2D:', e);
+    renderer = Canvas2DRenderer.create(canvas);
+  }
   gpuRenderer = renderer;
 
   // Set up pan/zoom on canvas

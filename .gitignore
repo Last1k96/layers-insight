@@ -4,5 +4,6 @@ __pycache__/
 *.pyc
 frontend/dist/
 .venv/
+.node/
 *.egg-info/
 .pytest_cache/

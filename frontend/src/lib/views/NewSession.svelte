@@ -73,7 +73,10 @@
 
   const PRECISIONS = ['fp32', 'fp16', 'i32', 'i64', 'u8', 'i8'];
 
-  const FLOAT_TYPES = new Set(['f16', 'f32', 'f64', 'bf16', 'float16', 'float32', 'float64', 'bfloat16']);
+  const FLOAT_TYPES = new Set([
+    'f16', 'f32', 'f64', 'bf16', 'float16', 'float32', 'float64', 'bfloat16',
+    'nfloat4', 'f4e2m1', 'f8e4m3', 'f8e5m2', 'f8e8m0',
+  ]);
   const FLOAT_PRECISIONS = ['fp32', 'fp16'];
   const INT_PRECISIONS = ['i32', 'i64', 'u8', 'i8'];
 
@@ -271,9 +274,11 @@
     const map: Record<string, string> = {
       'f32': 'fp32', 'f16': 'fp16', 'f64': 'fp32',
       'float32': 'fp32', 'float16': 'fp16', 'float64': 'fp32', 'bfloat16': 'fp16',
+      'nfloat4': 'fp16', 'f4e2m1': 'fp16', 'f8e4m3': 'fp16', 'f8e5m2': 'fp16', 'f8e8m0': 'fp16',
       'i32': 'i32', 'i64': 'i64', 'i8': 'i8',
       'int32': 'i32', 'int64': 'i64', 'int8': 'i8',
-      'u8': 'u8', 'uint8': 'u8',
+      'u8': 'u8', 'uint8': 'u8', 'u4': 'u8', 'uint4_t': 'u8',
+      'i4': 'i8', 'int4_t': 'i8', 'u1': 'u8', 'uint1_t': 'u8',
       'boolean': 'u8',
     };
     return map[norm] || 'fp32';
@@ -337,16 +342,16 @@
   }
 </script>
 
-<div class="flex-1 flex items-start justify-center p-8 pt-[15vh] bg-[--bg-primary]">
+<div class="flex-1 flex items-start justify-center p-6 pt-8 bg-[--bg-primary] overflow-y-auto">
   <div class="max-w-lg w-full">
-    <div class="flex items-center gap-4 mb-6">
+    <div class="flex items-center gap-3 mb-4">
       <button class="text-content-secondary hover:text-content-primary" onclick={onback}>&larr; Back</button>
-      <h2 class="text-2xl font-bold">New Session</h2>
+      <h2 class="text-xl font-bold">New Session</h2>
     </div>
 
-    <form class="space-y-4" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
+    <form class="space-y-3" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
       <div>
-        <label for="ov-path" class="block text-sm text-content-secondary mb-1">OpenVINO Path (optional)</label>
+        <label for="ov-path" class="block text-xs text-content-secondary mb-0.5">OpenVINO Path (optional)</label>
         <div class="relative flex gap-1">
           <PathInput
             bind:value={ovPath}
@@ -375,7 +380,7 @@
       </div>
 
       <div>
-        <label for="model-path" class="block text-sm text-content-secondary mb-1">Model Path (.xml) *</label>
+        <label for="model-path" class="block text-xs text-content-secondary mb-0.5">Model Path (.xml) *</label>
         <div class="relative flex gap-1">
           <PathInput
             bind:value={modelPath}
@@ -405,34 +410,34 @@
 
       <!-- Model Inputs Section -->
       {#if modelInputs.length > 0}
-        <div class="border border-[--border-color] rounded p-3 space-y-3">
-          <div class="text-sm text-content-secondary font-medium">Model Inputs ({modelInputs.length})</div>
+        <div class="border border-[--border-color] rounded p-2 space-y-2 max-h-[45vh] overflow-y-auto">
+          <div class="text-xs text-content-secondary font-medium sticky top-0 bg-[--bg-surface] z-10 pb-1">Model Inputs ({modelInputs.length})</div>
           {#each modelInputs as input, i (input.name)}
-            <div class="bg-[--bg-panel] rounded p-3 space-y-2">
+            <div class="bg-[--bg-panel] rounded px-2 py-1.5 space-y-1">
               <div class="flex items-center justify-between">
-                <div class="font-mono text-sm text-accent">{input.name}</div>
-                <div class="text-xs text-content-secondary">
+                <div class="font-mono text-xs text-accent truncate">{input.name}</div>
+                <div class="text-[11px] text-content-secondary whitespace-nowrap ml-2">
                   {input.element_type} &middot; {formatShape(input.shape)}
                 </div>
               </div>
-              <div class="flex gap-3 items-center">
+              <div class="flex gap-2 items-center">
                 <div class="flex-1">
-                  <label for="source-{i}" class="block text-xs text-content-secondary mb-0.5">Source</label>
                   <select
                     id="source-{i}"
                     bind:value={modelInputs[i].source}
-                    class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
+                    title="Source"
+                    class="w-full px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
                   >
                     <option value="random">Random</option>
                     <option value="file">File</option>
                   </select>
                 </div>
                 <div class="flex-1">
-                  <label for="dtype-{i}" class="block text-xs text-content-secondary mb-0.5">Data Type</label>
                   <select
                     id="dtype-{i}"
                     bind:value={modelInputs[i].data_type}
-                    class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
+                    title="Data Type"
+                    class="w-full px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
                   >
                     {#each getAllowedPrecisions(input.element_type) as p (p)}
                       <option value={p}>{p.toUpperCase()}</option>
@@ -440,11 +445,11 @@
                   </select>
                 </div>
                 <div class="flex-1">
-                  <label for="layout-{i}" class="block text-xs text-content-secondary mb-0.5">Layout</label>
                   <select
                     id="layout-{i}"
                     bind:value={modelInputs[i].layout}
-                    class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
+                    title="Layout"
+                    class="w-full px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
                   >
                     {#each getLayoutOptions(input.shape) as l (l)}
                       <option value={l}>{l}</option>
@@ -453,8 +458,8 @@
                 </div>
               </div>
               {#if hasDynamicDims(input.shape)}
-                <div class="border border-yellow-700/50 rounded p-2 space-y-1">
-                  <div class="text-xs text-yellow-400 font-medium">Dynamic Shape — specify dimensions</div>
+                <div class="border border-yellow-700/50 rounded px-2 py-1 space-y-0.5">
+                  <div class="text-[11px] text-yellow-400 font-medium">Dynamic Shape</div>
                   <div class="grid gap-1" style="grid-template-columns: auto 1fr 1fr 1fr;">
                     <div class="text-xs text-content-secondary font-medium px-1">Dim</div>
                     {#if input.source === 'random'}
@@ -550,18 +555,18 @@
         </div>
       {/if}
 
-      <div class="grid grid-cols-2 gap-4">
+      <div class="grid grid-cols-2 gap-3">
         <div>
-          <label for="main-device" class="block text-sm text-content-secondary mb-1">Main Device</label>
-          <select id="main-device" bind:value={mainDevice} class="w-full px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none">
+          <label for="main-device" class="block text-xs text-content-secondary mb-0.5">Main Device</label>
+          <select id="main-device" bind:value={mainDevice} class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none">
             {#each configStore.devices as device (device)}
               <option value={device}>{device}</option>
             {/each}
           </select>
         </div>
         <div>
-          <label for="ref-device" class="block text-sm text-content-secondary mb-1">Reference Device</label>
-          <select id="ref-device" bind:value={refDevice} class="w-full px-3 py-2 bg-[--bg-input] border border-[--border-color] rounded focus:border-accent focus:outline-none">
+          <label for="ref-device" class="block text-xs text-content-secondary mb-0.5">Reference Device</label>
+          <select id="ref-device" bind:value={refDevice} class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none">
             {#each configStore.devices as device (device)}
               <option value={device}>{device}</option>
             {/each}
@@ -578,7 +583,7 @@
       <button
         type="submit"
         disabled={submitting}
-        class="w-full py-3 bg-accent hover:bg-accent-hover disabled:bg-[--bg-panel] disabled:text-content-secondary rounded-lg font-medium transition-colors"
+        class="w-full py-2 bg-accent hover:bg-accent-hover disabled:bg-[--bg-panel] disabled:text-content-secondary rounded-lg font-medium transition-colors text-sm"
       >
         {submitting ? 'Creating...' : 'Start Session'}
       </button>

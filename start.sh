@@ -8,9 +8,34 @@ needs_update() {
   [ ! -f "$marker" ] || [ "$trigger" -nt "$marker" ]
 }
 
-# --- Source nvm (needed for ELK layout subprocess + npm) ---
-export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+# --- Local Node.js (like Python .venv, downloaded into .node/) ---
+NODE_VERSION="20.19.0"
+NODE_DIR=".node"
+NODE_MARKER="$NODE_DIR/.version_marker"
+
+ensure_local_node() {
+  if [ -f "$NODE_MARKER" ] && [ "$(cat "$NODE_MARKER")" = "$NODE_VERSION" ]; then
+    return
+  fi
+  echo "Installing local Node.js v${NODE_VERSION}..."
+  local ARCH
+  case "$(uname -m)" in
+    x86_64)  ARCH="x64" ;;
+    aarch64) ARCH="arm64" ;;
+    armv7l)  ARCH="armv7l" ;;
+    *)       echo "Unsupported architecture: $(uname -m)"; exit 1 ;;
+  esac
+  local TARBALL="node-v${NODE_VERSION}-linux-${ARCH}.tar.xz"
+  local URL="https://nodejs.org/dist/v${NODE_VERSION}/${TARBALL}"
+  rm -rf "$NODE_DIR"
+  mkdir -p "$NODE_DIR"
+  curl -fsSL "$URL" | tar -xJ --strip-components=1 -C "$NODE_DIR"
+  echo "$NODE_VERSION" > "$NODE_MARKER"
+  echo "Node.js v${NODE_VERSION} installed in ${NODE_DIR}/"
+}
+
+ensure_local_node
+export PATH="$(pwd)/$NODE_DIR/bin:$PATH"
 
 # --- 1. Python venv ---
 if [ ! -d .venv ]; then

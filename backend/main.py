@@ -181,7 +181,9 @@ async def lifespan(app: FastAPI):
     queue_service.set_callbacks(notify=on_task_notify, infer=on_infer)
     await queue_service.start_worker()
 
-    print(f"\n  Open in browser: http://localhost:{config.port}\n")
+    import socket
+    host_ip = socket.gethostbyname(socket.gethostname())
+    print(f"\n  Open in browser: http://{host_ip}:{config.port}\n")
     yield
 
     # Shutdown
