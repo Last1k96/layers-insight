@@ -88,6 +88,14 @@ def main() -> None:
         model_params = _extract_params(cut_model)
         _log("info", f"Serialized cut model to {tmp_xml}")
 
+        # Prune input_configs to only include parameters that exist in the
+        # cut model.  When inferring inside a sub-session the caller merges
+        # root-session configs (e.g. "image") with sub-session configs, but
+        # the cut model may no longer contain those original inputs.
+        if input_configs:
+            cut_param_names = {p["name"] for p in model_params}
+            input_configs = [c for c in input_configs if c["name"] in cut_param_names]
+
         # If either device is a virtual fp16 device, also save an fp16-compressed
         # copy.  Weight compression (compress_to_fp16) actually quantises constants
         # so even single-op subgraphs show precision differences.

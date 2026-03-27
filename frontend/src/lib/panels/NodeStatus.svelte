@@ -190,22 +190,24 @@
         </button>
         <button
           class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
-          onclick={() => handleCut('input_random')}
-        >
-          Convert into Parameter (random)
-        </button>
-        <button
-          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
-          onclick={() => handleCut('output')}
-        >
-          Convert into Output
-        </button>
-        <button
-          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
           onclick={onshowbatchqueue}
         >
           Batch Queue
         </button>
+        <div class="flex gap-2">
+          <button
+            class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+            onclick={() => handleCut('input_random')}
+          >
+            Convert into Parameter
+          </button>
+          <button
+            class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+            onclick={() => handleCut('output')}
+          >
+            Convert into Output
+          </button>
+        </div>
       </div>
 
     {:else if nodeStatus.status === 'waiting'}
@@ -240,13 +242,6 @@
         <div class="w-2 h-2 rounded-full bg-green-400"></div>
         Success
       </div>
-
-      {#if nodeStatus.mainResult?.output_shapes?.[0]}
-        <div class="text-xs text-gray-500 mb-2">
-          Output: <span class="font-mono text-gray-400">[{nodeStatus.mainResult.output_shapes[0].join(', ')}]</span>
-          {#if nodeStatus.mainResult.dtype} <span class="text-gray-600">{nodeStatus.mainResult.dtype}</span>{/if}
-        </div>
-      {/if}
 
       {#if nodeStatus.metrics}
         <div class="space-y-2">
@@ -322,22 +317,24 @@
         </button>
         <button
           class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
-          onclick={() => handleCut('output')}
-        >
-          Convert into Output
-        </button>
-        <button
-          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
-          onclick={() => handleCut('input')}
-        >
-          Convert into Parameter
-        </button>
-        <button
-          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
           onclick={onshowbatchqueue}
         >
           Batch Queue
         </button>
+        <div class="flex gap-2">
+          <button
+            class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+            onclick={() => handleCut('input')}
+          >
+            Convert into Parameter
+          </button>
+          <button
+            class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+            onclick={() => handleCut('output')}
+          >
+            Convert into Output
+          </button>
+        </div>
       </div>
 
       <button
@@ -422,7 +419,7 @@
               {/if}
               {#if inp.shape}
                 <div class="text-gray-500 ml-5 mt-0.5">
-                  [{inp.shape.join(', ')}] {#if inp.element_type}<span class="text-gray-600">{inp.element_type}</span>{/if}
+                  [{#each inp.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}] {#if inp.element_type}<span class="text-gray-600">{inp.element_type}</span>{/if}
                 </div>
               {/if}
               {#if inp.is_const && inp.const_node_name}
@@ -495,7 +492,7 @@
                 <div class="text-gray-500 ml-5 mt-0.5">{out.targetNode.type}</div>
                 {#if out.targetNode.shape}
                   <div class="text-gray-500 ml-5 mt-0.5">
-                    [{out.targetNode.shape.join(', ')}] {#if out.targetNode.element_type}<span class="text-gray-600">{out.targetNode.element_type}</span>{/if}
+                    [{#each out.targetNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}] {#if out.targetNode.element_type}<span class="text-gray-600">{out.targetNode.element_type}</span>{/if}
                   </div>
                 {/if}
               {/if}
