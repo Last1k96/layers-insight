@@ -60,12 +60,37 @@
     return diff;
   });
 
-  // Volume 3D is only available for 3D tensors [C,H,W] or 4D with batch=1 [1,C,H,W]
+  // Volume 3D is available for 3D tensors [C,H,W] or 4D [B,C,H,W]
   let canShow3D = $derived.by(() => {
     if (tensorShape.length === 3) return true;
-    if (tensorShape.length === 4 && tensorShape[0] === 1) return true;
+    if (tensorShape.length === 4) return true;
     return false;
   });
+
+  let batchCount3D = $derived(tensorShape.length === 4 ? tensorShape[0] : 1);
+  let selectedBatch3D = $state(0);
+
+  // Reset batch selection when shape changes
+  $effect(() => {
+    if (selectedBatch3D >= batchCount3D) selectedBatch3D = 0;
+  });
+
+  // Slice tensors for the selected batch (pass [C,H,W] to Volume3D)
+  let volume3DMain = $derived.by(() => {
+    if (!mainTensor || batchCount3D <= 1) return mainTensor;
+    const chw = tensorShape[1] * tensorShape[2] * tensorShape[3];
+    const offset = selectedBatch3D * chw;
+    return mainTensor.subarray(offset, offset + chw);
+  });
+  let volume3DRef = $derived.by(() => {
+    if (!refTensor || batchCount3D <= 1) return refTensor;
+    const chw = tensorShape[1] * tensorShape[2] * tensorShape[3];
+    const offset = selectedBatch3D * chw;
+    return refTensor.subarray(offset, offset + chw);
+  });
+  let volume3DShape = $derived(
+    tensorShape.length === 4 ? tensorShape.slice(1) : tensorShape
+  );
 
   let tabs = $derived.by(() => {
     const base: { key: TabKey; label: string }[] = [
@@ -178,12 +203,27 @@
           refLabel={refDeviceName}
         />
       </div>
-      {#if canShow3D}
+      {#if canShow3D && volume3DMain && volume3DRef}
         <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'volume3d' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'volume3d' ? 'auto' : 'none'}>
+          {#if batchCount3D > 1}
+            <div class="flex items-center gap-2 mb-2 text-sm text-content-secondary">
+              <span>Batch:</span>
+              <select
+                class="bg-surface-panel border border-edge rounded px-2 py-1 text-content-primary text-sm"
+                value={selectedBatch3D}
+                onchange={(e) => selectedBatch3D = Number((e.target as HTMLSelectElement).value)}
+              >
+                {#each Array(batchCount3D) as _, i}
+                  <option value={i}>{i}</option>
+                {/each}
+              </select>
+              <span class="text-xs text-content-secondary">of {batchCount3D}</span>
+            </div>
+          {/if}
           <Volume3D
-            main={mainTensor}
-            ref={refTensor}
-            shape={tensorShape}
+            main={volume3DMain}
+            ref={volume3DRef}
+            shape={volume3DShape}
             mainLabel={mainDeviceName}
             refLabel={refDeviceName}
           />
