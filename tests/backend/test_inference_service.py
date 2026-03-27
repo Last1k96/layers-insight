@@ -184,3 +184,62 @@ class TestCutAndInfer:
 
         assert captured_cfg["model_path"] == "/sub_sessions/abc/cut_model.xml"
         assert "skip_cut" not in captured_cfg
+
+    def test_stray_stdout_ignored(self, inference_service, tmp_path):
+        """Stray print() output before the JSON result must not break parsing."""
+        model = MagicMock()
+
+        np.save(str(tmp_path / "main_output.npy"), np.array([1.0, 2.0]))
+        np.save(str(tmp_path / "ref_output.npy"), np.array([1.0, 2.0]))
+
+        worker_result = {
+            "main_result": {
+                "device": "CPU",
+                "output_shapes": [[2]],
+                "dtype": "float32",
+                "min_val": 1.0,
+                "max_val": 2.0,
+                "mean_val": 1.5,
+                "std_val": 0.5,
+            },
+            "ref_result": {
+                "device": "CPU",
+                "output_shapes": [[2]],
+                "dtype": "float32",
+                "min_val": 1.0,
+                "max_val": 2.0,
+                "mean_val": 1.5,
+                "std_val": 0.5,
+            },
+            "metrics": {
+                "mse": 0.0,
+                "max_abs_diff": 0.0,
+                "cosine_similarity": 1.0,
+            },
+        }
+
+        # Simulate stray debug output before the JSON result on stdout.
+        # After the fix, the worker redirects sys.stdout → stderr so this
+        # should not happen in practice, but the test proves the old failure mode.
+        stdout_with_noise = (
+            "Some debug error message\nAnother warning line\n"
+            + json.dumps(worker_result)
+        )
+
+        mock_proc = _make_mock_popen(
+            returncode=0,
+            stdout=stdout_with_noise,
+        )
+
+        with patch("backend.services.inference_service.subprocess.Popen", return_value=mock_proc), \
+             patch("backend.services.inference_service.tempfile.mkdtemp", return_value=str(tmp_path)):
+            result = inference_service.cut_and_infer(
+                model, "node1", "CPU", "CPU", model_path="/tmp/test.xml"
+            )
+
+            # With stray output, json.loads fails → the service should
+            # report a parse error (TaskStatus.FAILED). The fix prevents
+            # stray output from reaching stdout in the first place.
+            assert isinstance(result, InferenceTask)
+            assert result.status == TaskStatus.FAILED
+            assert "parse error" in result.error_detail.lower()

@@ -28,6 +28,12 @@ def _log(level: str, msg: str) -> None:
 
 
 def main() -> None:
+    # Preserve the real stdout for the JSON result, then redirect sys.stdout
+    # to stderr so that any stray print() or library output does not corrupt
+    # the single JSON object the parent process expects on stdout.
+    real_stdout = sys.stdout
+    sys.stdout = sys.stderr
+
     cfg = json.loads(sys.stdin.read())
 
     model_path: str = cfg["model_path"]
@@ -68,7 +74,7 @@ def main() -> None:
 
         if target_op is None:
             _log("error", f"Node '{node_name}' not found in model")
-            _emit({"error": f"Node '{node_name}' not found in model"})
+            _emit({"error": f"Node '{node_name}' not found in model"}, _file=real_stdout)
             return
 
         _log("info", f"Target node found: {node_name} (type: {target_op.get_type_name()})")
@@ -151,7 +157,7 @@ def main() -> None:
         main_out, main_result, main_err = _run_on_device(core, main_model, main_device, inputs)
         if main_err:
             _log("error", main_err)
-            _emit({"error": main_err})
+            _emit({"error": main_err}, _file=real_stdout)
             return
         _log("info", f"Inference on {main_device} complete")
 
@@ -161,7 +167,7 @@ def main() -> None:
         ref_out, ref_result, ref_err = _run_on_device(core, ref_model, ref_device, inputs)
         if ref_err:
             _log("error", ref_err)
-            _emit({"error": ref_err})
+            _emit({"error": ref_err}, _file=real_stdout)
             return
         _log("info", f"Inference on {ref_device} complete")
 
@@ -180,11 +186,11 @@ def main() -> None:
             "main_result": main_result,
             "ref_result": ref_result,
             "metrics": metrics,
-        })
+        }, _file=real_stdout)
 
     except Exception as e:
         _log("error", f"{type(e).__name__}: {e}")
-        _emit({"error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()})
+        _emit({"error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()}, _file=real_stdout)
 
 
 
@@ -290,7 +296,10 @@ def _run_on_device(core, model, device: str, inputs: dict):
     try:
         _log("info", f"Running inference on {device}...")
         req = compiled.create_infer_request()
-        req.infer(inputs)
+        # Pass inputs by parameter order to avoid tensor-name vs friendly-name
+        # mismatches that can occur after save_model/read_model cycles.
+        input_list = [inputs[p.get_friendly_name()] for p in model.get_parameters()]
+        req.infer(input_list)
         output = req.get_output_tensor(0).data.copy()
         out64 = output.astype(np.float64)
         result = {
@@ -337,9 +346,10 @@ def _sanitize_for_json(obj):
     return obj
 
 
-def _emit(data: dict) -> None:
-    json.dump(_sanitize_for_json(data), sys.stdout)
-    sys.stdout.flush()
+def _emit(data: dict, *, _file=None) -> None:
+    out = _file or sys.stdout
+    json.dump(_sanitize_for_json(data), out)
+    out.flush()
 
 
 if __name__ == "__main__":
