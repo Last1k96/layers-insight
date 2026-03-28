@@ -218,11 +218,23 @@ class InferenceService:
 
             try:
                 result = json.loads(stdout)
-            except json.JSONDecodeError as e:
-                task.status = TaskStatus.FAILED
-                task.error_detail = f"Worker output parse error: {e}\nstdout: {stdout[:500]}"
-                _log("error", task.error_detail)
-                return task
+            except json.JSONDecodeError:
+                # OpenVINO C++ may have written warnings to stdout before the
+                # fd-level redirect took effect.  Try to find the JSON object
+                # (always the last thing emitted) by scanning from the end.
+                result = None
+                for i in range(len(stdout) - 1, -1, -1):
+                    if stdout[i] == '{':
+                        try:
+                            result = json.loads(stdout[i:])
+                            break
+                        except json.JSONDecodeError:
+                            continue
+                if result is None:
+                    task.status = TaskStatus.FAILED
+                    task.error_detail = f"Worker output parse error: no valid JSON in stdout\nstdout: {stdout[:500]}"
+                    _log("error", task.error_detail)
+                    return task
 
             # Check for error from the worker
             if "error" in result:

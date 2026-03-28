@@ -28,11 +28,14 @@ def _log(level: str, msg: str) -> None:
 
 
 def main() -> None:
-    # Preserve the real stdout for the JSON result, then redirect sys.stdout
-    # to stderr so that any stray print() or library output does not corrupt
-    # the single JSON object the parent process expects on stdout.
-    real_stdout = sys.stdout
-    sys.stdout = sys.stderr
+    # Preserve the real stdout for the JSON result, then redirect both the
+    # Python-level sys.stdout AND the OS-level fd 1 to stderr.  The fd-level
+    # redirect is critical: OpenVINO's C++ backends write warnings directly
+    # to fd 1, bypassing Python's sys.stdout, which corrupts the JSON output.
+    real_stdout_fd = os.dup(1)          # duplicate fd 1 before we clobber it
+    os.dup2(2, 1)                       # fd 1 now points to stderr
+    real_stdout = os.fdopen(real_stdout_fd, "w")  # wrap saved fd for _emit()
+    sys.stdout = sys.stderr             # Python-level redirect (belt & suspenders)
 
     cfg = json.loads(sys.stdin.read())
 
