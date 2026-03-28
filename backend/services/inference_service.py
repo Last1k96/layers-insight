@@ -157,7 +157,9 @@ class InferenceService:
                             _update_stage(log_msg)
                         except json.JSONDecodeError:
                             # Raw OV output or other stderr — keep for error reporting
-                            raw_stderr_lines.append(line)
+                            # Filter out "already registered" noise from LD_LIBRARY_PATH overlap
+                            if "already registered" not in line:
+                                raw_stderr_lines.append(line)
                             _log("ov", line)
 
                     proc.wait()

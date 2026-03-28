@@ -25,6 +25,11 @@ def register_plugins(core, ov_path: str | None) -> list[str]:
             try:
                 core.register_plugin(str(so_file), device_name)
             except Exception as e:
+                # Silently skip "already registered" errors — this happens when
+                # LD_LIBRARY_PATH already contains the OV build directory and
+                # ov.Core() auto-discovers the plugins before we call this.
+                if "already registered" in str(e):
+                    continue
                 print(f"  Could not register {device_name} plugin: {e}", file=sys.stderr)
 
     return list(core.available_devices)

@@ -34,6 +34,14 @@ ensure_local_node() {
   echo "Node.js v${NODE_VERSION} installed in ${NODE_DIR}/"
 }
 
+# --- Quick exit for --help (skip all setup) ---
+for arg in "$@"; do
+  if [ "$arg" = "--help" ] || [ "$arg" = "-h" ]; then
+    python3 -m backend.main "$@"
+    exit $?
+  fi
+done
+
 ensure_local_node
 export PATH="$(pwd)/$NODE_DIR/bin:$PATH"
 
@@ -73,11 +81,23 @@ if [ ! -f "$BUILD_MARKER" ] || [ -n "$(find frontend/src -newer "$BUILD_MARKER" 
   touch "$BUILD_MARKER"
 fi
 
-# --- 6. Extract --ov-path for LD_LIBRARY_PATH ---
+# --- 6. Extract --ov-path for LD_LIBRARY_PATH and PYTHONPATH ---
 prev=""
 for i in "$@"; do
   if [ "$prev" = "--ov-path" ]; then
-    export LD_LIBRARY_PATH="${i}:${LD_LIBRARY_PATH:-}"
+    # Resolve to absolute path for reliable comparison
+    ov_resolved="$(cd "$i" 2>/dev/null && pwd || echo "$i")"
+    # Only prepend if not already in LD_LIBRARY_PATH
+    case ":${LD_LIBRARY_PATH:-}:" in
+      *":${ov_resolved}:"*) ;;  # already present
+      *) export LD_LIBRARY_PATH="${ov_resolved}:${LD_LIBRARY_PATH:-}" ;;
+    esac
+    # Use the custom build's Python bindings so they match the plugin .so files.
+    # Without this, pip-installed openvino (linked against a different libopenvino
+    # SONAME) causes ABI mismatches → SIGSEGV when loading NPU/IMD plugins.
+    if [ -d "${ov_resolved}/python" ]; then
+      export PYTHONPATH="${ov_resolved}/python:${PYTHONPATH:-}"
+    fi
     break
   fi
   prev="$i"
