@@ -1,6 +1,9 @@
 """Model cutting service — make output/input node, create sub-sessions."""
 from __future__ import annotations
 
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
@@ -8,11 +11,311 @@ import numpy as np
 from backend.utils.ov_graph_utils import get_reachable_params
 
 
+@dataclass
+class CutResult:
+    """Result of a model cut operation, used by the router to broadcast and respond."""
+    sub_session: Any  # SubSessionInfo
+    grayed_nodes: list[str]
+    ancestor_cuts: list[dict]
+    effective_cut_type: str
+
+
 class ModelCutService:
     """Handles model cutting and sub-session creation."""
 
     def __init__(self, ov_core: Any):
         self.core = ov_core
+
+    def perform_cut(
+        self,
+        session_svc: Any,
+        session: Any,
+        session_id: str,
+        model: Any,
+        node_name: str,
+        cut_type: str,
+        input_precision: str = "f16",
+        parent_sub_session_id: Optional[str] = None,
+    ) -> CutResult:
+        """Perform the full model-cut workflow: cut, compute grayed nodes, create sub-session, save artifacts.
+
+        This orchestrates the entire cut operation that was previously in the router:
+        1. Resolve parent sub-session metadata (for chained cuts)
+        2. Perform the OV model cut (output / input / input_random)
+        3. Compute accumulated grayed nodes and ancestor chain
+        4. Create the sub-session via session_svc
+        5. Save the cut model and input configs to disk
+
+        Returns a CutResult that the router can use for the WS broadcast and HTTP response.
+
+        Raises ValueError for cut logic errors, KeyError-like errors for missing data.
+        """
+        # --- Step 1: Resolve parent sub-session metadata ---
+        parent_sub, parent_sub_resolved, parent_grayed, \
+            parent_input_configs_rel, parent_ancestor_cuts = \
+            self._resolve_parent_metadata(session_svc, session_id, parent_sub_session_id)
+
+        # --- Step 2: Perform the OV model cut ---
+        source_model_path = session.config.model_path
+        cut_model_obj, input_data, new_grayed = self._perform_ov_cut(
+            session_svc=session_svc,
+            session_id=session_id,
+            model=model,
+            node_name=node_name,
+            cut_type=cut_type,
+            input_precision=input_precision,
+            source_model_path=source_model_path,
+            parent_sub_session_id=parent_sub_session_id,
+            parent_sub_resolved=parent_sub_resolved,
+        )
+
+        # Normalize cut_type: input_random behaves identically to input downstream
+        effective_cut_type = "input" if cut_type == "input_random" else cut_type
+
+        # --- Step 3: Compute accumulated grayed nodes and ancestor chain ---
+        accumulated_grayed, ancestor_cuts = self._compute_grayed_and_ancestors(
+            new_grayed=new_grayed,
+            parent_grayed=parent_grayed,
+            parent_ancestor_cuts=parent_ancestor_cuts,
+            parent_sub=parent_sub,
+        )
+
+        # --- Step 4: Create the sub-session ---
+        sub_session = session_svc.create_sub_session(
+            session_id=session_id,
+            cut_type=effective_cut_type,
+            cut_node=node_name,
+            grayed_nodes=accumulated_grayed,
+            parent_sub_session_id=parent_sub_session_id,
+            ancestor_cuts=ancestor_cuts,
+        )
+
+        # --- Step 5: Save cut model and input artifacts ---
+        self._save_cut_artifacts(
+            session_svc=session_svc,
+            session_id=session_id,
+            sub_session=sub_session,
+            cut_model_obj=cut_model_obj,
+            effective_cut_type=effective_cut_type,
+            node_name=node_name,
+            input_data=input_data,
+            new_grayed=new_grayed,
+            parent_input_configs_rel=parent_input_configs_rel,
+        )
+
+        return CutResult(
+            sub_session=sub_session,
+            grayed_nodes=accumulated_grayed,
+            ancestor_cuts=ancestor_cuts,
+            effective_cut_type=effective_cut_type,
+        )
+
+    # ------------------------------------------------------------------
+    # Internal helpers for perform_cut
+    # ------------------------------------------------------------------
+
+    def _resolve_parent_metadata(
+        self,
+        session_svc: Any,
+        session_id: str,
+        parent_sub_session_id: Optional[str],
+    ) -> tuple[Optional[dict], Optional[dict], list[str], list[dict], list[dict]]:
+        """Resolve parent sub-session metadata for chained cuts.
+
+        Returns (parent_sub, parent_sub_resolved, parent_grayed,
+                 parent_input_configs_rel, parent_ancestor_cuts).
+        """
+        if not parent_sub_session_id:
+            return None, None, [], [], []
+
+        parent_sub = session_svc.get_sub_session_meta(session_id, parent_sub_session_id)
+        parent_sub_resolved = session_svc.get_sub_session_meta_resolved(session_id, parent_sub_session_id)
+        if parent_sub is None:
+            raise ValueError("Parent sub-session not found")
+
+        parent_grayed = parent_sub.get("grayed_nodes", [])
+        parent_input_configs_rel = parent_sub.get("input_configs", [])
+        parent_ancestor_cuts = parent_sub.get("ancestor_cuts", [])
+
+        return parent_sub, parent_sub_resolved, parent_grayed, parent_input_configs_rel, parent_ancestor_cuts
+
+    def _perform_ov_cut(
+        self,
+        session_svc: Any,
+        session_id: str,
+        model: Any,
+        node_name: str,
+        cut_type: str,
+        input_precision: str,
+        source_model_path: str,
+        parent_sub_session_id: Optional[str],
+        parent_sub_resolved: Optional[dict],
+    ) -> tuple[Any, Optional[np.ndarray], list[str]]:
+        """Execute the OV model cut. Returns (cut_model, input_data_or_None, new_grayed)."""
+        input_data = None
+
+        if cut_type == "output":
+            if parent_sub_session_id and parent_sub_resolved:
+                import openvino as ov
+                parent_model_path = parent_sub_resolved.get("model_path")
+                if not parent_model_path:
+                    raise ValueError("Parent sub-session has no model")
+                source_model = ov.Core().read_model(parent_model_path)
+                cut_model_obj, new_grayed = self.make_output_node(source_model, node_name)
+            else:
+                cut_model_obj, new_grayed = self.make_output_node(model, node_name)
+
+        elif cut_type in ("input", "input_random"):
+            if parent_sub_session_id and parent_sub_resolved:
+                ov_model_path = parent_sub_resolved.get("model_path", source_model_path)
+            else:
+                ov_model_path = source_model_path
+
+            if cut_type == "input":
+                task_id = session_svc.find_task_for_node(session_id, node_name, parent_sub_session_id)
+                if task_id is None:
+                    raise ValueError(
+                        f"No successful inference found for node '{node_name}'. Run inference first."
+                    )
+                npy_path = session_svc.get_tensor_path(session_id, task_id, "main_output")
+                if npy_path is None:
+                    raise ValueError("Main output tensor not found")
+                cut_model_obj, input_data, new_grayed = self.make_input_node(
+                    ov_model_path, node_name, str(npy_path), input_precision,
+                )
+            else:
+                cut_model_obj, input_data, new_grayed = self.make_input_node_random(
+                    ov_model_path, node_name, input_precision,
+                )
+        else:
+            raise ValueError(f"Invalid cut_type: {cut_type}")
+
+        return cut_model_obj, input_data, new_grayed
+
+    @staticmethod
+    def _compute_grayed_and_ancestors(
+        new_grayed: list[str],
+        parent_grayed: list[str],
+        parent_ancestor_cuts: list[dict],
+        parent_sub: Optional[dict],
+    ) -> tuple[list[str], list[dict]]:
+        """Compute accumulated grayed nodes and the ancestor_cuts chain."""
+        new_grayed_set = set(new_grayed)
+
+        # Track which ancestor input-cut nodes are still reachable
+        still_reachable_cuts = set()
+        for ac in parent_ancestor_cuts:
+            if ac["cut_type"] == "input" and ac["cut_node"] not in new_grayed_set:
+                still_reachable_cuts.add(ac["cut_node"])
+        if parent_sub and parent_sub.get("cut_type") == "input":
+            if parent_sub["cut_node"] not in new_grayed_set:
+                still_reachable_cuts.add(parent_sub["cut_node"])
+
+        accumulated_grayed = list(
+            (set(parent_grayed) | set(new_grayed)) - still_reachable_cuts
+        )
+
+        ancestor_cuts = parent_ancestor_cuts + [{
+            "cut_node": parent_sub["cut_node"],
+            "cut_type": parent_sub["cut_type"],
+        }] if parent_sub else []
+
+        return accumulated_grayed, ancestor_cuts
+
+    def _save_cut_artifacts(
+        self,
+        session_svc: Any,
+        session_id: str,
+        sub_session: Any,
+        cut_model_obj: Any,
+        effective_cut_type: str,
+        node_name: str,
+        input_data: Optional[np.ndarray],
+        new_grayed: list[str],
+        parent_input_configs_rel: list[dict],
+    ) -> None:
+        """Serialize the cut model and input artifacts to the sub-session directory."""
+        import openvino as ov
+
+        sub_dir = session_svc._session_path(session_id) / "sub_sessions" / sub_session.id
+        cut_model_abs = str(sub_dir / "cut_model.xml")
+        ov.save_model(cut_model_obj, cut_model_abs)
+
+        rel_cut_model = f"sub_sessions/{sub_session.id}/cut_model.xml"
+
+        if effective_cut_type == "input":
+            self._save_input_cut_artifacts(
+                session_svc, session_id, sub_session, sub_dir,
+                node_name, input_data, rel_cut_model, parent_input_configs_rel,
+            )
+        else:
+            self._save_output_cut_artifacts(
+                session_svc, session_id, sub_session, sub_dir,
+                rel_cut_model, new_grayed, parent_input_configs_rel,
+            )
+
+    @staticmethod
+    def _save_input_cut_artifacts(
+        session_svc: Any,
+        session_id: str,
+        sub_session: Any,
+        sub_dir: Path,
+        node_name: str,
+        input_data: Optional[np.ndarray],
+        rel_cut_model: str,
+        parent_input_configs_rel: list[dict],
+    ) -> None:
+        """Save .npy input and accumulated input_configs for an input cut."""
+        inputs_dir = sub_dir / "inputs"
+        inputs_dir.mkdir(exist_ok=True)
+
+        param_name = node_name
+        safe_filename = param_name.replace("/", "_").replace("\\", "_")
+        npy_save_path = str(inputs_dir / f"{safe_filename}.npy")
+        np.save(npy_save_path, input_data)
+
+        rel_npy_path = f"sub_sessions/{sub_session.id}/inputs/{safe_filename}.npy"
+        new_config = {"name": param_name, "source": "file", "path": rel_npy_path}
+        accumulated_configs = parent_input_configs_rel + [new_config]
+
+        session_svc.update_sub_session_meta(session_id, sub_session.id, {
+            "model_path": rel_cut_model,
+            "input_configs": accumulated_configs,
+        })
+
+    @staticmethod
+    def _save_output_cut_artifacts(
+        session_svc: Any,
+        session_id: str,
+        sub_session: Any,
+        sub_dir: Path,
+        rel_cut_model: str,
+        new_grayed: list[str],
+        parent_input_configs_rel: list[dict],
+    ) -> None:
+        """Copy parent input files and save config for an output cut."""
+        new_grayed_set = set(new_grayed)
+        copied_configs: list[dict] = []
+
+        for cfg in parent_input_configs_rel:
+            if cfg.get("source") != "file" or not cfg.get("path"):
+                copied_configs.append(cfg)
+                continue
+            if cfg["name"] in new_grayed_set:
+                continue
+            inputs_dir = sub_dir / "inputs"
+            inputs_dir.mkdir(exist_ok=True)
+            src_abs = str(session_svc._session_path(session_id) / cfg["path"])
+            safe_filename = cfg["name"].replace("/", "_").replace("\\", "_")
+            dst_rel = f"sub_sessions/{sub_session.id}/inputs/{safe_filename}.npy"
+            dst_abs = str(session_svc._session_path(session_id) / dst_rel)
+            shutil.copy2(src_abs, dst_abs)
+            copied_configs.append({**cfg, "path": dst_rel})
+
+        session_svc.update_sub_session_meta(session_id, sub_session.id, {
+            "model_path": rel_cut_model,
+            "input_configs": copied_configs,
+        })
 
     def make_output_node(self, model: Any, target_node_name: str) -> tuple[Any, list[str]]:
         """Cut model so target node becomes the only output.

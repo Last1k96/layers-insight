@@ -29,6 +29,152 @@ def _log(level: str, msg: str) -> None:
     sys.stderr.flush()
 
 
+def _load_and_cut_model(cfg: dict) -> tuple:
+    """Phase 1: Load model, find target op, cut to subgraph, save cut model.
+
+    Returns (tmp_xml, fp16_xml_or_None, model_params, input_configs).
+    """
+    import gc
+    import openvino as ov
+
+    model_path = cfg["model_path"]
+    node_name = cfg["node_name"]
+    main_device = cfg["main_device"]
+    ref_device = cfg["ref_device"]
+    out_dir = cfg["out_dir"]
+    input_configs = cfg.get("input_configs")
+
+    # Dedicated Core for reading — avoids state leaks into compile phase
+    read_core = ov.Core()
+
+    _log("info", f"Reading model: {Path(model_path).name}")
+    model = read_core.read_model(model_path)
+    _log("info", f"Model loaded: {len(list(model.get_ordered_ops()))} ops")
+
+    # Find target op
+    target_op = None
+    for op in model.get_ordered_ops():
+        if op.get_friendly_name() == node_name:
+            target_op = op
+            break
+
+    if target_op is None:
+        raise ValueError(f"Node '{node_name}' not found in model")
+
+    _log("info", f"Target node found: {node_name} (type: {target_op.get_type_name()})")
+
+    # Cut model — only include parameters reachable from the target outputs
+    _log("info", "Cutting model at target node...")
+    new_outputs = target_op.outputs()
+    reachable_params = get_reachable_params(model, new_outputs)
+    cut_model = ov.Model(new_outputs, reachable_params, f"cut_at_{node_name}")
+    cut_model.validate_nodes_and_infer_types()
+    _log("info", f"Cut model created: {len(reachable_params)} parameters, {len(new_outputs)} outputs")
+
+    # Serialize cut model to out_dir (self-contained reproducer)
+    tmp_xml = str(Path(out_dir) / "cut_model.xml")
+    ov.save_model(cut_model, tmp_xml)
+    model_params = _extract_params(cut_model)
+    _log("info", f"Serialized cut model to {tmp_xml}")
+
+    # Prune input_configs to only include parameters in the cut model
+    if input_configs:
+        cut_param_names = {p["name"] for p in model_params}
+        input_configs = [c for c in input_configs if c["name"] in cut_param_names]
+
+    # Save fp16-compressed copy if needed for virtual fp16 devices
+    fp16_xml = None
+    if _is_fp16_device(main_device) or _is_fp16_device(ref_device):
+        fp16_xml = str(Path(out_dir) / "cut_model_fp16.xml")
+        ov.save_model(cut_model, fp16_xml, compress_to_fp16=True)
+        _log("info", "Saved fp16-compressed cut model")
+
+    del cut_model, model, target_op, read_core
+    gc.collect()
+
+    return tmp_xml, fp16_xml, model_params, input_configs
+
+
+def _prepare_inputs(cfg: dict, tmp_xml: str, fp16_xml: str | None, input_configs: list[dict] | None):
+    """Phase 2: Reload model with fresh Core, prepare input tensors.
+
+    Returns (core, cut_model, fp16_cut_model_or_None, inputs, model_params).
+    """
+    import openvino as ov
+    from backend.utils.ov_helpers import register_plugins
+    from backend.utils.input_generator import prepare_inputs
+
+    ov_path = cfg.get("ov_path")
+    input_path = cfg.get("input_path")
+    precision = cfg.get("precision", "fp32")
+    out_dir = cfg["out_dir"]
+
+    core = ov.Core()
+    register_plugins(core, ov_path)
+    _log("info", f"Fresh core devices: {core.available_devices}")
+
+    cut_model = core.read_model(tmp_xml)
+    _log("info", f"Reloaded cut model: {len(list(cut_model.get_ordered_ops()))} ops")
+
+    fp16_cut_model = None
+    if fp16_xml:
+        fp16_cut_model = core.read_model(fp16_xml)
+        _log("info", f"Reloaded fp16 cut model: {len(list(fp16_cut_model.get_ordered_ops()))} ops")
+
+    # Apply bounded reshape if input_configs have bounds (dynamic shapes)
+    _apply_bounded_reshape(cut_model, input_configs)
+    if fp16_cut_model:
+        _apply_bounded_reshape(fp16_cut_model, input_configs)
+
+    # Re-extract params after reshape (shapes may now be bounded/static)
+    model_params = _extract_params(cut_model)
+
+    _log("info", "Preparing inputs...")
+    inputs = prepare_inputs(model_params, input_path, precision, input_configs)
+    _log("info", f"Inputs prepared: {len(inputs)} tensors")
+
+    # Save input tensors to out_dir for reproducibility
+    for name, tensor in inputs.items():
+        safe_name = name.replace("/", "_").replace("(", "_").replace(")", "_")
+        np.save(str(Path(out_dir) / f"input_{safe_name}.npy"), tensor)
+
+    return core, cut_model, fp16_cut_model, inputs
+
+
+def _run_inference(cfg: dict, core, cut_model, fp16_cut_model, inputs: dict):
+    """Phase 3: Compile on both devices, execute, collect outputs.
+
+    Returns (main_out, main_result, ref_out, ref_result) or raises on error.
+    """
+    main_device = cfg["main_device"]
+    ref_device = cfg["ref_device"]
+
+    # Infer on main device
+    _log("info", f"Compiling model for {main_device}...")
+    main_model = fp16_cut_model if _is_fp16_device(main_device) else cut_model
+    main_out, main_result, main_err = _run_on_device(core, main_model, main_device, inputs)
+    if main_err:
+        raise RuntimeError(main_err)
+    _log("info", f"Inference on {main_device} complete")
+
+    # Infer on reference device
+    _log("info", f"Compiling model for {ref_device}...")
+    ref_model = fp16_cut_model if _is_fp16_device(ref_device) else cut_model
+    ref_out, ref_result, ref_err = _run_on_device(core, ref_model, ref_device, inputs)
+    if ref_err:
+        raise RuntimeError(ref_err)
+    _log("info", f"Inference on {ref_device} complete")
+
+    return main_out, main_result, ref_out, ref_result
+
+
+def _save_outputs(cfg: dict, main_out: np.ndarray, ref_out: np.ndarray) -> None:
+    """Phase 5: Save numpy output arrays to disk."""
+    out_path = Path(cfg["out_dir"])
+    np.save(str(out_path / "main_output.npy"), main_out)
+    np.save(str(out_path / "ref_output.npy"), ref_out)
+
+
 def main() -> None:
     # Preserve the real stdout for the JSON result, then redirect both the
     # Python-level sys.stdout AND the OS-level fd 1 to stderr.  The fd-level
@@ -41,150 +187,32 @@ def main() -> None:
 
     cfg = json.loads(sys.stdin.read())
 
-    model_path: str = cfg["model_path"]
-    node_name: str = cfg["node_name"]
-    main_device: str = cfg["main_device"]
-    ref_device: str = cfg["ref_device"]
-    ov_path: str | None = cfg.get("ov_path")
-    input_path: str | None = cfg.get("input_path")
-    precision: str = cfg.get("precision", "fp32")
-    input_configs: list[dict] | None = cfg.get("input_configs")
-    out_dir: str = cfg["out_dir"]  # temp dir for numpy files
-    ov_log_level: str = cfg.get("ov_log_level", "WARNING")
-
     # Set OV log level BEFORE importing openvino
-    os.environ["OPENVINO_LOG_LEVEL"] = ov_log_level
+    os.environ["OPENVINO_LOG_LEVEL"] = cfg.get("ov_log_level", "WARNING")
 
     try:
-        import gc
-
         _log("info", "Loading OpenVINO runtime...")
-        import openvino as ov
 
-        # --- Phase 1: Read model, cut subgraph, serialize to temp file ---
-        # We use a dedicated Core for reading so that the compile Core starts
-        # clean — avoids potential state leaks between read and compile phases.
-        read_core = ov.Core()
+        # Phase 1: Load model, cut subgraph, serialize
+        tmp_xml, fp16_xml, model_params, input_configs = _load_and_cut_model(cfg)
 
-        _log("info", f"Reading model: {Path(model_path).name}")
-        model = read_core.read_model(model_path)
-        _log("info", f"Model loaded: {len(list(model.get_ordered_ops()))} ops")
+        # Phase 2: Reload with fresh Core, prepare inputs
+        core, cut_model, fp16_cut_model, inputs = _prepare_inputs(
+            cfg, tmp_xml, fp16_xml, input_configs,
+        )
 
-        # Find target op
-        target_op = None
-        for op in model.get_ordered_ops():
-            if op.get_friendly_name() == node_name:
-                target_op = op
-                break
+        # Phase 3: Run inference on both devices
+        main_out, main_result, ref_out, ref_result = _run_inference(
+            cfg, core, cut_model, fp16_cut_model, inputs,
+        )
 
-        if target_op is None:
-            _log("error", f"Node '{node_name}' not found in model")
-            _emit({"error": f"Node '{node_name}' not found in model"}, _file=real_stdout)
-            return
-
-        _log("info", f"Target node found: {node_name} (type: {target_op.get_type_name()})")
-
-        # Cut model — only include parameters reachable from the target outputs
-        _log("info", "Cutting model at target node...")
-        new_outputs = target_op.outputs()
-        reachable_params = get_reachable_params(model, new_outputs)
-        cut_model = ov.Model(new_outputs, reachable_params, f"cut_at_{node_name}")
-        cut_model.validate_nodes_and_infer_types()
-        _log("info", f"Cut model created: {len(reachable_params)} parameters, {len(new_outputs)} outputs")
-
-        # Serialize cut model directly to out_dir so the task folder becomes
-        # a self-contained reproducer (cut model + inputs + outputs).
-        tmp_xml = str(Path(out_dir) / "cut_model.xml")
-        ov.save_model(cut_model, tmp_xml)
-        model_params = _extract_params(cut_model)
-        _log("info", f"Serialized cut model to {tmp_xml}")
-
-        # Prune input_configs to only include parameters that exist in the
-        # cut model.  When inferring inside a sub-session the caller merges
-        # root-session configs (e.g. "image") with sub-session configs, but
-        # the cut model may no longer contain those original inputs.
-        if input_configs:
-            cut_param_names = {p["name"] for p in model_params}
-            input_configs = [c for c in input_configs if c["name"] in cut_param_names]
-
-        # If either device is a virtual fp16 device, also save an fp16-compressed
-        # copy.  Weight compression (compress_to_fp16) actually quantises constants
-        # so even single-op subgraphs show precision differences.
-        needs_fp16_model = _is_fp16_device(main_device) or _is_fp16_device(ref_device)
-        fp16_xml = None
-        if needs_fp16_model:
-            fp16_xml = str(Path(out_dir) / "cut_model_fp16.xml")
-            ov.save_model(cut_model, fp16_xml, compress_to_fp16=True)
-            _log("info", "Saved fp16-compressed cut model")
-
-        del cut_model, model, target_op, read_core
-        gc.collect()
-
-        # --- Phase 2: Reload model with fresh Core ---
-        core = ov.Core()
-
-        from backend.utils.ov_helpers import register_plugins
-        register_plugins(core, ov_path)
-
-        _log("info", f"Fresh core devices: {core.available_devices}")
-
-        cut_model = core.read_model(tmp_xml)
-        _log("info", f"Reloaded cut model: {len(list(cut_model.get_ordered_ops()))} ops")
-
-        fp16_cut_model = None
-        if fp16_xml:
-            fp16_cut_model = core.read_model(fp16_xml)
-            _log("info", f"Reloaded fp16 cut model: {len(list(fp16_cut_model.get_ordered_ops()))} ops")
-
-        # Apply bounded reshape if input_configs have bounds (dynamic shapes)
-        _apply_bounded_reshape(cut_model, input_configs)
-        if fp16_cut_model:
-            _apply_bounded_reshape(fp16_cut_model, input_configs)
-
-        # Re-extract params after reshape (shapes may now be bounded/static)
-        model_params = _extract_params(cut_model)
-
-        # Prepare inputs (use cut_model's params, not original model's)
-        _log("info", "Preparing inputs...")
-        from backend.utils.input_generator import prepare_inputs
-
-        inputs = prepare_inputs(model_params, input_path, precision, input_configs)
-        _log("info", f"Inputs prepared: {len(inputs)} tensors")
-
-        # Save input tensors to out_dir for reproducibility
-        for name, tensor in inputs.items():
-            safe_name = name.replace("/", "_").replace("(", "_").replace(")", "_")
-            np.save(str(Path(out_dir) / f"input_{safe_name}.npy"), tensor)
-
-        # Infer on main device
-        _log("info", f"Compiling model for {main_device}...")
-        main_model = fp16_cut_model if _is_fp16_device(main_device) else cut_model
-        main_out, main_result, main_err = _run_on_device(core, main_model, main_device, inputs)
-        if main_err:
-            _log("error", main_err)
-            _emit({"error": main_err}, _file=real_stdout)
-            return
-        _log("info", f"Inference on {main_device} complete")
-
-        # Infer on reference device
-        _log("info", f"Compiling model for {ref_device}...")
-        ref_model = fp16_cut_model if _is_fp16_device(ref_device) else cut_model
-        ref_out, ref_result, ref_err = _run_on_device(core, ref_model, ref_device, inputs)
-        if ref_err:
-            _log("error", ref_err)
-            _emit({"error": ref_err}, _file=real_stdout)
-            return
-        _log("info", f"Inference on {ref_device} complete")
-
-        # Compute metrics
+        # Phase 4: Compute accuracy metrics
         _log("info", "Computing accuracy metrics...")
         metrics = _compute_metrics(main_out, ref_out)
         _log("info", f"Metrics: MSE={metrics['mse']:.6e}, cosine={metrics['cosine_similarity']:.6f}, max_diff={metrics['max_abs_diff']:.6e}")
 
-        # Save numpy outputs
-        out_path = Path(out_dir)
-        np.save(str(out_path / "main_output.npy"), main_out)
-        np.save(str(out_path / "ref_output.npy"), ref_out)
+        # Phase 5: Save outputs
+        _save_outputs(cfg, main_out, ref_out)
 
         _log("info", "Done — results ready")
         _emit({
@@ -193,6 +221,12 @@ def main() -> None:
             "metrics": metrics,
         }, _file=real_stdout)
 
+    except ValueError as e:
+        _log("error", str(e))
+        _emit({"error": str(e)}, _file=real_stdout)
+    except RuntimeError as e:
+        _log("error", str(e))
+        _emit({"error": str(e)}, _file=real_stdout)
     except Exception as e:
         _log("error", f"{type(e).__name__}: {e}")
         _emit({"error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()}, _file=real_stdout)
