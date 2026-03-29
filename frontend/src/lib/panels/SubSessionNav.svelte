@@ -3,7 +3,7 @@
   import { sessionStore } from '../stores/session.svelte';
   import { graphStore } from '../stores/graph.svelte';
 
-  import { refreshRenderer } from '../graph/renderer';
+  import { refreshRenderer, fitToSubSession } from '../graph/renderer';
 
   interface TreeNode {
     sub: SubSessionInfo;
@@ -93,12 +93,16 @@
     graphStore.setGrayedNodes(sub.grayed_nodes, sub.cut_node, sub.cut_type, sub.ancestor_cuts);
     graphStore.setActiveSubSession(sub.id);
     refreshRenderer();
+    // Animate camera to fit the non-grayed nodes
+    requestAnimationFrame(() => fitToSubSession());
   }
 
   function activateRoot() {
     graphStore.clearGrayedNodes();
     graphStore.setActiveSubSession(null);
     refreshRenderer();
+    // Animate camera to fit the entire graph
+    requestAnimationFrame(() => fitToSubSession());
   }
 
   async function deleteSubSession(e: MouseEvent, subId: string) {
