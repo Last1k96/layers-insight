@@ -46,6 +46,10 @@ class InferenceTask(BaseModel):
     main_result: Optional[DeviceResult] = None
     ref_result: Optional[DeviceResult] = None
     metrics: Optional[AccuracyMetrics] = None
+    # Multi-output support: per-output breakdowns (None for single-output nodes)
+    per_output_metrics: Optional[list[AccuracyMetrics]] = None
+    per_output_main_results: Optional[list[DeviceResult]] = None
+    per_output_ref_results: Optional[list[DeviceResult]] = None
     # Phase 2 extensibility
     batch_id: Optional[str] = None
     sub_session_id: Optional[str] = None

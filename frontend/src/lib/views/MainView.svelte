@@ -19,6 +19,7 @@
 
   let wsDisconnected = $state(false);
   let showAccuracyView = $state(false);
+  let accuracyOutputIndex = $state(0);
   let showBatchQueue = $state(false);
 
   function restoreSessionTasks(): void {
@@ -34,6 +35,9 @@
         metrics: task.metrics,
         mainResult: task.main_result,
         refResult: task.ref_result,
+        perOutputMetrics: task.per_output_metrics,
+        perOutputMainResults: task.per_output_main_results,
+        perOutputRefResults: task.per_output_ref_results,
         errorDetail: task.error_detail,
       };
       graphStore.updateNodeStatus(task.node_id, nodeStatus, task.sub_session_id);
@@ -94,7 +98,7 @@
 
   <FloatingPanel side="right" title="Node Status">
     <NodeStatus
-      onshowaccuracy={() => showAccuracyView = true}
+      onshowaccuracy={(outputIdx?: number) => { accuracyOutputIndex = outputIdx ?? 0; showAccuracyView = true; }}
       onshowbatchqueue={() => showBatchQueue = true}
     />
   </FloatingPanel>
@@ -114,6 +118,7 @@
   <AccuracyView
     taskId={graphStore.selectedNodeStatus.taskId}
     nodeId={graphStore.selectedNode.name}
+    outputIndex={accuracyOutputIndex}
     onclose={() => showAccuracyView = false}
   />
 {/if}

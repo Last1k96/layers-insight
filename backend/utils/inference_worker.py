@@ -159,39 +159,64 @@ def main() -> None:
         # Infer on main device
         _log("info", f"Compiling model for {main_device}...")
         main_model = fp16_cut_model if _is_fp16_device(main_device) else cut_model
-        main_out, main_result, main_err = _run_on_device(core, main_model, main_device, inputs)
+        main_outs, main_results, main_err = _run_on_device(core, main_model, main_device, inputs)
         if main_err:
             _log("error", main_err)
             _emit({"error": main_err}, _file=real_stdout)
             return
-        _log("info", f"Inference on {main_device} complete")
+        _log("info", f"Inference on {main_device} complete ({len(main_outs)} output(s))")
 
         # Infer on reference device
         _log("info", f"Compiling model for {ref_device}...")
         ref_model = fp16_cut_model if _is_fp16_device(ref_device) else cut_model
-        ref_out, ref_result, ref_err = _run_on_device(core, ref_model, ref_device, inputs)
+        ref_outs, ref_results, ref_err = _run_on_device(core, ref_model, ref_device, inputs)
         if ref_err:
             _log("error", ref_err)
             _emit({"error": ref_err}, _file=real_stdout)
             return
-        _log("info", f"Inference on {ref_device} complete")
+        _log("info", f"Inference on {ref_device} complete ({len(ref_outs)} output(s))")
 
-        # Compute metrics
+        # Compute per-output metrics
         _log("info", "Computing accuracy metrics...")
-        metrics = _compute_metrics(main_out, ref_out)
-        _log("info", f"Metrics: MSE={metrics['mse']:.6e}, cosine={metrics['cosine_similarity']:.6f}, max_diff={metrics['max_abs_diff']:.6e}")
+        num_outputs = len(main_outs)
+        per_output_metrics: list[dict] = []
+        for i in range(num_outputs):
+            m = _compute_metrics(main_outs[i], ref_outs[i])
+            per_output_metrics.append(m)
+            _log("info", f"Output {i}: MSE={m['mse']:.6e}, cosine={m['cosine_similarity']:.6f}, max_diff={m['max_abs_diff']:.6e}")
+
+        # Aggregate: worst across outputs (highest MSE, highest max_abs_diff, lowest cosine)
+        if num_outputs == 1:
+            agg_metrics = per_output_metrics[0]
+        else:
+            agg_metrics = {
+                "mse": max(m["mse"] for m in per_output_metrics),
+                "max_abs_diff": max(m["max_abs_diff"] for m in per_output_metrics),
+                "cosine_similarity": min(m["cosine_similarity"] for m in per_output_metrics),
+            }
+        _log("info", f"Aggregate: MSE={agg_metrics['mse']:.6e}, cosine={agg_metrics['cosine_similarity']:.6f}, max_diff={agg_metrics['max_abs_diff']:.6e}")
 
         # Save numpy outputs
         out_path = Path(out_dir)
-        np.save(str(out_path / "main_output.npy"), main_out)
-        np.save(str(out_path / "ref_output.npy"), ref_out)
+        for i in range(num_outputs):
+            np.save(str(out_path / f"main_output_{i}.npy"), main_outs[i])
+            np.save(str(out_path / f"ref_output_{i}.npy"), ref_outs[i])
+        # Backward compatibility: also save as main_output.npy / ref_output.npy (pointing to output 0)
+        np.save(str(out_path / "main_output.npy"), main_outs[0])
+        np.save(str(out_path / "ref_output.npy"), ref_outs[0])
 
         _log("info", "Done — results ready")
-        _emit({
-            "main_result": main_result,
-            "ref_result": ref_result,
-            "metrics": metrics,
-        }, _file=real_stdout)
+        result_payload: dict = {
+            "main_result": main_results[0],
+            "ref_result": ref_results[0],
+            "metrics": agg_metrics,
+        }
+        # Include per-output data when there are multiple outputs
+        if num_outputs > 1:
+            result_payload["per_output_metrics"] = per_output_metrics
+            result_payload["per_output_main_results"] = main_results
+            result_payload["per_output_ref_results"] = ref_results
+        _emit(result_payload, _file=real_stdout)
 
     except Exception as e:
         _log("error", f"{type(e).__name__}: {e}")
@@ -262,6 +287,14 @@ def _parse_virtual_device(device: str) -> tuple[str, dict]:
 
 
 def _run_on_device(core, model, device: str, inputs: dict):
+    """Run inference and return ALL outputs.
+
+    Returns:
+        (outputs_list, per_output_results, error)
+        - outputs_list: list[np.ndarray] — one array per compiled-model output
+        - per_output_results: list[dict] — per-output device stats
+        - error: str | None
+    """
     actual_device, config = _parse_virtual_device(device)
     try:
         _log("info", f"Compiling on {device}...")
@@ -276,18 +309,25 @@ def _run_on_device(core, model, device: str, inputs: dict):
         # mismatches that can occur after save_model/read_model cycles.
         input_list = [inputs[p.get_friendly_name()] for p in model.get_parameters()]
         req.infer(input_list)
-        output = req.get_output_tensor(0).data.copy()
-        out64 = output.astype(np.float64)
-        result = {
-            "device": device,
-            "output_shapes": [list(output.shape)],
-            "dtype": str(output.dtype),
-            "min_val": float(np.min(out64)),
-            "max_val": float(np.max(out64)),
-            "mean_val": float(np.mean(out64)),
-            "std_val": float(np.std(out64)),
-        }
-        return output, result, None
+
+        num_outputs = len(compiled.outputs)
+        outputs_list: list = []
+        per_output_results: list = []
+        for i in range(num_outputs):
+            output = req.get_output_tensor(i).data.copy()
+            out64 = output.astype(np.float64)
+            outputs_list.append(output)
+            per_output_results.append({
+                "device": device,
+                "output_shapes": [list(output.shape)],
+                "dtype": str(output.dtype),
+                "min_val": float(np.min(out64)),
+                "max_val": float(np.max(out64)),
+                "mean_val": float(np.mean(out64)),
+                "std_val": float(np.std(out64)),
+            })
+
+        return outputs_list, per_output_results, None
     except Exception as e:
         return None, None, f"Inference on {device} failed: {e}"
 

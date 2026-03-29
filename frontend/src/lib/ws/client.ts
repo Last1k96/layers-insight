@@ -107,6 +107,9 @@ function handleMessage(msg: any): void {
       metrics: tsMsg.metrics,
       main_result: tsMsg.main_result,
       ref_result: tsMsg.ref_result,
+      per_output_metrics: tsMsg.per_output_metrics,
+      per_output_main_results: tsMsg.per_output_main_results,
+      per_output_ref_results: tsMsg.per_output_ref_results,
       sub_session_id: tsMsg.sub_session_id,
     });
 
@@ -118,6 +121,9 @@ function handleMessage(msg: any): void {
       metrics: tsMsg.metrics,
       mainResult: tsMsg.main_result,
       refResult: tsMsg.ref_result,
+      perOutputMetrics: tsMsg.per_output_metrics,
+      perOutputMainResults: tsMsg.per_output_main_results,
+      perOutputRefResults: tsMsg.per_output_ref_results,
       errorDetail: tsMsg.error_detail,
     };
     graphStore.updateNodeStatus(tsMsg.node_id, nodeStatus, tsMsg.sub_session_id);
