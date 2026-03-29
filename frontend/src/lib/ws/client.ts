@@ -143,7 +143,6 @@ function handleMessage(msg: any): void {
   }
 
   if (msg.type === 'inference_log') {
-    console.log('[WS] inference_log:', msg.level, msg.message);
     logStore.addEntry({
       task_id: msg.task_id,
       node_name: msg.node_name,

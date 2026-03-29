@@ -6,6 +6,11 @@
   let resizing = $state(false);
   let scrollContainer: HTMLDivElement = $state()!;
   let autoScroll = $state(true);
+  let scrollTop = $state(0);
+  let containerHeight = $state(0);
+
+  const ROW_HEIGHT = 22;
+  const BUFFER = 10;
 
   const LEVEL_COLORS: Record<string, string> = {
     info: 'text-blue-400',
@@ -22,6 +27,21 @@
     debug: 'bg-gray-700/50',
     ov: 'bg-purple-900/50',
   };
+
+  const totalHeight = $derived(logStore.entries.length * ROW_HEIGHT);
+
+  const startIndex = $derived(
+    Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - BUFFER)
+  );
+
+  const endIndex = $derived(
+    Math.min(
+      logStore.entries.length,
+      Math.ceil((scrollTop + containerHeight) / ROW_HEIGHT) + BUFFER
+    )
+  );
+
+  const visibleEntries = $derived(logStore.entries.slice(startIndex, endIndex));
 
   onMount(() => {
     const saved = localStorage.getItem('log-panel-height');
@@ -50,35 +70,37 @@
     document.addEventListener('mouseup', onMouseUp);
   }
 
+  let rafPending = false;
+
   function handleScroll() {
-    if (!scrollContainer) return;
-    const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
-    autoScroll = scrollHeight - scrollTop - clientHeight < 30;
+    if (!scrollContainer || rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      if (!scrollContainer) return;
+      scrollTop = scrollContainer.scrollTop;
+      const { scrollHeight, clientHeight } = scrollContainer;
+      autoScroll = scrollHeight - scrollTop - clientHeight < 30;
+    });
   }
 
-  function formatTime(ts: string): string {
-    try {
-      const d = new Date(ts);
-      return d.toLocaleTimeString('en-US', {
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        fractionalSecondDigits: 3,
-      });
-    } catch {
-      return ts;
-    }
-  }
-
+  // Auto-scroll when new entries arrive
   $effect(() => {
-    // Trigger on entries length change
     const _len = logStore.entries.length;
     if (autoScroll && scrollContainer) {
       requestAnimationFrame(() => {
         scrollContainer.scrollTop = scrollContainer.scrollHeight;
       });
     }
+  });
+
+  // Track container height for virtual scroll calculations
+  $effect(() => {
+    if (scrollContainer) {
+      containerHeight = scrollContainer.clientHeight;
+    }
+    // Re-measure when panel height changes
+    const _h = height;
   });
 </script>
 
@@ -120,26 +142,30 @@
       </div>
     </div>
 
-    <!-- Log entries -->
+    <!-- Log entries (virtual scroll) -->
     <div
       bind:this={scrollContainer}
-      class="flex-1 overflow-y-auto font-mono text-xs p-1 min-h-0"
+      class="flex-1 overflow-y-auto font-mono text-xs min-h-0"
       onscroll={handleScroll}
     >
-      {#each logStore.entries as entry}
-        <div class="flex gap-2 px-2 py-0.5 hover:bg-[--bg-menu]">
-          <span class="text-content-secondary/50 shrink-0">{formatTime(entry.timestamp)}</span>
-          <span class="shrink-0 px-1 rounded text-[10px] uppercase font-semibold {LEVEL_COLORS[entry.level] ?? 'text-gray-400'} {LEVEL_BG[entry.level] ?? 'bg-gray-700/50'}">
-            {entry.level}
-          </span>
-          {#if entry.node_name}
-            <span class="text-cyan-400/70 shrink-0 truncate max-w-[150px]" title={entry.node_name}>
-              {entry.node_name}
-            </span>
-          {/if}
-          <span class="text-content-primary break-all">{entry.message}</span>
+      <div style:height="{totalHeight}px" style:position="relative">
+        <div style:position="absolute" style:top="{startIndex * ROW_HEIGHT}px" style:left="0" style:right="0">
+          {#each visibleEntries as entry (entry._id)}
+            <div class="flex gap-2 px-2 hover:bg-[--bg-menu]" style:height="{ROW_HEIGHT}px" style:line-height="{ROW_HEIGHT}px">
+              <span class="text-content-secondary/50 shrink-0">{entry.formattedTime}</span>
+              <span class="shrink-0 px-1 rounded text-[10px] uppercase font-semibold {LEVEL_COLORS[entry.level] ?? 'text-gray-400'} {LEVEL_BG[entry.level] ?? 'bg-gray-700/50'}">
+                {entry.level}
+              </span>
+              {#if entry.node_name}
+                <span class="text-cyan-400/70 shrink-0 truncate max-w-[150px]" title={entry.node_name}>
+                  {entry.node_name}
+                </span>
+              {/if}
+              <span class="text-content-primary truncate">{entry.message}</span>
+            </div>
+          {/each}
         </div>
-      {/each}
+      </div>
       {#if logStore.entries.length === 0}
         <div class="text-gray-600 text-center py-4">No log entries yet. Click a node to trigger inference.</div>
       {/if}
