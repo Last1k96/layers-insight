@@ -176,6 +176,31 @@ export function centerOnNode(nodeId: string, animate = true): void {
   }
 }
 
+/** Animate camera to fit all non-grayed nodes. If no grayed nodes, fits the entire graph. */
+export function fitToSubSession(): void {
+  if (!panZoom || !currentGraphData) return;
+
+  const grayedNodes = graphStore.grayedNodes;
+  const nodes = currentGraphData.nodes;
+  if (nodes.length === 0) return;
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let count = 0;
+
+  for (const node of nodes) {
+    if (grayedNodes.size > 0 && grayedNodes.has(node.id)) continue;
+    const size = getNodeSize(node.id);
+    minX = Math.min(minX, node.x);
+    minY = Math.min(minY, node.y);
+    maxX = Math.max(maxX, node.x + size.width);
+    maxY = Math.max(maxY, node.y + size.height);
+    count++;
+  }
+
+  if (count === 0) return;
+  panZoom.fitToBounds({ minX, minY, maxX, maxY });
+}
+
 function scheduleRefresh(): void {
   if (refreshScheduled) return;
   refreshScheduled = true;

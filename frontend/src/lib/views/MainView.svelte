@@ -11,11 +11,14 @@
   import BottomLogPanel from '../panels/BottomLogPanel.svelte';
   import AccuracyView from '../accuracy/AccuracyView.svelte';
   import BatchQueue from '../panels/BatchQueue.svelte';
+  import ShortcutsHelp from '../panels/ShortcutsHelp.svelte';
   import { sessionStore } from '../stores/session.svelte';
   import { graphStore, type NodeStatus as NodeStatusData } from '../stores/graph.svelte';
   import { queueStore } from '../stores/queue.svelte';
   import { cacheMetrics } from '../stores/metrics.svelte';
   import { connect, disconnect, setConnectionCallbacks } from '../ws/client';
+  import { refreshRenderer } from '../graph/renderer';
+  import { installShortcuts, uninstallShortcuts, registerShortcut, toggleHelp, setHelpVisible } from '../shortcuts';
   import { onMount, onDestroy } from 'svelte';
 
   let wsDisconnected = $state(false);
@@ -65,11 +68,72 @@
         () => { wsDisconnected = false; },
       );
     }
+
+    // Install global keyboard shortcuts
+    installShortcuts();
+
+    registerShortcut({
+      key: 'A',
+      description: 'Toggle accuracy view',
+      handler(e) {
+        e.preventDefault();
+        graphStore.accuracyViewActive = !graphStore.accuracyViewActive;
+        refreshRenderer();
+      },
+    });
+
+    registerShortcut({
+      key: 'Escape',
+      description: 'Close overlay / deselect node / close search',
+      allowInInput: true,
+      handler(e) {
+        // Priority: help overlay > accuracy view > search > deselect node
+        // (AccuracyView handles its own Escape via svelte:window)
+        if (graphStore.searchVisible) {
+          graphStore.searchVisible = false;
+          graphStore.searchResults = [];
+          refreshRenderer();
+          return;
+        }
+        if (showAccuracyView) {
+          showAccuracyView = false;
+          return;
+        }
+        if (showBatchQueue) {
+          showBatchQueue = false;
+          return;
+        }
+        if (graphStore.selectedNodeId) {
+          graphStore.selectNode(null);
+          refreshRenderer();
+          return;
+        }
+      },
+    });
+
+    registerShortcut({
+      key: '?',
+      description: 'Show keyboard shortcuts help',
+      handler(e) {
+        e.preventDefault();
+        toggleHelp();
+      },
+    });
+
+    registerShortcut({
+      key: 'F',
+      description: 'Open search',
+      handler(e) {
+        e.preventDefault();
+        graphStore.searchVisible = !graphStore.searchVisible;
+      },
+    });
   });
 
   onDestroy(() => {
     disconnect();
     queueStore.clear();
+    uninstallShortcuts();
   });
 </script>
 
@@ -135,3 +199,6 @@
     onclose={() => showBatchQueue = false}
   />
 {/if}
+
+<!-- Keyboard shortcuts help overlay -->
+<ShortcutsHelp />

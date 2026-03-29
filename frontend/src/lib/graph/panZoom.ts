@@ -74,7 +74,7 @@ export class PanZoom {
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
 
-    const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+    const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
     const newScale = Math.max(0.01, Math.min(50, this.scale * factor));
 
     // Zoom centered on cursor
@@ -170,6 +170,32 @@ export class PanZoom {
       x: (vx - this.tx) / this.scale,
       y: (vy - this.ty) / this.scale,
     };
+  }
+
+  /** Animate the camera so the given bounding box fits the viewport with padding. */
+  fitToBounds(bounds: { minX: number; minY: number; maxX: number; maxY: number }, animate = true): void {
+    const w = this.canvas.clientWidth || 800;
+    const h = this.canvas.clientHeight || 600;
+    const margin = 0.1; // 10% padding on each side
+
+    const graphW = bounds.maxX - bounds.minX;
+    const graphH = bounds.maxY - bounds.minY;
+    if (graphW <= 0 || graphH <= 0) return;
+
+    const usableW = w * (1 - margin * 2);
+    const usableH = h * (1 - margin * 2);
+    const scaleX = usableW / graphW;
+    const scaleY = usableH / graphH;
+    const newScale = Math.min(scaleX, scaleY, 1.5);
+
+    const tx = (w - graphW * newScale) / 2 - bounds.minX * newScale;
+    const ty = (h - graphH * newScale) / 2 - bounds.minY * newScale;
+
+    if (animate) {
+      this.animate({ tx, ty, scale: newScale }, 400);
+    } else {
+      this.setState({ tx, ty, scale: newScale });
+    }
   }
 
   /** Set state directly without animation */
