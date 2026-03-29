@@ -7,3 +7,4 @@ frontend/dist/
 .node/
 *.egg-info/
 .pytest_cache/
+.claude/worktrees/
