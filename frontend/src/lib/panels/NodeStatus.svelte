@@ -200,7 +200,7 @@
             class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
             onclick={() => handleCut('input_random')}
           >
-            Make Input
+            Make Parameter
           </button>
           <button
             class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
@@ -327,7 +327,7 @@
             class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
             onclick={() => handleCut('input')}
           >
-            Make Input
+            Make Parameter
           </button>
           <button
             class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"

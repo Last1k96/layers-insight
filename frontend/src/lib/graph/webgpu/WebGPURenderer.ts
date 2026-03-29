@@ -43,6 +43,7 @@ export class WebGPURenderer {
   private lastCameraTy = 0;
   private lastCameraScale = 1;
 
+
   private constructor(
     canvas: HTMLCanvasElement,
     device: GPUDevice,
@@ -229,16 +230,22 @@ export class WebGPURenderer {
         }
       }
 
-      // Selection highlight
+      // Selection highlight: bright cyan stroke + fill tint
       if (isSelected) {
-        strokeR = 0.863; strokeG = 0; strokeB = 0;
-        strokeWidth = 2;
+        fill.r = fill.r + (1.0 - fill.r) * 0.2;
+        fill.g = fill.g + (1.0 - fill.g) * 0.2;
+        fill.b = fill.b + (1.0 - fill.b) * 0.2;
+        strokeR = 0.298; strokeG = 0.553; strokeB = 1.0; // #4C8DFF
+        strokeWidth = 3;
       }
 
       // Hover highlight
       if (isHovered && !isSelected) {
-        strokeR = 0.863; strokeG = 0; strokeB = 0;
-        strokeWidth = 2;
+        fill.r = fill.r + (1.0 - fill.r) * 0.12;
+        fill.g = fill.g + (1.0 - fill.g) * 0.12;
+        fill.b = fill.b + (1.0 - fill.b) * 0.12;
+        strokeR = 0.298; strokeG = 0.553; strokeB = 1.0; // #4C8DFF
+        strokeWidth = 3;
       }
 
       // Opacity: grayed nodes semi-transparent, search dims non-matches
