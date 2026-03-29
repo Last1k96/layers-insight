@@ -51,36 +51,60 @@
   let inputsError = $state<string | null>(null);
   let inspectedModelPath = $state('');
 
-  // Plugin configuration
+  // Plugin configuration -- separate state for main and reference devices
   let pluginConfigExpanded = $state(false);
-  let pluginProperties = $state<DeviceProperty[]>([]);
-  let pluginConfigValues = $state<Record<string, string>>({});
-  let loadingPluginConfig = $state(false);
 
-  async function fetchPluginConfig(device: string) {
-    loadingPluginConfig = true;
-    pluginProperties = await configStore.fetchDeviceConfig(device);
-    // Reset user overrides when device changes
-    pluginConfigValues = {};
-    loadingPluginConfig = false;
+  let mainPluginProperties = $state<DeviceProperty[]>([]);
+  let mainPluginConfigValues = $state<Record<string, string>>({});
+  let loadingMainPluginConfig = $state(false);
+
+  let refPluginProperties = $state<DeviceProperty[]>([]);
+  let refPluginConfigValues = $state<Record<string, string>>({});
+  let loadingRefPluginConfig = $state(false);
+
+  async function fetchMainPluginConfig(device: string) {
+    loadingMainPluginConfig = true;
+    mainPluginProperties = await configStore.fetchDeviceConfig(device);
+    mainPluginConfigValues = {};
+    loadingMainPluginConfig = false;
+  }
+
+  async function fetchRefPluginConfig(device: string) {
+    loadingRefPluginConfig = true;
+    refPluginProperties = await configStore.fetchDeviceConfig(device);
+    refPluginConfigValues = {};
+    loadingRefPluginConfig = false;
   }
 
   function onMainDeviceChange() {
     if (pluginConfigExpanded) {
-      fetchPluginConfig(mainDevice);
+      fetchMainPluginConfig(mainDevice);
     }
   }
 
-  function getPluginConfigPayload(): Record<string, string> {
-    // Only include values that differ from defaults
+  function onRefDeviceChange() {
+    if (pluginConfigExpanded) {
+      fetchRefPluginConfig(refDevice);
+    }
+  }
+
+  function getChangedValues(values: Record<string, string>, properties: DeviceProperty[]): Record<string, string> {
     const result: Record<string, string> = {};
-    for (const [key, value] of Object.entries(pluginConfigValues)) {
-      const prop = pluginProperties.find(p => p.name === key);
+    for (const [key, value] of Object.entries(values)) {
+      const prop = properties.find(p => p.name === key);
       if (prop && value !== prop.value) {
         result[key] = value;
       }
     }
     return result;
+  }
+
+  function getPluginConfigPayload(): Record<string, string> {
+    return getChangedValues(mainPluginConfigValues, mainPluginProperties);
+  }
+
+  function getRefPluginConfigPayload(): Record<string, string> {
+    return getChangedValues(refPluginConfigValues, refPluginProperties);
   }
 
   // File browser state
@@ -229,9 +253,25 @@
           path: undefined,
           layout: getDefaultLayout(info.shape),
           // Initialize dynamic shape fields
-          resolved_shape: dynDims ? info.shape.map(d => typeof d === 'string' ? 1 : d as number) : undefined,
+          // For dynamic dims: batch (dim 0, 4D only) = 1, channels (dim 1, >= 3D) = 3, others = 1024
+          // resolved_shape defaults to upper_bounds so random inputs use the max size
           lower_bounds: dynDims ? info.shape.map(d => typeof d === 'string' ? 1 : d as number) : undefined,
-          upper_bounds: dynDims ? info.shape.map(d => typeof d === 'string' ? 1024 : d as number) : undefined,
+          upper_bounds: dynDims ? info.shape.map((d, idx) => {
+            if (typeof d !== 'string') return d as number;
+            const rank = info.shape.length;
+            if (idx === 0 && rank === 4) return 1;
+            if (idx === 0 && rank === 3) return 3;
+            if (idx === 1 && rank === 4) return 3;
+            return 1024;
+          }) : undefined,
+          resolved_shape: dynDims ? info.shape.map((d, idx) => {
+            if (typeof d !== 'string') return d as number;
+            const rank = info.shape.length;
+            if (idx === 0 && rank === 4) return 1;
+            if (idx === 0 && rank === 3) return 3;
+            if (idx === 1 && rank === 4) return 3;
+            return 1024;
+          }) : undefined,
         };
       });
       inspectedModelPath = path;
@@ -368,7 +408,8 @@
       'nfloat4': 'fp16', 'f4e2m1': 'fp16', 'f8e4m3': 'fp16', 'f8e5m2': 'fp16', 'f8e8m0': 'fp16',
       'i32': 'i32', 'i64': 'i64', 'i8': 'i8',
       'int32': 'i32', 'int64': 'i64', 'int8': 'i8',
-      'u8': 'u8', 'uint8': 'u8', 'u4': 'u8', 'uint4_t': 'u8',
+      'int32_t': 'i32', 'int64_t': 'i64', 'int8_t': 'i8',
+      'u8': 'u8', 'uint8': 'u8', 'uint8_t': 'u8', 'u4': 'u8', 'uint4_t': 'u8',
       'i4': 'i8', 'int4_t': 'i8', 'u1': 'u8', 'uint1_t': 'u8',
       'boolean': 'u8',
     };
@@ -415,6 +456,7 @@
     error = null;
 
     const pluginCfg = getPluginConfigPayload();
+    const refPluginCfg = getRefPluginConfigPayload();
 
     if (isCloneMode && cloneSourceId) {
       // Clone mode: use clone endpoint with overrides
@@ -422,6 +464,7 @@
       if (changedFields.has('main_device')) overrides.main_device = mainDevice;
       if (changedFields.has('ref_device')) overrides.ref_device = refDevice;
       if (Object.keys(pluginCfg).length > 0) overrides.plugin_config = pluginCfg;
+      if (Object.keys(refPluginCfg).length > 0) overrides.ref_plugin_config = refPluginCfg;
 
       const result = await sessionStore.cloneSession(cloneSourceId, overrides);
       submitting = false;
@@ -444,6 +487,8 @@
         input_precision: modelInputs.length > 0 ? modelInputs[0].data_type : 'fp32',
         input_layout: modelInputs.length > 0 ? modelInputs[0].layout : 'NCHW',
         inputs: modelInputs.length > 0 ? modelInputs : undefined,
+        plugin_config: Object.keys(pluginCfg).length > 0 ? pluginCfg : undefined,
+        ref_plugin_config: Object.keys(refPluginCfg).length > 0 ? refPluginCfg : undefined,
       });
 
       submitting = false;
@@ -457,7 +502,7 @@
 </script>
 
 <div class="flex-1 flex items-start justify-center p-6 pt-8 bg-[--bg-primary] overflow-y-auto">
-  <div class="max-w-lg w-full">
+  <div class="max-w-2xl w-full">
     <div class="flex items-center gap-3 mb-4">
       <button class="text-content-secondary hover:text-content-primary" onclick={onback}>&larr; Back</button>
       <h2 class="text-xl font-bold">{isCloneMode ? `Clone of ${cloneSourceName || 'session'}` : 'New Session'}</h2>
@@ -690,7 +735,7 @@
               <span class="text-yellow-400 ml-1">(changed)</span>
             {/if}
           </label>
-          <select id="ref-device" bind:value={refDevice} class="w-full px-2 py-1.5 bg-[--bg-input] border rounded text-sm focus:border-accent focus:outline-none {changedFields.has('ref_device') ? 'border-yellow-500' : 'border-[--border-color]'}">
+          <select id="ref-device" bind:value={refDevice} onchange={onRefDeviceChange} class="w-full px-2 py-1.5 bg-[--bg-input] border rounded text-sm focus:border-accent focus:outline-none {changedFields.has('ref_device') ? 'border-yellow-500' : 'border-[--border-color]'}">
             {#each configStore.devices as device (device)}
               <option value={device}>{device}</option>
             {/each}
@@ -699,42 +744,25 @@
       </div>
 
       <!-- Plugin Configuration -->
-      <details
-        class="border border-[--border-color] rounded"
-        ontoggle={(e) => {
-          const open = (e.currentTarget as HTMLDetailsElement).open;
-          pluginConfigExpanded = open;
-          if (open && pluginProperties.length === 0) {
-            fetchPluginConfig(mainDevice);
-          }
-        }}
-      >
-        <summary class="px-3 py-2 text-xs text-content-secondary cursor-pointer hover:text-content-primary select-none">
-          Plugin Configuration
-          {#if Object.keys(getPluginConfigPayload()).length > 0}
-            <span class="ml-1 text-accent">({Object.keys(getPluginConfigPayload()).length} changed)</span>
-          {/if}
-        </summary>
-        <div class="px-3 pb-3 space-y-2">
-          {#if loadingPluginConfig}
-            <div class="text-xs text-content-secondary py-2">Loading device properties...</div>
-          {:else if pluginProperties.length === 0}
-            <div class="text-xs text-content-secondary py-2">No configurable properties available for this device.</div>
+      {#snippet pluginConfigPanel(label: string, properties: DeviceProperty[], configValues: Record<string, string>, loading: boolean, prefix: string, onValueChange: (key: string, val: string) => void)}
+        <div class="flex-1 min-w-0">
+          <div class="text-xs text-content-secondary font-medium mb-1.5">{label}</div>
+          {#if loading}
+            <div class="text-xs text-content-secondary py-2">Loading...</div>
+          {:else if properties.length === 0}
+            <div class="text-xs text-content-secondary py-2">No configurable properties.</div>
           {:else}
-            <div class="text-[11px] text-content-secondary mb-1">
-              Only changed values will be sent to the inference engine.
-            </div>
             <div class="space-y-1.5 max-h-48 overflow-y-auto">
-              {#each pluginProperties as prop (prop.name)}
+              {#each properties as prop (prop.name)}
                 <div class="flex items-center gap-2">
-                  <label for="plugin-{prop.name}" class="text-xs text-content-secondary font-mono truncate flex-1" title={prop.name}>
+                  <label for="{prefix}-{prop.name}" class="text-xs text-content-secondary font-mono truncate flex-1" title={prop.name}>
                     {prop.name}
                   </label>
                   {#if prop.type === 'bool'}
                     <select
-                      id="plugin-{prop.name}"
-                      value={pluginConfigValues[prop.name] ?? prop.value}
-                      onchange={(e) => { pluginConfigValues = { ...pluginConfigValues, [prop.name]: (e.target as HTMLSelectElement).value }; }}
+                      id="{prefix}-{prop.name}"
+                      value={configValues[prop.name] ?? prop.value}
+                      onchange={(e) => onValueChange(prop.name, (e.target as HTMLSelectElement).value)}
                       class="w-24 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
                     >
                       <option value="True">True</option>
@@ -746,9 +774,9 @@
                     </select>
                   {:else if prop.type === 'enum' && prop.options.length > 0}
                     <select
-                      id="plugin-{prop.name}"
-                      value={pluginConfigValues[prop.name] ?? prop.value}
-                      onchange={(e) => { pluginConfigValues = { ...pluginConfigValues, [prop.name]: (e.target as HTMLSelectElement).value }; }}
+                      id="{prefix}-{prop.name}"
+                      value={configValues[prop.name] ?? prop.value}
+                      onchange={(e) => onValueChange(prop.name, (e.target as HTMLSelectElement).value)}
                       class="w-24 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
                     >
                       {#each prop.options as opt (opt)}
@@ -757,10 +785,10 @@
                     </select>
                   {:else}
                     <input
-                      id="plugin-{prop.name}"
+                      id="{prefix}-{prop.name}"
                       type={prop.type === 'int' ? 'number' : 'text'}
-                      value={pluginConfigValues[prop.name] ?? prop.value}
-                      oninput={(e) => { pluginConfigValues = { ...pluginConfigValues, [prop.name]: (e.target as HTMLInputElement).value }; }}
+                      value={configValues[prop.name] ?? prop.value}
+                      oninput={(e) => onValueChange(prop.name, (e.target as HTMLInputElement).value)}
                       class="w-24 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
                     />
                   {/if}
@@ -768,6 +796,48 @@
               {/each}
             </div>
           {/if}
+        </div>
+      {/snippet}
+
+      <details
+        class="border border-[--border-color] rounded"
+        ontoggle={(e) => {
+          const open = (e.currentTarget as HTMLDetailsElement).open;
+          pluginConfigExpanded = open;
+          if (open) {
+            if (mainPluginProperties.length === 0) fetchMainPluginConfig(mainDevice);
+            if (refPluginProperties.length === 0) fetchRefPluginConfig(refDevice);
+          }
+        }}
+      >
+        <summary class="px-3 py-2 text-xs text-content-secondary cursor-pointer hover:text-content-primary select-none">
+          Plugin Configuration
+          {#if Object.keys(getPluginConfigPayload()).length + Object.keys(getRefPluginConfigPayload()).length > 0}
+            <span class="ml-1 text-accent">({Object.keys(getPluginConfigPayload()).length + Object.keys(getRefPluginConfigPayload()).length} changed)</span>
+          {/if}
+        </summary>
+        <div class="px-3 pb-3">
+          <div class="text-[11px] text-content-secondary mb-2">
+            Only changed values will be sent to the inference engine.
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            {@render pluginConfigPanel(
+              `Main: ${mainDevice}`,
+              mainPluginProperties,
+              mainPluginConfigValues,
+              loadingMainPluginConfig,
+              'main-plugin',
+              (key, val) => { mainPluginConfigValues = { ...mainPluginConfigValues, [key]: val }; }
+            )}
+            {@render pluginConfigPanel(
+              `Reference: ${refDevice}`,
+              refPluginProperties,
+              refPluginConfigValues,
+              loadingRefPluginConfig,
+              'ref-plugin',
+              (key, val) => { refPluginConfigValues = { ...refPluginConfigValues, [key]: val }; }
+            )}
+          </div>
         </div>
       </details>
 

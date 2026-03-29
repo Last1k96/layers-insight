@@ -128,6 +128,7 @@ function handleMessage(msg: any): void {
       errorDetail: tsMsg.error_detail,
     };
     graphStore.updateNodeStatus(tsMsg.node_id, nodeStatus, tsMsg.sub_session_id);
+    refreshRenderer();
 
     // Cache metrics on success
     if (tsMsg.status === 'success' && tsMsg.metrics) {

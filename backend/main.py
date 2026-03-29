@@ -159,6 +159,7 @@ async def lifespan(app: FastAPI):
             stage_callback=stage_callback,
             runtime_dir=runtime_dir,
             plugin_config=session.config.plugin_config or None,
+            ref_plugin_config=session.config.ref_plugin_config or None,
         )
 
         # If the task was deleted while executing, skip saving results

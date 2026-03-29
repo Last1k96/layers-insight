@@ -19,7 +19,8 @@
     onclose: () => void;
   } = $props();
 
-  let mode = $state<BatchMode>(initialMode);
+  let _mode = $state<BatchMode | null>(null);
+  let mode = $derived<BatchMode>(_mode ?? initialMode);
   let stride = $state(1);
   let maxCount = $state(100);
   let direction = $state<'forward' | 'backward'>('forward');
@@ -284,7 +285,7 @@
         <button
           class="flex-1 px-2 py-2 text-xs text-center transition-colors {mode === m ? 'text-accent border-b-2 border-accent' : 'text-gray-400 hover:text-gray-200'}"
           disabled={m === 'from-selection' && !nodeId}
-          onclick={() => { mode = m; }}
+          onclick={() => { _mode = m; }}
         >
           {MODE_LABELS[m]}
         </button>

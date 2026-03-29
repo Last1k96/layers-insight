@@ -68,19 +68,22 @@ class GraphStore {
 
   updateNodeStatus(nodeId: string, status: NodeStatus, subSessionId?: string | null): void {
     const key = subSessionId ?? null;
-    let inner = this._nodeStatusMaps.get(key);
-    if (!inner) {
-      inner = new Map();
-      this._nodeStatusMaps.set(key, inner);
-    }
+    const inner = new Map(this._nodeStatusMaps.get(key) ?? []);
     inner.set(nodeId, status);
+    const outer = new Map(this._nodeStatusMaps);
+    outer.set(key, inner);
+    this._nodeStatusMaps = outer;
   }
 
   removeNodeStatus(nodeId: string, subSessionId?: string | null): void {
     const key = subSessionId ?? null;
-    const inner = this._nodeStatusMaps.get(key);
-    if (!inner) return;
+    const old = this._nodeStatusMaps.get(key);
+    if (!old || !old.has(nodeId)) return;
+    const inner = new Map(old);
     inner.delete(nodeId);
+    const outer = new Map(this._nodeStatusMaps);
+    outer.set(key, inner);
+    this._nodeStatusMaps = outer;
   }
 
   async searchNodes(sessionId: string, query: string): Promise<void> {

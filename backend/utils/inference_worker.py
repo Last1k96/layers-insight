@@ -153,8 +153,8 @@ def _run_inference(cfg: dict, core, cut_model, fp16_cut_model, inputs: dict):
     # Infer on main device
     _log("info", f"Compiling model for {main_device}...")
     main_model = fp16_cut_model if _is_fp16_device(main_device) else cut_model
-    plugin_config = cfg.get("plugin_config") or None
-    main_outs, main_results, main_err = _run_on_device(core, main_model, main_device, inputs, plugin_config)
+    main_plugin_config = cfg.get("plugin_config") or None
+    main_outs, main_results, main_err = _run_on_device(core, main_model, main_device, inputs, main_plugin_config)
     if main_err:
         raise RuntimeError(main_err)
     _log("info", f"Inference on {main_device} complete ({len(main_outs)} output(s))")
@@ -162,7 +162,8 @@ def _run_inference(cfg: dict, core, cut_model, fp16_cut_model, inputs: dict):
     # Infer on reference device
     _log("info", f"Compiling model for {ref_device}...")
     ref_model = fp16_cut_model if _is_fp16_device(ref_device) else cut_model
-    ref_outs, ref_results, ref_err = _run_on_device(core, ref_model, ref_device, inputs, plugin_config)
+    ref_plugin_config = cfg.get("ref_plugin_config") or None
+    ref_outs, ref_results, ref_err = _run_on_device(core, ref_model, ref_device, inputs, ref_plugin_config)
     if ref_err:
         raise RuntimeError(ref_err)
     _log("info", f"Inference on {ref_device} complete ({len(ref_outs)} output(s))")

@@ -4,7 +4,7 @@
   import { initRenderer, destroyRenderer } from './renderer';
   import { setupInteractions } from './interactions';
 
-  let container: HTMLDivElement;
+  let container = $state<HTMLDivElement>(undefined!);
   let error = $state<string | null>(null);
 
   onMount(() => {
