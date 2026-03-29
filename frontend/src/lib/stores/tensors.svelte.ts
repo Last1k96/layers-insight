@@ -19,7 +19,7 @@ class TensorStore {
     // Already loading
     if (this.loading.has(key)) return null;
 
-    this.loading = new Set([...this.loading, key]);
+    this.loading.add(key);
 
     try {
       const res = await fetch(`/api/tensors/${sessionId}/${taskId}/${outputName}`);
@@ -38,9 +38,7 @@ class TensorStore {
         fp32[i] = fp16ToFp32(fp16[i]);
       }
 
-      const newCache = new Map(this.cache);
-      newCache.set(key, fp32);
-      this.cache = newCache;
+      this.cache.set(key, fp32);
 
       // Store meta
       let min = Infinity, max = -Infinity, sum = 0;
@@ -51,8 +49,7 @@ class TensorStore {
         sum += v;
       }
 
-      const newMeta = new Map(this.metaCache);
-      newMeta.set(key, {
+      this.metaCache.set(key, {
         shape,
         dtype,
         size_bytes: buffer.byteLength,
@@ -61,16 +58,13 @@ class TensorStore {
         mean: fp32.length > 0 ? sum / fp32.length : 0,
         std: 0, // computed on demand
       });
-      this.metaCache = newMeta;
 
       return fp32;
     } catch (e) {
       console.error('Failed to fetch tensor:', e);
       return null;
     } finally {
-      const newLoading = new Set(this.loading);
-      newLoading.delete(key);
-      this.loading = newLoading;
+      this.loading.delete(key);
     }
   }
 
@@ -83,9 +77,7 @@ class TensorStore {
       const res = await fetch(`/api/tensors/${sessionId}/${taskId}/${outputName}/meta`);
       if (!res.ok) return null;
       const meta: TensorMeta = await res.json();
-      const newMeta = new Map(this.metaCache);
-      newMeta.set(key, meta);
-      this.metaCache = newMeta;
+      this.metaCache.set(key, meta);
       return meta;
     } catch {
       return null;
