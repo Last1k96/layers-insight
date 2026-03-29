@@ -128,6 +128,13 @@ async def lifespan(app: FastAPI):
                 loop,
             )
 
+        # Compute runtime dir for this inference
+        session_path = session_service._session_path(task.session_id)
+        if task.sub_session_id:
+            runtime_dir = str(session_path / "sub_sessions" / task.sub_session_id / "runtime")
+        else:
+            runtime_dir = str(session_path / "runtime")
+
         log_callback(task.task_id, "info", f"Task started for node '{task.node_name}'")
 
         result = await asyncio.to_thread(
@@ -143,29 +150,23 @@ async def lifespan(app: FastAPI):
             input_configs=input_configs,
             log_callback=log_callback,
             stage_callback=stage_callback,
+            runtime_dir=runtime_dir,
         )
 
         # If the task was deleted while executing, skip saving results
         if queue_service.is_deleted(task.task_id):
-            if isinstance(result, tuple):
-                import shutil
-                shutil.rmtree(result[1], ignore_errors=True)
             return task
 
         # Handle tuple result (task, artifacts_dir)
         if isinstance(result, tuple):
             updated_task, artifacts_dir = result
-            try:
-                session_service.save_task_result(
-                    session_id=task.session_id,
-                    task_id=task.task_id,
-                    task_data=updated_task.model_dump(),
-                    artifacts_dir=artifacts_dir,
-                    sub_session_id=task.sub_session_id,
-                )
-            finally:
-                import shutil
-                shutil.rmtree(artifacts_dir, ignore_errors=True)
+            session_service.save_task_result(
+                session_id=task.session_id,
+                task_id=task.task_id,
+                task_data=updated_task.model_dump(),
+                artifacts_dir=artifacts_dir,
+                sub_session_id=task.sub_session_id,
+            )
             log_callback(task.task_id, "info", f"Task completed for node '{task.node_name}'")
             return updated_task
         else:

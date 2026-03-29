@@ -97,13 +97,14 @@ class TestSessionService:
         assert result["task_id"] == "t1"
         assert result["status"] == "success"
 
-        # Verify all artifact files were moved — folder is named after the node
-        tensor_dir = session_service._session_path(info.id) / "tensors" / "conv1"
-        assert (tensor_dir / "main_output.npy").exists()
-        assert (tensor_dir / "ref_output.npy").exists()
-        assert (tensor_dir / "cut_model.xml").exists()
-        assert (tensor_dir / "cut_model.bin").exists()
-        assert (tensor_dir / "input_data.npy").exists()
+        # Verify only output files were moved — folder is named after the node
+        output_dir = session_service._session_path(info.id) / "output" / "conv1"
+        assert (output_dir / "main_output.npy").exists()
+        assert (output_dir / "ref_output.npy").exists()
+        # cut_model and input files should NOT be in the output dir
+        assert not (output_dir / "cut_model.xml").exists()
+        assert not (output_dir / "cut_model.bin").exists()
+        assert not (output_dir / "input_data.npy").exists()
 
         # Verify get_tensor_path resolves via task_id -> tensor_dir mapping
         path = session_service.get_tensor_path(info.id, "t1", "main_output")
@@ -166,9 +167,9 @@ class TestSessionService:
                 artifacts_dir=str(artifacts_dir),
             )
 
-        tensors_dir = session_service._session_path(info.id) / "tensors"
-        assert (tensors_dir / "conv1").exists()
-        assert (tensors_dir / "conv1_2").exists()
+        output_dir = session_service._session_path(info.id) / "output"
+        assert (output_dir / "conv1").exists()
+        assert (output_dir / "conv1_2").exists()
 
         # Both resolve correctly via task_id
         assert session_service.get_tensor_path(info.id, "t1", "main_output") is not None
@@ -354,8 +355,8 @@ class TestSessionService:
             artifacts_dir=str(artifacts_dir),
         )
 
-        # Verify tensor dir exists
-        tensor_dir = session_service._session_path(info.id) / "tensors" / "conv1"
+        # Verify output dir exists
+        tensor_dir = session_service._session_path(info.id) / "output" / "conv1"
         assert tensor_dir.exists()
 
         # Delete task

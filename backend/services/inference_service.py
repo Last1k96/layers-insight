@@ -62,6 +62,7 @@ class InferenceService:
         log_callback: Optional[Callable[[str, str, str], None]] = None,
         stage_callback: Optional[Callable[[str], None]] = None,
         ov_log_level: str = "WARNING",
+        runtime_dir: Optional[str] = None,
     ) -> InferenceTask:
         """Cut the model at target node and run inference on both devices.
 
@@ -97,7 +98,18 @@ class InferenceService:
                             stage_callback(stage)
                     break
 
-        tmp_dir = tempfile.mkdtemp(prefix="li_infer_")
+        # Use session's runtime/ dir if provided, otherwise fall back to temp dir
+        if runtime_dir:
+            import shutil as _shutil
+            rd = Path(runtime_dir)
+            if rd.exists():
+                _shutil.rmtree(rd)
+            rd.mkdir(parents=True, exist_ok=True)
+            tmp_dir = runtime_dir
+            use_runtime_dir = True
+        else:
+            tmp_dir = tempfile.mkdtemp(prefix="li_infer_")
+            use_runtime_dir = False
         success = False
         try:
             # Build config for the subprocess worker
@@ -256,6 +268,6 @@ class InferenceService:
         finally:
             self._current_proc = None
             self._current_task_id = None
-            if not success:
+            if not success and not use_runtime_dir:
                 import shutil
                 shutil.rmtree(tmp_dir, ignore_errors=True)

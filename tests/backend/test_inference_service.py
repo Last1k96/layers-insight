@@ -237,9 +237,8 @@ class TestCutAndInfer:
                 model, "node1", "CPU", "CPU", model_path="/tmp/test.xml"
             )
 
-            # With stray output, json.loads fails → the service should
-            # report a parse error (TaskStatus.FAILED). The fix prevents
-            # stray output from reaching stdout in the first place.
-            assert isinstance(result, InferenceTask)
-            assert result.status == TaskStatus.FAILED
-            assert "parse error" in result.error_detail.lower()
+            # The scan-from-end recovery in inference_service extracts the
+            # JSON object even when stray debug output precedes it on stdout.
+            assert isinstance(result, tuple)
+            task, artifacts_dir = result
+            assert task.status == TaskStatus.SUCCESS

@@ -82,7 +82,8 @@ class SessionService:
         session_path = self._session_path(session_id)
         session_path.mkdir(parents=True)
         (session_path / "tasks").mkdir()
-        (session_path / "tensors").mkdir()
+        (session_path / "output").mkdir()
+        (session_path / "runtime").mkdir()
 
         if converted_dir is not None:
             # Move pre-converted IR files from temp dir into session
@@ -273,15 +274,15 @@ class SessionService:
 
             # Determine base tensors directory
             if sub_session_id:
-                tensors_base = self._session_path(session_id) / "sub_sessions" / sub_session_id / "tensors"
+                tensors_base = self._session_path(session_id) / "sub_sessions" / sub_session_id / "output"
             else:
-                tensors_base = self._session_path(session_id) / "tensors"
+                tensors_base = self._session_path(session_id) / "output"
             tensors_base.mkdir(parents=True, exist_ok=True)
 
             folder_name = self._unique_tensor_folder_in(tensors_base, node_name)
             task_data["tensor_dir"] = folder_name
             if sub_session_id:
-                task_data["tensor_base"] = f"sub_sessions/{sub_session_id}/tensors"
+                task_data["tensor_base"] = f"sub_sessions/{sub_session_id}/output"
             meta["tasks"][task_id] = task_data
             self._write_metadata(session_id, meta)
 
@@ -289,7 +290,7 @@ class SessionService:
             task_dir.mkdir(parents=True, exist_ok=True)
             src = Path(artifacts_dir)
             for f in src.iterdir():
-                if f.is_file():
+                if f.is_file() and f.name.endswith("_output.npy"):
                     shutil.move(str(f), str(task_dir / f.name))
 
     def load_task_result(self, session_id: str, task_id: str) -> dict:
@@ -311,7 +312,7 @@ class SessionService:
             if tensor_base:
                 tensor_dir = self._session_path(session_id) / tensor_base / folder_name
             else:
-                tensor_dir = self._session_path(session_id) / "tensors" / folder_name
+                tensor_dir = self._session_path(session_id) / "output" / folder_name
             if tensor_dir.exists():
                 shutil.rmtree(tensor_dir, ignore_errors=True)
 
@@ -390,7 +391,8 @@ class SessionService:
             counter += 1
         sub_path = self._session_path(session_id) / "sub_sessions" / sub_id
         sub_path.mkdir(parents=True, exist_ok=True)
-        (sub_path / "tensors").mkdir(exist_ok=True)
+        (sub_path / "output").mkdir(exist_ok=True)
+        (sub_path / "runtime").mkdir(exist_ok=True)
 
         sub_info = SubSessionInfo(
             id=sub_id,
@@ -505,7 +507,7 @@ class SessionService:
         if tensor_base:
             path = self._session_path(session_id) / tensor_base / folder_name / f"{output_name}.npy"
         else:
-            path = self._session_path(session_id) / "tensors" / folder_name / f"{output_name}.npy"
+            path = self._session_path(session_id) / "output" / folder_name / f"{output_name}.npy"
         return path if path.exists() else None
 
     def _unique_tensor_folder_in(self, tensors_dir: Path, node_name: str) -> str:
