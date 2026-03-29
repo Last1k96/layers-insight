@@ -10,7 +10,7 @@ import pytest
 from fastapi import FastAPI
 
 from backend.config import AppConfig
-from backend.routers import devices, graph, inference, sessions, tensors
+from backend.routers import bisect, devices, graph, inference, sessions, tensors
 from backend.services.queue_service import QueueService
 from backend.services.session_service import SessionService
 from backend.schemas.session import SessionConfig
@@ -79,10 +79,14 @@ def test_app(tmp_path, sample_model_files):
     )
     app.state.queue_service = queue_service
 
+    from backend.services.bisect_service import BisectService
+    app.state.bisect_service = BisectService()
+
     app.include_router(devices.router)
     app.include_router(sessions.router)
     app.include_router(graph.router)
     app.include_router(inference.router)
+    app.include_router(bisect.router)
     app.include_router(tensors.router)
 
     return app

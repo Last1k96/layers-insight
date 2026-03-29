@@ -1,5 +1,6 @@
 import { graphStore, type NodeStatus } from '../stores/graph.svelte';
 import { queueStore } from '../stores/queue.svelte';
+import { bisectStore } from '../stores/bisect.svelte';
 import { cacheMetrics } from '../stores/metrics.svelte';
 import { logStore } from '../stores/log.svelte';
 import { refreshRenderer } from '../graph/renderer';
@@ -150,5 +151,16 @@ function handleMessage(msg: any): void {
       message: msg.message,
       timestamp: msg.timestamp,
     });
+  }
+
+  if (msg.type === 'bisect_progress') {
+    bisectStore.handleWsMessage(msg);
+    // When bisection completes, auto-select the found node
+    if (msg.status === 'done' && msg.found_node) {
+      const node = graphStore.graphData?.nodes.find(n => n.name === msg.found_node);
+      if (node) {
+        graphStore.selectNode(node.id);
+      }
+    }
   }
 }
