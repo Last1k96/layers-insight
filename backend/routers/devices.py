@@ -33,6 +33,67 @@ async def list_devices(request: Request) -> list[str]:
     return _add_virtual_devices(devices)
 
 
+class DeviceProperty(BaseModel):
+    name: str
+    value: str
+    type: str  # "bool", "string", "int", "enum"
+    options: list[str] = []  # for enum type
+
+
+@router.get("/device-config/{device_name}", response_model=list[DeviceProperty])
+async def get_device_config(device_name: str, request: Request) -> list[DeviceProperty]:
+    """Query available configuration properties for a device."""
+    ov_core = request.app.state.ov_core
+    if ov_core is None:
+        return []
+
+    # Strip virtual device suffixes (e.g. CPU_fp16 -> CPU)
+    actual_device = device_name.split("_")[0] if "_" in device_name else device_name
+
+    try:
+        supported = ov_core.get_property(actual_device, "SUPPORTED_PROPERTIES")
+    except Exception:
+        return []
+
+    # Properties to skip (internal, read-only, or cause issues)
+    skip_props = {
+        "SUPPORTED_PROPERTIES", "SUPPORTED_CONFIG_KEYS", "OPTIMIZATION_CAPABILITIES",
+        "RANGE_FOR_ASYNC_INFER_REQUESTS", "RANGE_FOR_STREAMS", "FULL_DEVICE_NAME",
+        "DEVICE_ARCHITECTURE", "DEVICE_TYPE", "DEVICE_GOPS", "DEVICE_UUID",
+        "AVAILABLE_DEVICES", "OPTIMAL_NUMBER_OF_INFER_REQUESTS",
+        "CACHING_PROPERTIES", "LOADED_FROM_CACHE",
+    }
+
+    properties: list[DeviceProperty] = []
+    for prop_name in supported:
+        if prop_name in skip_props:
+            continue
+        try:
+            value = ov_core.get_property(actual_device, prop_name)
+        except Exception:
+            continue
+
+        # Determine type from value
+        str_value = str(value)
+        if isinstance(value, bool):
+            prop_type = "bool"
+        elif isinstance(value, int):
+            prop_type = "int"
+        elif str_value.lower() in ("yes", "no", "true", "false"):
+            prop_type = "bool"
+        else:
+            prop_type = "string"
+
+        properties.append(DeviceProperty(
+            name=prop_name,
+            value=str_value,
+            type=prop_type,
+            options=[],
+        ))
+
+    return properties
+
+
 class AppDefaults(BaseModel):
     ov_path: Optional[str] = None
     model_path: Optional[str] = None

@@ -19,6 +19,37 @@ class TestCreateSession:
         assert data["main_device"] == "CPU"
 
     @pytest.mark.asyncio
+    async def test_create_session_with_plugin_config(self, async_client, sample_model_files):
+        resp = await async_client.post("/api/sessions", json={
+            "model_path": str(sample_model_files),
+            "main_device": "CPU",
+            "ref_device": "CPU",
+            "plugin_config": {"NUM_STREAMS": "2", "INFERENCE_NUM_THREADS": "4"},
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        session_id = data["id"]
+
+        # Verify plugin_config is persisted in session detail
+        detail = await async_client.get(f"/api/sessions/{session_id}")
+        assert detail.status_code == 200
+        detail_data = detail.json()
+        assert detail_data["config"]["plugin_config"] == {"NUM_STREAMS": "2", "INFERENCE_NUM_THREADS": "4"}
+
+    @pytest.mark.asyncio
+    async def test_create_session_without_plugin_config(self, async_client, sample_model_files):
+        resp = await async_client.post("/api/sessions", json={
+            "model_path": str(sample_model_files),
+            "main_device": "CPU",
+            "ref_device": "CPU",
+        })
+        assert resp.status_code == 200
+        session_id = resp.json()["id"]
+
+        detail = await async_client.get(f"/api/sessions/{session_id}")
+        assert detail.json()["config"]["plugin_config"] == {}
+
+    @pytest.mark.asyncio
     async def test_create_session_invalid_path(self, async_client):
         with pytest.raises(Exception):
             await async_client.post("/api/sessions", json={

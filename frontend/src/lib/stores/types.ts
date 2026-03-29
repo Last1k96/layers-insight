@@ -55,6 +55,14 @@ export interface SessionConfig {
   input_precision: string;
   input_layout: string;
   inputs?: InputConfig[];
+  plugin_config?: Record<string, string>;
+}
+
+export interface DeviceProperty {
+  name: string;
+  value: string;
+  type: 'bool' | 'string' | 'int' | 'enum';
+  options: string[];
 }
 
 export interface SessionDetail {

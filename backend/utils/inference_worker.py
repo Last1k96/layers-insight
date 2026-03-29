@@ -51,6 +51,7 @@ def main() -> None:
     input_configs: list[dict] | None = cfg.get("input_configs")
     out_dir: str = cfg["out_dir"]  # temp dir for numpy files
     ov_log_level: str = cfg.get("ov_log_level", "WARNING")
+    plugin_config: dict[str, str] = cfg.get("plugin_config", {})
 
     # Set OV log level BEFORE importing openvino
     os.environ["OPENVINO_LOG_LEVEL"] = ov_log_level
@@ -159,7 +160,7 @@ def main() -> None:
         # Infer on main device
         _log("info", f"Compiling model for {main_device}...")
         main_model = fp16_cut_model if _is_fp16_device(main_device) else cut_model
-        main_out, main_result, main_err = _run_on_device(core, main_model, main_device, inputs)
+        main_out, main_result, main_err = _run_on_device(core, main_model, main_device, inputs, plugin_config)
         if main_err:
             _log("error", main_err)
             _emit({"error": main_err}, _file=real_stdout)
@@ -169,7 +170,7 @@ def main() -> None:
         # Infer on reference device
         _log("info", f"Compiling model for {ref_device}...")
         ref_model = fp16_cut_model if _is_fp16_device(ref_device) else cut_model
-        ref_out, ref_result, ref_err = _run_on_device(core, ref_model, ref_device, inputs)
+        ref_out, ref_result, ref_err = _run_on_device(core, ref_model, ref_device, inputs, plugin_config)
         if ref_err:
             _log("error", ref_err)
             _emit({"error": ref_err}, _file=real_stdout)
@@ -261,8 +262,11 @@ def _parse_virtual_device(device: str) -> tuple[str, dict]:
     return (device, {})
 
 
-def _run_on_device(core, model, device: str, inputs: dict):
+def _run_on_device(core, model, device: str, inputs: dict, plugin_config: dict[str, str] | None = None):
     actual_device, config = _parse_virtual_device(device)
+    # Merge user plugin_config into device config
+    if plugin_config:
+        config.update(plugin_config)
     try:
         _log("info", f"Compiling on {device}...")
         compiled = core.compile_model(model, actual_device, config)

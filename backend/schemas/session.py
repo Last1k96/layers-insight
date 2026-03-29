@@ -32,6 +32,7 @@ class SessionConfig(BaseModel):
     input_layout: str = "NCHW"
     inputs: Optional[list[InputConfig]] = None  # per-input config
     original_format: Optional[str] = None  # original model format before conversion (e.g. "onnx")
+    plugin_config: dict[str, str] = {}  # device plugin properties (key-value map)
 
 
 class SessionInfo(BaseModel):

@@ -20,6 +20,7 @@
   let wsDisconnected = $state(false);
   let showAccuracyView = $state(false);
   let showBatchQueue = $state(false);
+  let batchQueueInitialMode = $state<'all' | 'by-type' | 'uninferred' | 'from-selection'>('all');
 
   function restoreSessionTasks(): void {
     const session = sessionStore.currentSession;
@@ -78,6 +79,16 @@
   <!-- Graph fills entire background -->
   <GraphCanvas />
 
+  <!-- Infer All button -->
+  {#if graphStore.graphData}
+    <button
+      class="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 bg-accent hover:bg-accent-hover rounded-lg text-xs font-medium transition-colors shadow-lg"
+      onclick={() => { batchQueueInitialMode = 'all'; showBatchQueue = true; }}
+    >
+      Infer All
+    </button>
+  {/if}
+
   <!-- Minimap -->
   <Minimap />
 
@@ -95,7 +106,7 @@
   <FloatingPanel side="right" title="Node Status">
     <NodeStatus
       onshowaccuracy={() => showAccuracyView = true}
-      onshowbatchqueue={() => showBatchQueue = true}
+      onshowbatchqueue={() => { batchQueueInitialMode = 'from-selection'; showBatchQueue = true; }}
     />
   </FloatingPanel>
 
@@ -118,11 +129,12 @@
   />
 {/if}
 
-{#if showBatchQueue && graphStore.selectedNode}
+{#if showBatchQueue}
   <div class="fixed inset-0 z-[59] bg-black/30" onclick={() => showBatchQueue = false} role="presentation"></div>
   <BatchQueue
-    nodeId={graphStore.selectedNode.id}
-    nodeName={graphStore.selectedNode.name}
+    nodeId={graphStore.selectedNode?.id ?? null}
+    nodeName={graphStore.selectedNode?.name ?? null}
+    initialMode={batchQueueInitialMode}
     onclose={() => showBatchQueue = false}
   />
 {/if}

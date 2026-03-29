@@ -25,6 +25,22 @@ class TestGetDefaults:
         assert data["model_path"] is not None
 
 
+class TestDeviceConfig:
+    @pytest.mark.asyncio
+    async def test_device_config_without_ov(self, async_client):
+        """When OV is not available, should return empty list."""
+        resp = await async_client.get("/api/device-config/CPU")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    @pytest.mark.asyncio
+    async def test_device_config_virtual_device(self, async_client):
+        """Virtual devices (e.g. CPU_fp16) should also return 200."""
+        resp = await async_client.get("/api/device-config/CPU_fp16")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+
 class TestModelInputs:
     @pytest.mark.asyncio
     async def test_model_inputs_without_ov(self, async_client):
