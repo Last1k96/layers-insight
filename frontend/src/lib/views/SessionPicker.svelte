@@ -5,13 +5,19 @@
   let {
     onsessionselected,
     onnewsession,
+    onclonesession,
+    oncompare,
   }: {
     onsessionselected: (id: string) => void;
     onnewsession: () => void;
+    onclonesession: (id: string) => void;
+    oncompare: (a: string, b: string) => void;
   } = $props();
 
   let confirmingDelete: string | null = $state(null);
   let selectedIndex = $state(-1);
+  let compareMode = $state(false);
+  let compareSelection = $state<string[]>([]);
 
   function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
@@ -50,6 +56,31 @@
     confirmingDelete = null;
   }
 
+  function handleClone(e: MouseEvent, sessionId: string) {
+    e.stopPropagation();
+    onclonesession(sessionId);
+  }
+
+  function toggleCompareSelect(e: MouseEvent, sessionId: string) {
+    e.stopPropagation();
+    if (compareSelection.includes(sessionId)) {
+      compareSelection = compareSelection.filter(id => id !== sessionId);
+    } else if (compareSelection.length < 2) {
+      compareSelection = [...compareSelection, sessionId];
+    }
+  }
+
+  function startCompare() {
+    if (compareSelection.length === 2) {
+      oncompare(compareSelection[0], compareSelection[1]);
+    }
+  }
+
+  function toggleCompareMode() {
+    compareMode = !compareMode;
+    if (!compareMode) compareSelection = [];
+  }
+
   onMount(() => {
     sessionStore.fetchSessions().then(() => {
       const sessions = sessionStore.sessions;
@@ -85,17 +116,30 @@
         {#each sessionStore.sessions as session, i (session.id)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
-            class="group w-full text-left p-4 bg-surface-panel hover:bg-surface-elevated rounded-lg border transition-colors cursor-pointer {i === selectedIndex ? 'border-accent bg-surface-elevated' : 'border-edge hover:border-content-secondary/30'}"
+            class="group w-full text-left p-4 bg-surface-panel hover:bg-surface-elevated rounded-lg border transition-colors cursor-pointer {i === selectedIndex ? 'border-accent bg-surface-elevated' : 'border-edge hover:border-content-secondary/30'} {compareMode && compareSelection.includes(session.id) ? 'ring-2 ring-accent' : ''}"
             role="button"
             tabindex="0"
-            onclick={() => onsessionselected(session.id)}
-            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onsessionselected(session.id); }}}
+            onclick={() => compareMode ? toggleCompareSelect(new MouseEvent('click'), session.id) : onsessionselected(session.id)}
+            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); compareMode ? toggleCompareSelect(new MouseEvent('click'), session.id) : onsessionselected(session.id); }}}
           >
             <div class="flex justify-between items-start">
-              <div class="min-w-0 flex-1">
-                <div class="font-medium">{session.model_name}</div>
-                <div class="text-sm text-content-secondary mt-1">
-                  {session.main_device} vs {session.ref_device}
+              <div class="flex items-start gap-3 min-w-0 flex-1">
+                {#if compareMode}
+                  <div class="mt-1 flex-shrink-0">
+                    <div class="w-4 h-4 border-2 rounded {compareSelection.includes(session.id) ? 'border-accent bg-accent' : 'border-content-secondary/50'} transition-colors flex items-center justify-center">
+                      {#if compareSelection.includes(session.id)}
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-white" viewBox="0 0 20 20" fill="currentColor">
+                          <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                        </svg>
+                      {/if}
+                    </div>
+                  </div>
+                {/if}
+                <div class="min-w-0">
+                  <div class="font-medium">{session.model_name}</div>
+                  <div class="text-sm text-content-secondary mt-1">
+                    {session.main_device} vs {session.ref_device}
+                  </div>
                 </div>
               </div>
               <div class="text-right flex-shrink-0 flex items-start gap-2">
@@ -115,31 +159,45 @@
                     {/if}
                   </div>
                 </div>
-                {#if confirmingDelete === session.id}
-                  <div class="flex gap-1">
-                    <button
-                      class="px-2 py-1 text-xs bg-surface-elevated hover:bg-edge text-content-primary rounded transition-colors"
-                      onclick={cancelDelete}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      class="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
-                      onclick={(e) => handleDelete(e, session.id)}
-                    >
-                      Confirm
-                    </button>
-                  </div>
-                {:else}
-                  <button
-                    class="opacity-0 group-hover:opacity-100 p-1 text-content-secondary hover:text-red-400 transition-all"
-                    onclick={(e) => handleDelete(e, session.id)}
-                    title="Delete session"
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                      <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                    </svg>
-                  </button>
+                {#if !compareMode}
+                  {#if confirmingDelete === session.id}
+                    <div class="flex gap-1">
+                      <button
+                        class="px-2 py-1 text-xs bg-surface-elevated hover:bg-edge text-content-primary rounded transition-colors"
+                        onclick={cancelDelete}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        class="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
+                        onclick={(e) => handleDelete(e, session.id)}
+                      >
+                        Confirm
+                      </button>
+                    </div>
+                  {:else}
+                    <div class="flex gap-1">
+                      <button
+                        class="opacity-0 group-hover:opacity-100 p-1 text-content-secondary hover:text-accent transition-all"
+                        onclick={(e) => handleClone(e, session.id)}
+                        title="Clone session"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H9a2 2 0 01-2-2V9z" />
+                          <path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h8a2 2 0 00-2-2H5z" />
+                        </svg>
+                      </button>
+                      <button
+                        class="opacity-0 group-hover:opacity-100 p-1 text-content-secondary hover:text-red-400 transition-all"
+                        onclick={(e) => handleDelete(e, session.id)}
+                        title="Delete session"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                          <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                  {/if}
                 {/if}
               </div>
             </div>
@@ -147,12 +205,34 @@
         {/each}
       </div>
 
-      <button
-        class="w-full py-3 border border-dashed border-edge hover:border-content-secondary/50 rounded-lg text-content-secondary hover:text-content-primary transition-colors"
-        onclick={onnewsession}
-      >
-        + New Session
-      </button>
+      <div class="flex gap-2">
+        <button
+          class="flex-1 py-3 border border-dashed border-edge hover:border-content-secondary/50 rounded-lg text-content-secondary hover:text-content-primary transition-colors"
+          onclick={onnewsession}
+        >
+          + New Session
+        </button>
+        {#if sessionStore.sessions.length >= 2}
+          <button
+            class="py-3 px-4 border rounded-lg transition-colors {compareMode ? 'border-accent text-accent bg-accent/10' : 'border-edge text-content-secondary hover:border-content-secondary/50 hover:text-content-primary'}"
+            onclick={toggleCompareMode}
+          >
+            {compareMode ? 'Cancel' : 'Compare'}
+          </button>
+        {/if}
+      </div>
+      {#if compareMode && compareSelection.length === 2}
+        <button
+          class="w-full py-3 mt-2 bg-accent hover:bg-accent-hover rounded-lg font-medium transition-colors"
+          onclick={startCompare}
+        >
+          Compare Selected Sessions
+        </button>
+      {:else if compareMode}
+        <div class="text-center text-sm text-content-secondary mt-2">
+          Select 2 sessions to compare ({compareSelection.length}/2)
+        </div>
+      {/if}
     {/if}
 
     {#if sessionStore.error}

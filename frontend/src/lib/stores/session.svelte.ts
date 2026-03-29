@@ -1,4 +1,4 @@
-import type { SessionInfo, SessionDetail, SessionConfig } from './types';
+import type { SessionInfo, SessionDetail, SessionConfig, CloneRequest, CloneResponse, CompareResponse } from './types';
 
 class SessionStore {
   sessions = $state<SessionInfo[]>([]);
@@ -71,6 +71,53 @@ class SessionStore {
       }
     } catch (e: any) {
       this.error = e.message;
+    }
+  }
+
+  async cloneSession(sourceSessionId: string, overrides: CloneRequest): Promise<CloneResponse | null> {
+    this.loading = true;
+    this.error = null;
+    try {
+      const res = await fetch(`/api/sessions/${sourceSessionId}/clone`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(overrides),
+      });
+      if (!res.ok) throw new Error(`Failed to clone session: ${res.statusText}`);
+      const data: CloneResponse = await res.json();
+      this.sessions = [...this.sessions, data.session];
+      return data;
+    } catch (e: any) {
+      this.error = e.message;
+      return null;
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  async cloneEnqueue(sourceSessionId: string, targetSessionId: string, nodeNames: string[]): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/sessions/${sourceSessionId}/clone-enqueue`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_session_id: targetSessionId, node_names: nodeNames }),
+      });
+      if (!res.ok) throw new Error(`Failed to enqueue nodes: ${res.statusText}`);
+      return true;
+    } catch (e: any) {
+      this.error = e.message;
+      return false;
+    }
+  }
+
+  async compareSessions(sessionA: string, sessionB: string): Promise<CompareResponse | null> {
+    try {
+      const res = await fetch(`/api/sessions/compare?session_a=${sessionA}&session_b=${sessionB}`);
+      if (!res.ok) throw new Error(`Failed to compare sessions: ${res.statusText}`);
+      return await res.json();
+    } catch (e: any) {
+      this.error = e.message;
+      return null;
     }
   }
 }

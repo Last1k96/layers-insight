@@ -393,3 +393,106 @@ class TestSessionService:
         # Paths should be absolute
         assert resolved["model_path"].startswith("/")
         assert resolved["input_configs"][0]["path"].startswith("/")
+
+    def test_clone_session_basic(self, session_service, sample_config):
+        """Clone creates a new session from the source."""
+        info = session_service.create_session(sample_config)
+        result = session_service.clone_session(info.id, {})
+        assert result is not None
+        new_info, inferred_nodes = result
+        assert new_info.id != info.id
+        assert new_info.model_name == info.model_name
+        assert inferred_nodes == []
+
+    def test_clone_session_with_overrides(self, session_service, sample_config):
+        """Clone applies device overrides."""
+        info = session_service.create_session(sample_config)
+        result = session_service.clone_session(info.id, {
+            "main_device": "GPU",
+            "ref_device": "GPU",
+        })
+        new_info, _ = result
+        assert new_info.main_device == "GPU"
+        assert new_info.ref_device == "GPU"
+
+    def test_clone_preserves_source_id(self, session_service, sample_config):
+        """Cloned session stores source_session_id."""
+        info = session_service.create_session(sample_config)
+        result = session_service.clone_session(info.id, {})
+        new_info, _ = result
+        assert session_service.get_source_session_id(new_info.id) == info.id
+
+    def test_clone_returns_inferred_nodes_sorted(self, session_service, sample_config):
+        """Clone returns inferred nodes sorted by worst accuracy."""
+        info = session_service.create_session(sample_config)
+        session_service.save_task_result(info.id, "t1", {
+            "status": "success", "node_name": "conv1",
+            "metrics": {"cosine_similarity": 0.99, "mse": 0.001, "max_abs_diff": 0.01},
+        })
+        session_service.save_task_result(info.id, "t2", {
+            "status": "success", "node_name": "relu1",
+            "metrics": {"cosine_similarity": 0.5, "mse": 0.1, "max_abs_diff": 0.5},
+        })
+
+        result = session_service.clone_session(info.id, {})
+        _, inferred_nodes = result
+        assert len(inferred_nodes) == 2
+        assert inferred_nodes[0]["node_name"] == "relu1"  # worst first
+        assert inferred_nodes[1]["node_name"] == "conv1"
+
+    def test_compare_sessions_basic(self, session_service, sample_config):
+        """Compare two sessions returns correct deltas and summary."""
+        s1 = session_service.create_session(sample_config)
+        s2 = session_service.create_session(sample_config)
+
+        session_service.save_task_result(s1.id, "t1", {
+            "status": "success", "node_name": "conv1",
+            "metrics": {"cosine_similarity": 0.90, "mse": 0.01, "max_abs_diff": 0.1},
+        })
+        session_service.save_task_result(s2.id, "t2", {
+            "status": "success", "node_name": "conv1",
+            "metrics": {"cosine_similarity": 0.95, "mse": 0.005, "max_abs_diff": 0.05},
+        })
+
+        result = session_service.compare_sessions(s1.id, s2.id)
+        assert result["summary"]["total_compared"] == 1
+        assert result["summary"]["improved"] == 1
+        conv1 = result["nodes"][0]
+        assert conv1["delta_cosine"] == pytest.approx(0.05, abs=1e-6)
+        assert conv1["delta_mse"] == pytest.approx(-0.005, abs=1e-6)
+
+    def test_compare_sessions_only_in_one(self, session_service, sample_config):
+        """Nodes only in one session are counted correctly."""
+        s1 = session_service.create_session(sample_config)
+        s2 = session_service.create_session(sample_config)
+
+        session_service.save_task_result(s1.id, "t1", {
+            "status": "success", "node_name": "conv1",
+            "metrics": {"cosine_similarity": 0.9, "mse": 0.01, "max_abs_diff": 0.1},
+        })
+        session_service.save_task_result(s2.id, "t2", {
+            "status": "success", "node_name": "relu1",
+            "metrics": {"cosine_similarity": 0.95, "mse": 0.005, "max_abs_diff": 0.05},
+        })
+
+        result = session_service.compare_sessions(s1.id, s2.id)
+        assert result["summary"]["only_in_a"] == 1
+        assert result["summary"]["only_in_b"] == 1
+        assert result["summary"]["total_compared"] == 0
+
+    def test_compare_sessions_unchanged(self, session_service, sample_config):
+        """Nodes with tiny delta are counted as unchanged."""
+        s1 = session_service.create_session(sample_config)
+        s2 = session_service.create_session(sample_config)
+
+        session_service.save_task_result(s1.id, "t1", {
+            "status": "success", "node_name": "conv1",
+            "metrics": {"cosine_similarity": 0.9999, "mse": 0.001, "max_abs_diff": 0.01},
+        })
+        session_service.save_task_result(s2.id, "t2", {
+            "status": "success", "node_name": "conv1",
+            "metrics": {"cosine_similarity": 0.99995, "mse": 0.0011, "max_abs_diff": 0.011},
+        })
+
+        result = session_service.compare_sessions(s1.id, s2.id)
+        assert result["summary"]["unchanged"] == 1

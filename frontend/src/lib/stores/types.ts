@@ -193,3 +193,44 @@ export interface TensorMeta {
   mean: number;
   std: number;
 }
+
+export interface CloneRequest {
+  model_path?: string;
+  main_device?: string;
+  ref_device?: string;
+  inputs?: InputConfig[];
+  plugin_config?: Record<string, any>;
+}
+
+export interface CloneResponse {
+  session: SessionInfo;
+  inferred_nodes: {
+    node_name: string;
+    node_type: string;
+    node_id: string;
+    metrics: AccuracyMetrics | null;
+  }[];
+}
+
+export interface CompareNodeResult {
+  node_name: string;
+  node_type: string;
+  metrics_a: AccuracyMetrics | null;
+  metrics_b: AccuracyMetrics | null;
+  delta_cosine: number | null;
+  delta_mse: number | null;
+}
+
+export interface CompareSummary {
+  total_compared: number;
+  improved: number;
+  regressed: number;
+  unchanged: number;
+  only_in_a: number;
+  only_in_b: number;
+}
+
+export interface CompareResponse {
+  nodes: CompareNodeResult[];
+  summary: CompareSummary;
+}

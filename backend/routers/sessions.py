@@ -3,11 +3,21 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
-from backend.schemas.session import CutRequest, SessionConfig, SessionDetail, SessionInfo, SubSessionInfo
+from backend.schemas.session import (
+    CloneEnqueueRequest,
+    CloneRequest,
+    CompareResponse,
+    CutRequest,
+    SessionConfig,
+    SessionDetail,
+    SessionInfo,
+    SubSessionInfo,
+)
 from backend.utils.model_converter import convert_to_ir, detect_model_format
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
@@ -62,6 +72,24 @@ async def list_sessions(request: Request) -> list[SessionInfo]:
     return svc.list_sessions()
 
 
+@router.get("/compare", response_model=CompareResponse)
+async def compare_sessions(
+    request: Request,
+    session_a: str = Query(..., description="First session ID"),
+    session_b: str = Query(..., description="Second session ID"),
+) -> CompareResponse:
+    """Compare inference results between two sessions node by node."""
+    svc = _get_session_service(request)
+
+    if svc.get_session(session_a) is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_a}' not found")
+    if svc.get_session(session_b) is None:
+        raise HTTPException(status_code=404, detail=f"Session '{session_b}' not found")
+
+    result = svc.compare_sessions(session_a, session_b)
+    return CompareResponse(**result)
+
+
 @router.get("/{session_id}", response_model=SessionDetail)
 async def get_session(session_id: str, request: Request) -> SessionDetail:
     """Get session detail."""
@@ -79,6 +107,92 @@ async def delete_session(session_id: str, request: Request) -> dict:
     if svc.delete_session(session_id):
         return {"deleted": True}
     raise HTTPException(status_code=404, detail="Session not found")
+
+
+@router.post("/{session_id}/clone")
+async def clone_session(session_id: str, req: CloneRequest, request: Request) -> dict:
+    """Clone a session with optional overrides.
+
+    Returns the new session info and a list of nodes that were inferred
+    in the source session, ordered by worst accuracy first.
+    """
+    svc = _get_session_service(request)
+    source = svc.get_session(session_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source session not found")
+
+    overrides = req.model_dump(exclude_none=True)
+    # Convert InputConfig objects to dicts for the service layer
+    if overrides.get("inputs"):
+        overrides["inputs"] = [inp.model_dump() for inp in req.inputs]
+
+    result = svc.clone_session(session_id, overrides)
+    if result is None:
+        raise HTTPException(status_code=500, detail="Failed to clone session")
+
+    new_info, inferred_nodes = result
+    return {
+        "session": new_info.model_dump(),
+        "inferred_nodes": inferred_nodes,
+    }
+
+
+@router.post("/{session_id}/clone-enqueue")
+async def clone_enqueue(session_id: str, req: CloneEnqueueRequest, request: Request) -> dict:
+    """Batch-enqueue nodes from source session into a target session.
+
+    Nodes are ordered by worst accuracy from the source session.
+    """
+    svc = _get_session_service(request)
+    source = svc.get_session(session_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Source session not found")
+
+    target = svc.get_session(req.target_session_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Target session not found")
+
+    # Get source session's inferred nodes for ordering
+    source_meta = svc._read_metadata(session_id)
+    inferred_nodes = svc._get_inferred_nodes_sorted(source_meta)
+    node_order = {n["node_name"]: i for i, n in enumerate(inferred_nodes)}
+
+    # Sort requested nodes by worst accuracy from source
+    ordered_names = sorted(
+        req.node_names,
+        key=lambda name: node_order.get(name, len(inferred_nodes)),
+    )
+
+    # Build node info map from source tasks
+    tasks = source_meta.get("tasks", {})
+    node_info: dict[str, dict] = {}
+    for task_data in tasks.values():
+        if task_data.get("status") == "success":
+            name = task_data.get("node_name")
+            if name and name not in node_info:
+                node_info[name] = {
+                    "node_id": task_data.get("node_id", name),
+                    "node_type": task_data.get("node_type", ""),
+                }
+
+    # Enqueue into target session's queue
+    queue_svc = request.app.state.queue_service
+    batch_id = str(uuid.uuid4())[:8]
+    enqueued = []
+
+    for name in ordered_names:
+        info = node_info.get(name, {"node_id": name, "node_type": ""})
+        task = queue_svc.create_task(
+            session_id=req.target_session_id,
+            node_id=info["node_id"],
+            node_name=name,
+            node_type=info["node_type"],
+        )
+        task.batch_id = batch_id
+        result = await queue_svc.enqueue(task)
+        enqueued.append(result.model_dump())
+
+    return {"enqueued": len(enqueued), "batch_id": batch_id, "tasks": enqueued}
 
 
 @router.post("/{session_id}/cut", response_model=SubSessionInfo)
