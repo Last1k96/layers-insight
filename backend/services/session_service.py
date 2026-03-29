@@ -512,6 +512,20 @@ class SessionService:
             path = self._session_path(session_id) / "output" / folder_name / f"{output_name}.npy"
         return path if path.exists() else None
 
+    def get_task_dir(self, session_id: str, task_id: str) -> Optional[Path]:
+        """Get the directory containing a task's artifacts (model, tensors)."""
+        meta = self._read_metadata(session_id)
+        task_data = meta.get("tasks", {}).get(task_id, {})
+        if not task_data:
+            return None
+        folder_name = task_data.get("tensor_dir", task_id)
+        tensor_base = task_data.get("tensor_base")
+        if tensor_base:
+            path = self._session_path(session_id) / tensor_base / folder_name
+        else:
+            path = self._session_path(session_id) / "output" / folder_name
+        return path if path.exists() else None
+
     def _unique_tensor_folder_in(self, tensors_dir: Path, node_name: str) -> str:
         """Return a unique folder name under given tensors dir based on node_name."""
         safe = node_name.replace("/", "_").replace("\\", "_")

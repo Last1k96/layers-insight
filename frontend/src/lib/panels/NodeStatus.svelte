@@ -68,6 +68,26 @@
   }
 
   let cutting = $state(false);
+  let exporting = $state(false);
+
+  async function handleExport() {
+    const session = sessionStore.currentSession;
+    if (!session || !nodeStatus?.taskId) return;
+
+    exporting = true;
+    try {
+      const url = `/api/tensors/${session.id}/${nodeStatus.taskId}/export`;
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } finally {
+      // Brief delay so the user sees the loading state
+      setTimeout(() => { exporting = false; }, 1000);
+    }
+  }
 
   function handleDelete() {
     if (nodeStatus?.taskId) {
@@ -315,6 +335,24 @@
           onclick={handleDeepAccuracy}
         >
           Deep Accuracy View
+        </button>
+        <button
+          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors flex items-center justify-center gap-1.5"
+          onclick={handleExport}
+          disabled={exporting}
+        >
+          {#if exporting}
+            <svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4 31.4" stroke-linecap="round"/>
+            </svg>
+            Exporting...
+          {:else}
+            <svg class="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 1a.5.5 0 0 1 .5.5v8.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V1.5A.5.5 0 0 1 8 1z"/>
+              <path d="M2 13.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5z"/>
+            </svg>
+            Export Reproducer
+          {/if}
         </button>
         <button
           class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
