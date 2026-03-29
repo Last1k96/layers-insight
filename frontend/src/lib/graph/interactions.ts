@@ -159,6 +159,38 @@ export function setupInteractions(): void {
 
   document.addEventListener('keydown', handleKeydown);
   cleanupFns.push(() => document.removeEventListener('keydown', handleKeydown));
+
+  // Alt hold: accuracy view mode
+  function handleKeydownAlt(e: KeyboardEvent) {
+    if (e.key === 'Alt' && !graphStore.accuracyViewActive) {
+      e.preventDefault();
+      graphStore.accuracyViewActive = true;
+      refreshRenderer();
+    }
+  }
+
+  function handleKeyupAlt(e: KeyboardEvent) {
+    if (e.key === 'Alt' && graphStore.accuracyViewActive) {
+      graphStore.accuracyViewActive = false;
+      refreshRenderer();
+    }
+  }
+
+  function handleBlur() {
+    if (graphStore.accuracyViewActive) {
+      graphStore.accuracyViewActive = false;
+      refreshRenderer();
+    }
+  }
+
+  document.addEventListener('keydown', handleKeydownAlt);
+  document.addEventListener('keyup', handleKeyupAlt);
+  window.addEventListener('blur', handleBlur);
+  cleanupFns.push(() => {
+    document.removeEventListener('keydown', handleKeydownAlt);
+    document.removeEventListener('keyup', handleKeyupAlt);
+    window.removeEventListener('blur', handleBlur);
+  });
 }
 
 export function cleanupInteractions(): void {

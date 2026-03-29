@@ -197,6 +197,7 @@ function doRefresh(): void {
     graphStore.grayedNodes,
     panZoom.ratio,
     graphStore.nodeOverrides,
+    graphStore.accuracyViewActive,
   );
 }
 

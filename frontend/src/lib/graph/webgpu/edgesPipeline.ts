@@ -2,24 +2,34 @@
  * WebGPU pipeline for rendering edges as tessellated thick line strips + arrowheads.
  * Reuses the B-spline math from svgRenderer.ts.
  *
- * Vertex format: 4 floats per vertex (centerX, centerY, normalX, normalY).
+ * Vertex format: 8 floats per vertex (centerX, centerY, normalX, normalY, r, g, b, a).
  * The vertex shader expands the normal to guarantee a minimum screen-space
  * edge width, keeping edges visible when zoomed out.
+ * Per-vertex color enables per-edge coloring (e.g. accuracy view).
  */
 import type { GraphEdge, GraphNode } from '../../stores/types';
-import { ALPHA_BLEND } from './types';
+import { ALPHA_BLEND, EDGE_COLOR } from './types';
+
+/** Floats per edge vertex */
+const EDGE_VERTEX_FLOATS = 8;
+/** Bytes per edge vertex */
+const EDGE_VERTEX_BYTES = EDGE_VERTEX_FLOATS * 4;
 
 const SHADER = /* wgsl */ `
 @group(0) @binding(0) var<uniform> camera: mat4x4<f32>;
-@group(0) @binding(1) var<uniform> edgeColor: vec4<f32>;
-@group(0) @binding(2) var<uniform> viewportSize: vec2<f32>;
+@group(0) @binding(1) var<uniform> viewportSize: vec2<f32>;
 
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
+  @location(0) color: vec4<f32>,
 };
 
 @vertex
-fn vertexMain(@location(0) center: vec2<f32>, @location(1) normal: vec2<f32>) -> VertexOutput {
+fn vertexMain(
+  @location(0) center: vec2<f32>,
+  @location(1) normal: vec2<f32>,
+  @location(2) color: vec4<f32>,
+) -> VertexOutput {
   var out: VertexOutput;
   // Transform center to clip space
   let clipPos = camera * vec4(center, 0.0, 1.0);
@@ -33,19 +43,19 @@ fn vertexMain(@location(0) center: vec2<f32>, @location(1) normal: vec2<f32>) ->
     clipNormal = clipNormal * (0.5 / pixelLen);
   }
   out.position = vec4(clipPos.xy + clipNormal, clipPos.zw);
+  out.color = color;
   return out;
 }
 
 @fragment
-fn fragmentMain() -> @location(0) vec4<f32> {
-  return edgeColor;
+fn fragmentMain(in: VertexOutput) -> @location(0) vec4<f32> {
+  return in.color;
 }
 `;
 
 export interface EdgesPipelineState {
   pipeline: GPURenderPipeline;
   vertexBuffer: GPUBuffer;
-  colorBuffer: GPUBuffer;
   zoomBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   bindGroupLayout: GPUBindGroupLayout;
@@ -63,8 +73,7 @@ export function createEdgesPipeline(
   const bindGroupLayout = device.createBindGroupLayout({
     entries: [
       { binding: 0, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
-      { binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
-      { binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
+      { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'uniform' } },
     ],
   });
 
@@ -74,10 +83,11 @@ export function createEdgesPipeline(
       module,
       entryPoint: 'vertexMain',
       buffers: [{
-        arrayStride: 16,
+        arrayStride: EDGE_VERTEX_BYTES,
         attributes: [
           { shaderLocation: 0, offset: 0, format: 'float32x2' as GPUVertexFormat },
           { shaderLocation: 1, offset: 8, format: 'float32x2' as GPUVertexFormat },
+          { shaderLocation: 2, offset: 16, format: 'float32x4' as GPUVertexFormat },
         ],
       }],
     },
@@ -92,16 +102,9 @@ export function createEdgesPipeline(
 
   const initialCapacity = 4096;
   const vertexBuffer = device.createBuffer({
-    size: initialCapacity * 16,
+    size: initialCapacity * EDGE_VERTEX_BYTES,
     usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
   });
-
-  const colorBuffer = device.createBuffer({
-    size: 16,
-    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
-  });
-  // Default edge color: #aaa
-  device.queue.writeBuffer(colorBuffer, 0, new Float32Array([0.667, 0.667, 0.667, 1.0]) as Float32Array<ArrayBuffer>);
 
   const zoomBuffer = device.createBuffer({
     size: 8,
@@ -114,16 +117,11 @@ export function createEdgesPipeline(
     layout: bindGroupLayout,
     entries: [
       { binding: 0, resource: { buffer: cameraBuffer } },
-      { binding: 1, resource: { buffer: colorBuffer } },
-      { binding: 2, resource: { buffer: zoomBuffer } },
+      { binding: 1, resource: { buffer: zoomBuffer } },
     ],
   });
 
-  return { pipeline, vertexBuffer, colorBuffer, zoomBuffer, bindGroup, bindGroupLayout, vertexCount: 0, capacity: initialCapacity };
-}
-
-export function setEdgeColor(state: EdgesPipelineState, device: GPUDevice, r: number, g: number, b: number, a: number): void {
-  device.queue.writeBuffer(state.colorBuffer, 0, new Float32Array([r, g, b, a]) as Float32Array<ArrayBuffer>);
+  return { pipeline, vertexBuffer, zoomBuffer, bindGroup, bindGroupLayout, vertexCount: 0, capacity: initialCapacity };
 }
 
 export function updateEdgeViewport(state: EdgesPipelineState, device: GPUDevice, width: number, height: number): void {
@@ -141,14 +139,13 @@ export function updateEdgeVertices(
     state.vertexBuffer.destroy();
     const newCapacity = Math.max(vertexCount, state.capacity * 2);
     const vertexBuffer = device.createBuffer({
-      size: newCapacity * 16,
+      size: newCapacity * EDGE_VERTEX_BYTES,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    // Rebuild bind group since we store layout ref (vertex buffer not in bind group, but keep consistent)
     state = { ...state, vertexBuffer, capacity: newCapacity };
   }
 
-  device.queue.writeBuffer(state.vertexBuffer, 0, data as Float32Array<ArrayBuffer>, 0, vertexCount * 4);
+  device.queue.writeBuffer(state.vertexBuffer, 0, data as Float32Array<ArrayBuffer>, 0, vertexCount * EDGE_VERTEX_FLOATS);
   state.vertexCount = vertexCount;
   return state;
 }
@@ -164,6 +161,8 @@ export function drawEdges(pass: GPURenderPassEncoder, state: EdgesPipelineState)
 // ---- Edge tessellation (B-spline → triangles) ----
 
 interface Point { x: number; y: number }
+interface RGBA { r: number; g: number; b: number; a: number }
+interface EdgeColor { start: RGBA; end: RGBA }
 
 const LINE_HALF_WIDTH = 0.6;
 const MIN_SEGMENTS = 8;
@@ -173,16 +172,22 @@ const ARROW_LENGTH = 8;
 const ARROW_HALF_WIDTH = 3;
 
 /** Tessellate all edges into a flat Float32Array of triangle vertices.
- *  Each vertex is 4 floats: (centerX, centerY, normalX, normalY).
+ *  Each vertex is 8 floats: (centerX, centerY, normalX, normalY, r, g, b, a).
  *  The normal encodes the perpendicular offset direction * LINE_HALF_WIDTH.
- *  Arrowhead vertices use normal = (0,0) so they render at exact position. */
+ *  Arrowhead vertices use normal = (0,0) so they render at exact position.
+ *
+ *  @param edgeColorFn Optional callback returning per-edge gradient (start/end RGBA).
+ *    If a single color is needed, set start === end. If omitted, uses EDGE_COLOR default. */
 export function buildEdgeGeometry(
   edges: GraphEdge[],
   nodes: GraphNode[],
   nodeSize: (id: string) => { width: number; height: number },
+  edgeColorFn?: (edge: GraphEdge) => EdgeColor,
 ): Float32Array {
   const nodeMap = new Map<string, GraphNode>();
   for (const n of nodes) nodeMap.set(n.id, n);
+
+  const defaultRGBA: RGBA = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b, a: EDGE_COLOR.a };
 
   // Estimate vertex count.  Each B-spline span produces up to MAX_SEGMENTS line
   // segments (each = quad = 6 verts), + 3 for arrowhead.
@@ -192,39 +197,62 @@ export function buildEdgeGeometry(
     const spans = wp >= 2 ? (wp - 1) : 1;
     estimatedVertices += spans * MAX_SEGMENTS * 6 + 3;
   }
-  const buf = new Float32Array(estimatedVertices * 4);
+  const buf = new Float32Array(estimatedVertices * EDGE_VERTEX_FLOATS);
   let offset = 0;
 
+  // Current vertex color — updated per vertex for gradient support
+  let cr = 0, cg = 0, cb = 0, ca = 1;
+
   function pushVertex(cx: number, cy: number, nx: number, ny: number): void {
-    if (offset + 4 > buf.length) return; // safety
+    if (offset + EDGE_VERTEX_FLOATS > buf.length) return; // safety
     buf[offset++] = cx;
     buf[offset++] = cy;
     buf[offset++] = nx;
     buf[offset++] = ny;
+    buf[offset++] = cr;
+    buf[offset++] = cg;
+    buf[offset++] = cb;
+    buf[offset++] = ca;
   }
 
-  function pushQuad(
+  function setColorAtT(start: RGBA, end: RGBA, t: number): void {
+    cr = start.r + (end.r - start.r) * t;
+    cg = start.g + (end.g - start.g) * t;
+    cb = start.b + (end.b - start.b) * t;
+    ca = start.a + (end.a - start.a) * t;
+  }
+
+  function pushQuadGradient(
     p0x: number, p0y: number, p1x: number, p1y: number,
     n0x: number, n0y: number,
-    n1x?: number, n1y?: number,
+    n1x: number, n1y: number,
+    start: RGBA, end: RGBA, t0: number, t1: number,
   ): void {
-    // Two triangles forming a quad: vertices store center + signed normal.
-    // Supports per-endpoint normals for miter joins.
-    const nx1 = n1x ?? n0x;
-    const ny1 = n1y ?? n0y;
     // Triangle 1: (p0,+n0), (p1,+n1), (p1,-n1)
+    setColorAtT(start, end, t0);
     pushVertex(p0x, p0y, +n0x, +n0y);
-    pushVertex(p1x, p1y, +nx1, +ny1);
-    pushVertex(p1x, p1y, -nx1, -ny1);
+    setColorAtT(start, end, t1);
+    pushVertex(p1x, p1y, +n1x, +n1y);
+    pushVertex(p1x, p1y, -n1x, -n1y);
     // Triangle 2: (p0,+n0), (p1,-n1), (p0,-n0)
+    setColorAtT(start, end, t0);
     pushVertex(p0x, p0y, +n0x, +n0y);
-    pushVertex(p1x, p1y, -nx1, -ny1);
+    setColorAtT(start, end, t1);
+    pushVertex(p1x, p1y, -n1x, -n1y);
+    setColorAtT(start, end, t0);
     pushVertex(p0x, p0y, -n0x, -n0y);
   }
 
   for (const edge of edges) {
+    // Resolve color gradient for this edge
+    const color = edgeColorFn
+      ? edgeColorFn(edge)
+      : { start: defaultRGBA, end: defaultRGBA };
+
     const points = evaluateEdgeCurve(edge, nodeMap, nodeSize);
     if (points.length < 2) continue;
+
+    const lastIdx = points.length - 1;
 
     // Generate thick line strip with miter joins for seamless bends.
     // Precompute per-segment normals.
@@ -266,14 +294,15 @@ export function buildEdgeGeometry(
     for (let i = 0; i < points.length - 1; i++) {
       const sn = segNormals[i];
       if (sn.nx === 0 && sn.ny === 0) continue;
-      pushQuad(
+      pushQuadGradient(
         points[i].x, points[i].y, points[i + 1].x, points[i + 1].y,
         ptNormals[i].nx, ptNormals[i].ny,
         ptNormals[i + 1].nx, ptNormals[i + 1].ny,
+        color.start, color.end, i / lastIdx, (i + 1) / lastIdx,
       );
     }
 
-    // Arrowhead at the endpoint — use normal=(0,0) so vertices stay fixed
+    // Arrowhead at the endpoint — use end color
     const last = points[points.length - 1];
     const prev = points[points.length - 2];
     const adx = last.x - prev.x;
@@ -289,9 +318,168 @@ export function buildEdgeGeometry(
       const base1 = { x: tip.x - dirX * ARROW_LENGTH + perpX * ARROW_HALF_WIDTH, y: tip.y - dirY * ARROW_LENGTH + perpY * ARROW_HALF_WIDTH };
       const base2 = { x: tip.x - dirX * ARROW_LENGTH - perpX * ARROW_HALF_WIDTH, y: tip.y - dirY * ARROW_LENGTH - perpY * ARROW_HALF_WIDTH };
 
+      setColorAtT(color.start, color.end, 1.0);
       pushVertex(tip.x, tip.y, 0, 0);
       pushVertex(base1.x, base1.y, 0, 0);
       pushVertex(base2.x, base2.y, 0, 0);
+    }
+  }
+
+  return buf.subarray(0, offset);
+}
+
+/** Path half-width for accuracy overlay paths (thicker than normal edges) */
+const PATH_HALF_WIDTH = 3.0;
+const PATH_ARROW_LENGTH = 14;
+const PATH_ARROW_HALF_WIDTH = 7;
+
+/** A path between two inferred nodes: a sequence of edges to stitch into one continuous arrow. */
+export interface AccuracyPath {
+  edges: GraphEdge[];
+  color: { r: number; g: number; b: number; a: number };
+}
+
+/** Tessellate accuracy paths as thick continuous arrows.
+ *  Returns a Float32Array in the same vertex format (8 floats per vertex). */
+export function buildPathGeometry(
+  paths: AccuracyPath[],
+  nodes: GraphNode[],
+  nodeSize: (id: string) => { width: number; height: number },
+): Float32Array {
+  const nodeMap = new Map<string, GraphNode>();
+  for (const n of nodes) nodeMap.set(n.id, n);
+
+  // Estimate: each path has multiple edges, each up to MAX_SEGMENTS * 6 verts + arrowhead
+  let estimatedVertices = 0;
+  for (const path of paths) {
+    for (const edge of path.edges) {
+      const wp = edge.waypoints?.length ?? 0;
+      const spans = wp >= 2 ? (wp - 1) : 1;
+      estimatedVertices += spans * MAX_SEGMENTS * 6;
+    }
+    estimatedVertices += 3; // arrowhead
+  }
+
+  const buf = new Float32Array(estimatedVertices * EDGE_VERTEX_FLOATS);
+  let offset = 0;
+  let cr = 0, cg = 0, cb = 0, ca = 1;
+
+  function pushVertex(cx: number, cy: number, nx: number, ny: number): void {
+    if (offset + EDGE_VERTEX_FLOATS > buf.length) return;
+    buf[offset++] = cx;
+    buf[offset++] = cy;
+    buf[offset++] = nx;
+    buf[offset++] = ny;
+    buf[offset++] = cr;
+    buf[offset++] = cg;
+    buf[offset++] = cb;
+    buf[offset++] = ca;
+  }
+
+  function pushQuad(
+    p0x: number, p0y: number, p1x: number, p1y: number,
+    n0x: number, n0y: number, n1x: number, n1y: number,
+  ): void {
+    pushVertex(p0x, p0y, +n0x, +n0y);
+    pushVertex(p1x, p1y, +n1x, +n1y);
+    pushVertex(p1x, p1y, -n1x, -n1y);
+    pushVertex(p0x, p0y, +n0x, +n0y);
+    pushVertex(p1x, p1y, -n1x, -n1y);
+    pushVertex(p0x, p0y, -n0x, -n0y);
+  }
+
+  for (const path of paths) {
+    cr = path.color.r; cg = path.color.g; cb = path.color.b; ca = path.color.a;
+
+    // Stitch all edge curves into one continuous point list,
+    // bridging straight through intermediate nodes
+    const allPoints: Point[] = [];
+    for (let ei = 0; ei < path.edges.length; ei++) {
+      const edge = path.edges[ei];
+      const pts = evaluateEdgeCurve(edge, nodeMap, nodeSize);
+      if (pts.length === 0) continue;
+
+      if (allPoints.length > 0) {
+        // Bridge through the intermediate node: previous edge ended at
+        // center-top of this node, this edge starts at center-bottom.
+        // Add a straight segment through the node.
+        const midNode = nodeMap.get(edge.source);
+        if (midNode) {
+          const ns = nodeSize(edge.source);
+          const cx = midNode.x + ns.width / 2;
+          allPoints.push({ x: cx, y: midNode.y + ns.height * 0.5 });
+          allPoints.push({ x: cx, y: midNode.y + ns.height });
+        }
+        // Skip first point of this edge (same as bottom of intermediate node)
+        for (let i = 1; i < pts.length; i++) allPoints.push(pts[i]);
+      } else {
+        for (const p of pts) allPoints.push(p);
+      }
+    }
+
+    if (allPoints.length < 2) continue;
+
+    // Tessellate as thick line strip with miter joins
+    const segNormals: { nx: number; ny: number }[] = [];
+    for (let i = 0; i < allPoints.length - 1; i++) {
+      const dx = allPoints[i + 1].x - allPoints[i].x;
+      const dy = allPoints[i + 1].y - allPoints[i].y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 0.001) {
+        segNormals.push({ nx: 0, ny: 0 });
+      } else {
+        segNormals.push({ nx: -dy / len * PATH_HALF_WIDTH, ny: dx / len * PATH_HALF_WIDTH });
+      }
+    }
+
+    const ptNormals: { nx: number; ny: number }[] = [];
+    for (let i = 0; i < allPoints.length; i++) {
+      if (i === 0) {
+        ptNormals.push(segNormals[0]);
+      } else if (i === allPoints.length - 1) {
+        ptNormals.push(segNormals[segNormals.length - 1]);
+      } else {
+        const n0 = segNormals[i - 1];
+        const n1 = segNormals[i];
+        let mx = (n0.nx + n1.nx) * 0.5;
+        let my = (n0.ny + n1.ny) * 0.5;
+        const mLen = Math.sqrt(mx * mx + my * my);
+        if (mLen > 0.001) {
+          const scale = PATH_HALF_WIDTH / mLen;
+          mx *= scale;
+          my *= scale;
+        }
+        ptNormals.push({ nx: mx, ny: my });
+      }
+    }
+
+    for (let i = 0; i < allPoints.length - 1; i++) {
+      const sn = segNormals[i];
+      if (sn.nx === 0 && sn.ny === 0) continue;
+      pushQuad(
+        allPoints[i].x, allPoints[i].y, allPoints[i + 1].x, allPoints[i + 1].y,
+        ptNormals[i].nx, ptNormals[i].ny,
+        ptNormals[i + 1].nx, ptNormals[i + 1].ny,
+      );
+    }
+
+    // Arrowhead at the end
+    const last = allPoints[allPoints.length - 1];
+    const prev = allPoints[allPoints.length - 2];
+    const adx = last.x - prev.x;
+    const ady = last.y - prev.y;
+    const alen = Math.sqrt(adx * adx + ady * ady);
+    if (alen > 0.001) {
+      const dirX = adx / alen;
+      const dirY = ady / alen;
+      const perpX = -dirY;
+      const perpY = dirX;
+      const tip = last;
+      const b1 = { x: tip.x - dirX * PATH_ARROW_LENGTH + perpX * PATH_ARROW_HALF_WIDTH, y: tip.y - dirY * PATH_ARROW_LENGTH + perpY * PATH_ARROW_HALF_WIDTH };
+      const b2 = { x: tip.x - dirX * PATH_ARROW_LENGTH - perpX * PATH_ARROW_HALF_WIDTH, y: tip.y - dirY * PATH_ARROW_LENGTH - perpY * PATH_ARROW_HALF_WIDTH };
+      pushVertex(tip.x, tip.y, 0, 0);
+      pushVertex(b1.x, b1.y, 0, 0);
+      pushVertex(b2.x, b2.y, 0, 0);
     }
   }
 

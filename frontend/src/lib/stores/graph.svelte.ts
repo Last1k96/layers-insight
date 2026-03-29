@@ -27,6 +27,8 @@ class GraphStore {
   nodeOverrides = $state<Map<string, { name: string; type: string; color: string }>>(new Map());
   /** Bumped when a sub-session is created/deleted so watchers can re-fetch. */
   subSessionVersion = $state(0);
+  /** True while Alt is held — switches to accuracy flow visualization. */
+  accuracyViewActive = $state(false);
 
   /** Returns the nodeStatusMap for the active sub-session. */
   get nodeStatusMap(): Map<string, NodeStatus> {
