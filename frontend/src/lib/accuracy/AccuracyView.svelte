@@ -9,6 +9,13 @@
   import { tensorStore } from '../stores/tensors.svelte';
   import { sessionStore } from '../stores/session.svelte';
 
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onclose();
+    }
+  }
+
   let {
     taskId,
     nodeId,
@@ -123,6 +130,8 @@
     }
   });
 </script>
+
+<svelte:window onkeydown={handleKeydown} />
 
 <div class="fixed inset-0 bg-surface-panel backdrop-blur z-[60] flex flex-col">
   <!-- Header -->

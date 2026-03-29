@@ -183,7 +183,8 @@ async def lifespan(app: FastAPI):
 
     import socket
     host_ip = socket.gethostbyname(socket.gethostname())
-    print(f"\n  Open in browser: http://{host_ip}:{config.port}\n")
+    print(f"\n  Open in browser: http://{host_ip}:{config.port}")
+    print(f"                   http://localhost:{config.port}\n")
     yield
 
     # Shutdown
