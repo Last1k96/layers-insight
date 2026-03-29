@@ -537,6 +537,209 @@ class SessionService:
             os.unlink(tmp)
             raise
 
+    def clone_session(
+        self,
+        source_session_id: str,
+        overrides: dict,
+    ) -> Optional[tuple["SessionInfo", list[dict]]]:
+        """Clone a session with optional overrides.
+
+        Returns (new_session_info, inferred_nodes_sorted_by_worst_accuracy) or None.
+        inferred_nodes is a list of dicts with node_name, node_type, metrics.
+        """
+        source_meta = self._read_metadata(source_session_id)
+        source_config_data = dict(source_meta["config"])
+        source_session_path = self._session_path(source_session_id)
+
+        # Resolve source model path to absolute
+        source_model_abs = str(source_session_path / source_config_data["model_path"])
+
+        # Build new config from source, applying overrides
+        new_config_data = dict(source_config_data)
+        # Restore model_path to absolute for create_session
+        new_config_data["model_path"] = source_model_abs
+
+        if overrides.get("model_path"):
+            new_config_data["model_path"] = overrides["model_path"]
+        if overrides.get("main_device"):
+            new_config_data["main_device"] = overrides["main_device"]
+        if overrides.get("ref_device"):
+            new_config_data["ref_device"] = overrides["ref_device"]
+        if overrides.get("inputs") is not None:
+            new_config_data["inputs"] = overrides["inputs"]
+        elif new_config_data.get("inputs"):
+            # Resolve input paths to absolute from source session
+            resolved_inputs = []
+            for inp in new_config_data["inputs"]:
+                inp = dict(inp)
+                if inp.get("path") and not inp["path"].startswith("/"):
+                    inp["path"] = str(source_session_path / inp["path"])
+                resolved_inputs.append(inp)
+            new_config_data["inputs"] = resolved_inputs
+
+        from backend.schemas.session import SessionConfig, InputConfig
+        new_config = SessionConfig(**new_config_data)
+
+        # Create the new session
+        new_info = self.create_session(new_config)
+
+        # Store source_session_id in the new session's metadata
+        new_meta = self._read_metadata(new_info.id)
+        new_meta["source_session_id"] = source_session_id
+        if overrides.get("plugin_config"):
+            new_meta["plugin_config"] = overrides["plugin_config"]
+        self._write_metadata(new_info.id, new_meta)
+
+        # Collect inferred nodes from source session, sorted by worst accuracy
+        inferred_nodes = self._get_inferred_nodes_sorted(source_meta)
+
+        return new_info, inferred_nodes
+
+    def _get_inferred_nodes_sorted(self, meta: dict) -> list[dict]:
+        """Extract successfully inferred nodes from metadata, sorted by worst accuracy (lowest cosine first)."""
+        tasks = meta.get("tasks", {})
+        nodes = []
+        seen_names = set()
+        for task_data in tasks.values():
+            if task_data.get("status") != "success":
+                continue
+            node_name = task_data.get("node_name")
+            if not node_name or node_name in seen_names:
+                continue
+            seen_names.add(node_name)
+            metrics = task_data.get("metrics")
+            nodes.append({
+                "node_name": node_name,
+                "node_type": task_data.get("node_type", ""),
+                "node_id": task_data.get("node_id", ""),
+                "metrics": metrics,
+            })
+
+        # Sort by worst accuracy: lowest cosine_similarity first
+        def sort_key(n):
+            m = n.get("metrics")
+            if m and m.get("cosine_similarity") is not None:
+                return m["cosine_similarity"]
+            return 2.0  # Nodes without metrics go last
+        nodes.sort(key=sort_key)
+        return nodes
+
+    def get_source_session_id(self, session_id: str) -> Optional[str]:
+        """Get the source session ID if this session was cloned."""
+        meta = self._read_metadata(session_id)
+        return meta.get("source_session_id")
+
+    def compare_sessions(self, session_a_id: str, session_b_id: str) -> dict:
+        """Compare inference results between two sessions.
+
+        Returns a dict with 'nodes' (list of per-node comparisons) and 'summary'.
+        """
+        meta_a = self._read_metadata(session_a_id)
+        meta_b = self._read_metadata(session_b_id)
+
+        # Build node -> best task metrics maps
+        def build_node_map(meta: dict) -> dict:
+            tasks = meta.get("tasks", {})
+            node_map: dict[str, dict] = {}
+            for task_data in tasks.values():
+                if task_data.get("status") != "success":
+                    continue
+                name = task_data.get("node_name")
+                if not name:
+                    continue
+                # Keep the latest successful task per node
+                node_map[name] = {
+                    "node_type": task_data.get("node_type", ""),
+                    "metrics": task_data.get("metrics"),
+                }
+            return node_map
+
+        map_a = build_node_map(meta_a)
+        map_b = build_node_map(meta_b)
+
+        all_names = set(map_a.keys()) | set(map_b.keys())
+
+        TOLERANCE = 0.0001
+        nodes = []
+        summary = {
+            "total_compared": 0,
+            "improved": 0,
+            "regressed": 0,
+            "unchanged": 0,
+            "only_in_a": 0,
+            "only_in_b": 0,
+        }
+
+        for name in sorted(all_names):
+            in_a = name in map_a
+            in_b = name in map_b
+
+            if in_a and not in_b:
+                summary["only_in_a"] += 1
+                nodes.append({
+                    "node_name": name,
+                    "node_type": map_a[name]["node_type"],
+                    "metrics_a": map_a[name]["metrics"],
+                    "metrics_b": None,
+                    "delta_cosine": None,
+                    "delta_mse": None,
+                })
+                continue
+            if in_b and not in_a:
+                summary["only_in_b"] += 1
+                nodes.append({
+                    "node_name": name,
+                    "node_type": map_b[name]["node_type"],
+                    "metrics_a": None,
+                    "metrics_b": map_b[name]["metrics"],
+                    "delta_cosine": None,
+                    "delta_mse": None,
+                })
+                continue
+
+            # Both present
+            summary["total_compared"] += 1
+            metrics_a = map_a[name]["metrics"]
+            metrics_b = map_b[name]["metrics"]
+
+            delta_cosine = None
+            delta_mse = None
+
+            if metrics_a and metrics_b:
+                cos_a = metrics_a.get("cosine_similarity")
+                cos_b = metrics_b.get("cosine_similarity")
+                mse_a = metrics_a.get("mse")
+                mse_b = metrics_b.get("mse")
+
+                if cos_a is not None and cos_b is not None:
+                    delta_cosine = cos_b - cos_a  # positive = improved
+                if mse_a is not None and mse_b is not None:
+                    delta_mse = mse_b - mse_a  # negative = improved
+
+                # Classify: improved = cosine went up (or mse went down)
+                if delta_cosine is not None:
+                    if delta_cosine > TOLERANCE:
+                        summary["improved"] += 1
+                    elif delta_cosine < -TOLERANCE:
+                        summary["regressed"] += 1
+                    else:
+                        summary["unchanged"] += 1
+                else:
+                    summary["unchanged"] += 1
+            else:
+                summary["unchanged"] += 1
+
+            nodes.append({
+                "node_name": name,
+                "node_type": map_a[name]["node_type"],
+                "metrics_a": metrics_a,
+                "metrics_b": metrics_b,
+                "delta_cosine": delta_cosine,
+                "delta_mse": delta_mse,
+            })
+
+        return {"nodes": nodes, "summary": summary}
+
     def _write_metadata(self, session_id: str, metadata: dict) -> None:
         self._atomic_write(
             self._metadata_path(session_id),

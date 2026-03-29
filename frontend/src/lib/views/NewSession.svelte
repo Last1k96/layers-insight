@@ -9,9 +9,15 @@
   let {
     onsessioncreated,
     onback,
+    cloneSourceId = undefined,
+    cloneSourceConfig = undefined,
+    cloneSourceName = undefined,
   }: {
     onsessioncreated: (id: string) => void;
     onback: () => void;
+    cloneSourceId?: string;
+    cloneSourceConfig?: import('../stores/types').SessionConfig;
+    cloneSourceName?: string;
   } = $props();
 
   let ovPath = $state('');
@@ -20,6 +26,20 @@
   let refDevice = $state('CPU');
   let submitting = $state(false);
   let error = $state<string | null>(null);
+
+  // Clone mode tracking
+  let isCloneMode = $derived(!!cloneSourceId);
+  let originalMainDevice = $state('');
+  let originalRefDevice = $state('');
+  let originalOvPath = $state('');
+  let changedFields = $derived.by(() => {
+    if (!isCloneMode) return new Set<string>();
+    const changed = new Set<string>();
+    if (mainDevice !== originalMainDevice) changed.add('main_device');
+    if (refDevice !== originalRefDevice) changed.add('ref_device');
+    if (ovPath !== originalOvPath) changed.add('ov_path');
+    return changed;
+  });
 
   // OV path validation
   let ovValidating = $state(false);
@@ -237,6 +257,45 @@
   }
 
   onMount(async () => {
+    // Clone mode: pre-fill from source session config
+    if (isCloneMode && cloneSourceConfig) {
+      if (cloneSourceConfig.ov_path) ovPath = cloneSourceConfig.ov_path;
+      modelPath = cloneSourceConfig.model_path;
+      mainDevice = cloneSourceConfig.main_device;
+      refDevice = cloneSourceConfig.ref_device;
+
+      // Save originals for change highlighting
+      originalMainDevice = mainDevice;
+      originalRefDevice = refDevice;
+      originalOvPath = ovPath;
+
+      // Validate OV path for device list
+      if (cloneSourceConfig.ov_path) {
+        await doValidateOvPath(cloneSourceConfig.ov_path);
+      } else {
+        configStore.devices = ['CPU'];
+      }
+
+      // Inspect model to load inputs
+      if (modelPath) {
+        await doInspectModel(modelPath);
+        // Apply source session's input configs if present
+        if (cloneSourceConfig.inputs?.length && modelInputs.length > 0) {
+          for (let i = 0; i < modelInputs.length && i < cloneSourceConfig.inputs.length; i++) {
+            const srcInp = cloneSourceConfig.inputs[i];
+            modelInputs[i] = {
+              ...modelInputs[i],
+              data_type: srcInp.data_type || modelInputs[i].data_type,
+              source: srcInp.source || modelInputs[i].source,
+              path: srcInp.path || modelInputs[i].path,
+              layout: srcInp.layout || modelInputs[i].layout,
+            };
+          }
+        }
+      }
+      return;
+    }
+
     // Fetch defaults to pre-fill form
     const defaults = await configStore.fetchDefaults();
 
@@ -356,22 +415,43 @@
     error = null;
 
     const pluginCfg = getPluginConfigPayload();
-    const info = await sessionStore.createSession({
-      ov_path: ovPath || undefined,
-      model_path: modelPath,
-      main_device: mainDevice,
-      ref_device: refDevice,
-      input_precision: modelInputs.length > 0 ? modelInputs[0].data_type : 'fp32',
-      input_layout: modelInputs.length > 0 ? modelInputs[0].layout : 'NCHW',
-      inputs: modelInputs.length > 0 ? modelInputs : undefined,
-      plugin_config: Object.keys(pluginCfg).length > 0 ? pluginCfg : undefined,
-    });
 
-    submitting = false;
-    if (info) {
-      onsessioncreated(info.id);
+    if (isCloneMode && cloneSourceId) {
+      // Clone mode: use clone endpoint with overrides
+      const overrides: Record<string, any> = {};
+      if (changedFields.has('main_device')) overrides.main_device = mainDevice;
+      if (changedFields.has('ref_device')) overrides.ref_device = refDevice;
+      if (Object.keys(pluginCfg).length > 0) overrides.plugin_config = pluginCfg;
+
+      const result = await sessionStore.cloneSession(cloneSourceId, overrides);
+      submitting = false;
+      if (result) {
+        // Enqueue source session's inferred nodes into the new session
+        const nodeNames = result.inferred_nodes.map(n => n.node_name);
+        if (nodeNames.length > 0) {
+          await sessionStore.cloneEnqueue(cloneSourceId, result.session.id, nodeNames);
+        }
+        onsessioncreated(result.session.id);
+      } else {
+        error = sessionStore.error ?? 'Failed to clone session';
+      }
     } else {
-      error = sessionStore.error ?? 'Failed to create session';
+      const info = await sessionStore.createSession({
+        ov_path: ovPath || undefined,
+        model_path: modelPath,
+        main_device: mainDevice,
+        ref_device: refDevice,
+        input_precision: modelInputs.length > 0 ? modelInputs[0].data_type : 'fp32',
+        input_layout: modelInputs.length > 0 ? modelInputs[0].layout : 'NCHW',
+        inputs: modelInputs.length > 0 ? modelInputs : undefined,
+      });
+
+      submitting = false;
+      if (info) {
+        onsessioncreated(info.id);
+      } else {
+        error = sessionStore.error ?? 'Failed to create session';
+      }
     }
   }
 </script>
@@ -380,7 +460,7 @@
   <div class="max-w-lg w-full">
     <div class="flex items-center gap-3 mb-4">
       <button class="text-content-secondary hover:text-content-primary" onclick={onback}>&larr; Back</button>
-      <h2 class="text-xl font-bold">New Session</h2>
+      <h2 class="text-xl font-bold">{isCloneMode ? `Clone of ${cloneSourceName || 'session'}` : 'New Session'}</h2>
     </div>
 
     <form class="space-y-3" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
@@ -591,16 +671,26 @@
 
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label for="main-device" class="block text-xs text-content-secondary mb-0.5">Main Device</label>
-          <select id="main-device" bind:value={mainDevice} onchange={onMainDeviceChange} class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none">
+          <label for="main-device" class="block text-xs text-content-secondary mb-0.5">
+            Main Device
+            {#if changedFields.has('main_device')}
+              <span class="text-yellow-400 ml-1">(changed)</span>
+            {/if}
+          </label>
+          <select id="main-device" bind:value={mainDevice} onchange={onMainDeviceChange} class="w-full px-2 py-1.5 bg-[--bg-input] border rounded text-sm focus:border-accent focus:outline-none {changedFields.has('main_device') ? 'border-yellow-500' : 'border-[--border-color]'}">
             {#each configStore.devices as device (device)}
               <option value={device}>{device}</option>
             {/each}
           </select>
         </div>
         <div>
-          <label for="ref-device" class="block text-xs text-content-secondary mb-0.5">Reference Device</label>
-          <select id="ref-device" bind:value={refDevice} class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none">
+          <label for="ref-device" class="block text-xs text-content-secondary mb-0.5">
+            Reference Device
+            {#if changedFields.has('ref_device')}
+              <span class="text-yellow-400 ml-1">(changed)</span>
+            {/if}
+          </label>
+          <select id="ref-device" bind:value={refDevice} class="w-full px-2 py-1.5 bg-[--bg-input] border rounded text-sm focus:border-accent focus:outline-none {changedFields.has('ref_device') ? 'border-yellow-500' : 'border-[--border-color]'}">
             {#each configStore.devices as device (device)}
               <option value={device}>{device}</option>
             {/each}
@@ -692,7 +782,7 @@
         disabled={submitting}
         class="w-full py-2 bg-accent hover:bg-accent-hover disabled:bg-[--bg-panel] disabled:text-content-secondary rounded-lg font-medium transition-colors text-sm"
       >
-        {submitting ? 'Creating...' : 'Start Session'}
+        {submitting ? (isCloneMode ? 'Cloning...' : 'Creating...') : (isCloneMode ? 'Clone & Run' : 'Start Session')}
       </button>
     </form>
   </div>

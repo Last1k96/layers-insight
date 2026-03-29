@@ -73,6 +73,47 @@ class CutRequest(BaseModel):
     parent_sub_session_id: Optional[str] = None  # cut from a sub-session's model
 
 
+class CloneRequest(BaseModel):
+    """Request to clone a session with optional overrides."""
+    model_path: Optional[str] = None
+    main_device: Optional[str] = None
+    ref_device: Optional[str] = None
+    inputs: Optional[list[InputConfig]] = None
+    plugin_config: Optional[dict[str, Any]] = None
+
+
+class CloneEnqueueRequest(BaseModel):
+    """Request to batch-enqueue nodes from a source session into a target session."""
+    target_session_id: str
+    node_names: list[str]
+
+
+class CompareNodeResult(BaseModel):
+    """Per-node comparison result across two sessions."""
+    node_name: str
+    node_type: str
+    metrics_a: Optional[Any] = None  # AccuracyMetrics dict or None
+    metrics_b: Optional[Any] = None
+    delta_cosine: Optional[float] = None
+    delta_mse: Optional[float] = None
+
+
+class CompareSummary(BaseModel):
+    """Summary statistics for a session comparison."""
+    total_compared: int = 0
+    improved: int = 0
+    regressed: int = 0
+    unchanged: int = 0
+    only_in_a: int = 0
+    only_in_b: int = 0
+
+
+class CompareResponse(BaseModel):
+    """Response for session comparison endpoint."""
+    nodes: list[CompareNodeResult] = []
+    summary: CompareSummary = CompareSummary()
+
+
 class SessionDetail(BaseModel):
     """Full session detail including config."""
     id: str
