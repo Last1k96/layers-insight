@@ -1,14 +1,87 @@
 import type { AppDefaults, ModelInputInfo, OvValidationResult } from './types';
+import { DEFAULT_RANGES, type AccuracyMetricKey, type AccuracyRange } from '../utils/accuracyColors';
+
+/** localStorage key for accuracy settings */
+const ACC_STORAGE_KEY = 'layers-insight-accuracy';
+
+interface AccuracySettings {
+  enabled: boolean;
+  metric: AccuracyMetricKey;
+  ranges: Record<AccuracyMetricKey, AccuracyRange>;
+}
+
+function loadAccuracySettings(): AccuracySettings {
+  try {
+    const raw = localStorage.getItem(ACC_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        enabled: !!parsed.enabled,
+        metric: parsed.metric ?? 'cosine_similarity',
+        ranges: {
+          cosine_similarity: parsed.ranges?.cosine_similarity ?? { ...DEFAULT_RANGES.cosine_similarity },
+          mse: parsed.ranges?.mse ?? { ...DEFAULT_RANGES.mse },
+          max_abs_diff: parsed.ranges?.max_abs_diff ?? { ...DEFAULT_RANGES.max_abs_diff },
+        },
+      };
+    }
+  } catch { /* ignore */ }
+  return {
+    enabled: false,
+    metric: 'cosine_similarity',
+    ranges: {
+      cosine_similarity: { ...DEFAULT_RANGES.cosine_similarity },
+      mse: { ...DEFAULT_RANGES.mse },
+      max_abs_diff: { ...DEFAULT_RANGES.max_abs_diff },
+    },
+  };
+}
 
 class ConfigStore {
   devices = $state<string[]>([]);
   defaults = $state<AppDefaults | null>(null);
   loading = $state(false);
 
-  // Accuracy gradient settings
+  // Accuracy gradient settings (legacy — kept for backward compat)
   gradientMode = $state<'auto' | 'threshold'>('auto');
   globalThreshold = $state(0.01); // MSE threshold
   categoryThresholds = $state<Record<string, number>>({});
+
+  // Unified accuracy overlay settings (persisted to localStorage)
+  private _accSettings = loadAccuracySettings();
+  accuracyEnabled = $state(this._accSettings.enabled);
+  accuracyMetric = $state<AccuracyMetricKey>(this._accSettings.metric);
+  accuracyRanges = $state<Record<AccuracyMetricKey, AccuracyRange>>(this._accSettings.ranges);
+
+  /** Convenience getter for the active range */
+  get activeRange(): AccuracyRange {
+    return this.accuracyRanges[this.accuracyMetric];
+  }
+
+  setAccuracyEnabled(enabled: boolean): void {
+    this.accuracyEnabled = enabled;
+    this.persistAccuracy();
+  }
+
+  setAccuracyMetric(metric: AccuracyMetricKey): void {
+    this.accuracyMetric = metric;
+    this.persistAccuracy();
+  }
+
+  setAccuracyRange(metric: AccuracyMetricKey, range: AccuracyRange): void {
+    this.accuracyRanges = { ...this.accuracyRanges, [metric]: range };
+    this.persistAccuracy();
+  }
+
+  private persistAccuracy(): void {
+    try {
+      localStorage.setItem(ACC_STORAGE_KEY, JSON.stringify({
+        enabled: this.accuracyEnabled,
+        metric: this.accuracyMetric,
+        ranges: this.accuracyRanges,
+      }));
+    } catch { /* ignore quota errors */ }
+  }
 
   setGradientMode(mode: 'auto' | 'threshold'): void {
     this.gradientMode = mode;

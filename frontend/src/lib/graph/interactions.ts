@@ -6,6 +6,7 @@ import { getGraph, getGPURenderer, getCamera, centerOnNode, refreshRenderer, set
 import { graphStore } from '../stores/graph.svelte';
 import { queueStore } from '../stores/queue.svelte';
 import { sessionStore } from '../stores/session.svelte';
+import { configStore } from '../stores/config.svelte';
 
 let cleanupFns: (() => void)[] = [];
 
@@ -160,9 +161,9 @@ export function setupInteractions(): void {
   document.addEventListener('keydown', handleKeydown);
   cleanupFns.push(() => document.removeEventListener('keydown', handleKeydown));
 
-  // Alt hold: accuracy view mode
+  // Alt hold: accuracy view mode (quick preview when persistent toggle is OFF)
   function handleKeydownAlt(e: KeyboardEvent) {
-    if (e.key === 'Alt' && !graphStore.accuracyViewActive) {
+    if (e.key === 'Alt' && !graphStore.accuracyViewActive && !configStore.accuracyEnabled) {
       e.preventDefault();
       graphStore.accuracyViewActive = true;
       refreshRenderer();
@@ -170,14 +171,16 @@ export function setupInteractions(): void {
   }
 
   function handleKeyupAlt(e: KeyboardEvent) {
-    if (e.key === 'Alt' && graphStore.accuracyViewActive) {
+    // Only deactivate on Alt release if this was an Alt-hold preview (not persistent toggle)
+    if (e.key === 'Alt' && graphStore.accuracyViewActive && !configStore.accuracyEnabled) {
       graphStore.accuracyViewActive = false;
       refreshRenderer();
     }
   }
 
   function handleBlur() {
-    if (graphStore.accuracyViewActive) {
+    // Only deactivate on blur if this was an Alt-hold preview (not persistent toggle)
+    if (graphStore.accuracyViewActive && !configStore.accuracyEnabled) {
       graphStore.accuracyViewActive = false;
       refreshRenderer();
     }

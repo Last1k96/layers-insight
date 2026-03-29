@@ -2,6 +2,7 @@
   import GraphCanvas from '../graph/GraphCanvas.svelte';
   import Minimap from '../graph/Minimap.svelte';
   import GraphSearch from '../graph/GraphSearch.svelte';
+  import AccuracyToggle from '../graph/AccuracyToggle.svelte';
   import SubSessionNav from '../panels/SubSessionNav.svelte';
   import FloatingPanel from '../panels/FloatingPanel.svelte';
   import QueuePanel from '../panels/QueuePanel.svelte';
@@ -80,6 +81,9 @@
 
   <!-- Minimap -->
   <Minimap />
+
+  <!-- Accuracy toggle (top-right of graph canvas) -->
+  <AccuracyToggle />
 
   <!-- Search overlay -->
   <GraphSearch />

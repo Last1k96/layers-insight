@@ -2,10 +2,11 @@
  * Main WebGPU renderer orchestrating nodes, edges, and text pipelines.
  * Manages device init, frame loop, and buffer updates.
  */
-import type { GraphData, GraphNode } from '../../stores/types';
+import type { GraphData, GraphNode, AccuracyMetrics } from '../../stores/types';
 import type { NodeStatus } from '../../stores/graph.svelte';
 import { configStore } from '../../stores/config.svelte';
 import { isLightNodeColor, STATUS_COLORS } from '../opColors';
+import { getAccuracyColorRgb, type AccuracyMetricKey, type AccuracyRange } from '../../utils/accuracyColors';
 import { buildCameraMatrix, CLEAR_COLOR, EDGE_COLOR, NODE_FLOATS, NODE_RADIUS, GRAPH_FONT_SIZE } from './types';
 import { createNodesPipeline, updateNodeInstances, drawNodes } from './nodesPipeline';
 import type { NodesPipelineState } from './nodesPipeline';
@@ -229,7 +230,7 @@ export class WebGPURenderer {
       if (accuracyViewActive) {
         // Accuracy view: inferred nodes filled with accuracy color, others gray
         if (nodeStatus?.status === 'success' && nodeStatus.metrics) {
-          const c = getAccuracyGradientRgb(nodeStatus.metrics.mse);
+          const c = getMetricColor(nodeStatus.metrics);
           fill = { r: c.r, g: c.g, b: c.b };
         } else {
           fill = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b };
@@ -237,10 +238,10 @@ export class WebGPURenderer {
       } else {
         fill = hexToRgb(fillColor);
 
-        // Status colors
+        // Status colors — inferred nodes get accuracy color as stroke
         if (nodeStatus && !isGrayed) {
           if (nodeStatus.status === 'success' && nodeStatus.metrics) {
-            const c = getAccuracyGradientRgb(nodeStatus.metrics.mse);
+            const c = getMetricColor(nodeStatus.metrics);
             strokeR = c.r; strokeG = c.g; strokeB = c.b;
             strokeWidth = isSelected ? 3 : 2;
           } else {
@@ -347,21 +348,33 @@ export class WebGPURenderer {
 
     const nodes = this.graphData.nodes;
     const atlas = this.atlas;
-    const scale = GRAPH_FONT_SIZE / atlas.fontSize;
     const atlasW = atlas.atlasWidth;
     const atlasH = atlas.atlasHeight;
     const FIRST_CHAR = 32;
     const CHAR_COUNT = 95;
 
+    // In accuracy mode, we emit halo glyphs (4 shadow copies per glyph),
+    // so multiply estimate by 5.
+    const haloMode = !!accuracyInferredIds;
+    const glyphsPerChar = haloMode ? 5 : 1;
+
     // Estimate glyph count
     let totalGlyphs = 0;
     for (const node of nodes) {
+      if (haloMode && !accuracyInferredIds.has(node.id)) continue;
       const ov = nodeOverrides?.get(node.id);
-      totalGlyphs += ov ? ov.type.length : node.type.length;
+      totalGlyphs += (ov ? ov.type.length : node.type.length) * glyphsPerChar;
     }
 
     const glyphData = new Float32Array(totalGlyphs * 12);
     let glyphCount = 0;
+
+    // Halo offsets in graph-space pixels (small offset for shadow copies)
+    const HALO_OFFSET = 0.8;
+    const haloOffsets: [number, number][] = [
+      [-HALO_OFFSET, 0], [HALO_OFFSET, 0],
+      [0, -HALO_OFFSET], [0, HALO_OFFSET],
+    ];
 
     for (const node of nodes) {
       // In accuracy view, hide text on non-inferred nodes
@@ -384,9 +397,12 @@ export class WebGPURenderer {
       }
       const fillColor = override ? override.color : isGrayed ? '#232636' : node.color;
       const glyphAlpha = isGrayed ? textAlpha * 0.35 : textAlpha;
-      // In accuracy view, inferred nodes have bright green/yellow fill — use dark text
-      const isAccuracyBright = accuracyInferredIds?.has(node.id) ?? false;
-      const textColor = (isAccuracyBright || isLightNodeColor(fillColor)) ? { r: 0.1, g: 0.1, b: 0.1 } : { r: 1, g: 1, b: 1 };
+      // In accuracy view, use white text with dark halo for legibility
+      const isAccuracyNode = accuracyInferredIds?.has(node.id) ?? false;
+      const textColor = isAccuracyNode
+        ? { r: 1, g: 1, b: 1 }
+        : (isLightNodeColor(fillColor) ? { r: 0.1, g: 0.1, b: 0.1 } : { r: 1, g: 1, b: 1 });
+      const haloColor = { r: 0.05, g: 0.05, b: 0.08 };
 
       // Measure text width for centering; shrink font if it overflows the node
       const pad = 6; // horizontal padding
@@ -400,37 +416,68 @@ export class WebGPURenderer {
       const startX = (node.x - dx) + (size.width - textWidth) / 2;
       const startY = node.y + (size.height - fontSize) / 2;
 
-      let curX = startX;
-      for (let ci = 0; ci < label.length; ci++) {
+      // Helper to emit one glyph at given position with given color
+      const emitGlyph = (ci: number, baseX: number, baseY: number, offX: number, offY: number, cr: number, cg: number, cb: number, alpha: number): boolean => {
         const code = label.charCodeAt(ci) - FIRST_CHAR;
-        if (code < 0 || code >= CHAR_COUNT) {
-          curX += 6 * labelScale; // space for unknown chars
-          continue;
-        }
-
+        if (code < 0 || code >= CHAR_COUNT) return false;
         const g = atlas.glyphs[code];
         const off = glyphCount * 12;
 
-        // World position & size
-        glyphData[off + 0] = curX;
-        glyphData[off + 1] = startY;
+        glyphData[off + 0] = baseX + offX;
+        glyphData[off + 1] = baseY + offY;
         glyphData[off + 2] = g.w * labelScale;
         glyphData[off + 3] = g.h * labelScale;
-
-        // UV rect (normalized)
         glyphData[off + 4] = g.x / atlasW;
         glyphData[off + 5] = g.y / atlasH;
         glyphData[off + 6] = (g.x + g.w) / atlasW;
         glyphData[off + 7] = (g.y + g.h) / atlasH;
-
-        // Color
-        glyphData[off + 8] = textColor.r;
-        glyphData[off + 9] = textColor.g;
-        glyphData[off + 10] = textColor.b;
-        glyphData[off + 11] = glyphAlpha;
-
-        curX += g.advance * labelScale;
+        glyphData[off + 8] = cr;
+        glyphData[off + 9] = cg;
+        glyphData[off + 10] = cb;
+        glyphData[off + 11] = alpha;
         glyphCount++;
+        return true;
+      };
+
+      // In halo mode: emit shadow copies first, then foreground on top
+      if (haloMode && isAccuracyNode) {
+        // Pass 1: halo shadows
+        let curX = startX;
+        for (let ci = 0; ci < label.length; ci++) {
+          const code = label.charCodeAt(ci) - FIRST_CHAR;
+          if (code < 0 || code >= CHAR_COUNT) {
+            curX += 6 * labelScale;
+            continue;
+          }
+          for (const [ox, oy] of haloOffsets) {
+            emitGlyph(ci, curX, startY, ox, oy, haloColor.r, haloColor.g, haloColor.b, glyphAlpha * 0.9);
+          }
+          curX += atlas.glyphs[code].advance * labelScale;
+        }
+
+        // Pass 2: foreground
+        curX = startX;
+        for (let ci = 0; ci < label.length; ci++) {
+          const code = label.charCodeAt(ci) - FIRST_CHAR;
+          if (code < 0 || code >= CHAR_COUNT) {
+            curX += 6 * labelScale;
+            continue;
+          }
+          emitGlyph(ci, curX, startY, 0, 0, textColor.r, textColor.g, textColor.b, glyphAlpha);
+          curX += atlas.glyphs[code].advance * labelScale;
+        }
+      } else {
+        // Normal mode: single pass
+        let curX = startX;
+        for (let ci = 0; ci < label.length; ci++) {
+          const code = label.charCodeAt(ci) - FIRST_CHAR;
+          if (code < 0 || code >= CHAR_COUNT) {
+            curX += 6 * labelScale;
+            continue;
+          }
+          emitGlyph(ci, curX, startY, 0, 0, textColor.r, textColor.g, textColor.b, glyphAlpha);
+          curX += atlas.glyphs[code].advance * labelScale;
+        }
       }
     }
 
@@ -445,14 +492,14 @@ export class WebGPURenderer {
 
     if (accuracyView) {
       // Collect inferred nodes with metrics
-      const inferredMse = new Map<string, number>();
+      const inferredMetrics = new Map<string, AccuracyMetrics>();
       for (const [nodeId, status] of nodeStatusMap) {
         if (status.status === 'success' && status.metrics) {
-          inferredMse.set(nodeId, status.metrics.mse);
+          inferredMetrics.set(nodeId, status.metrics);
         }
       }
 
-      // Build adjacency list for BFS (source → edges)
+      // Build adjacency list for BFS (source -> edges)
       const adjList = new Map<string, typeof this.graphData.edges>();
       for (const edge of this.graphData.edges) {
         let list = adjList.get(edge.source);
@@ -462,10 +509,10 @@ export class WebGPURenderer {
 
       // BFS from each inferred node downward to find paths to other inferred nodes
       const paths: AccuracyPath[] = [];
-      const inferredIds = [...inferredMse.keys()];
+      const inferredIds = [...inferredMetrics.keys()];
 
       for (const startId of inferredIds) {
-        const c = getAccuracyGradientRgb(inferredMse.get(startId)!);
+        const c = getMetricColor(inferredMetrics.get(startId)!);
         const pathColor = { r: c.r, g: c.g, b: c.b, a: 1.0 };
 
         const queue: { nodeId: string; edgePath: typeof this.graphData.edges }[] =
@@ -483,8 +530,8 @@ export class WebGPURenderer {
 
             const newPath = [...edgePath, edge];
 
-            if (inferredMse.has(edge.target)) {
-              // Found another inferred node — record as a path
+            if (inferredMetrics.has(edge.target)) {
+              // Found another inferred node -- record as a path
               paths.push({ edges: newPath, color: pathColor });
             } else {
               queue.push({ nodeId: edge.target, edgePath: newPath });
@@ -634,15 +681,13 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   };
 }
 
-function getAccuracyGradientRgb(mse: number): { r: number; g: number; b: number } {
-  if (configStore.gradientMode === 'threshold') {
-    return mse <= configStore.globalThreshold
-      ? { r: 0.063, g: 0.725, b: 0.506 }  // #10B981
-      : { r: 0.937, g: 0.267, b: 0.267 };  // #EF4444
-  }
-  const logMse = mse > 0 ? Math.log10(mse) : -10;
-  const t = Math.max(0, Math.min(1, (logMse + 8) / 6));
-  const r = Math.min(1, t * 2);
-  const g = Math.min(1, (1 - Math.max(0, t - 0.5) * 2));
-  return { r, g, b: 0 };
+/**
+ * Get accuracy gradient color for a node using the current metric/range
+ * from configStore (unified accuracy system).
+ */
+function getMetricColor(metrics: AccuracyMetrics): { r: number; g: number; b: number } {
+  const metric = configStore.accuracyMetric;
+  const range = configStore.activeRange;
+  const value = metrics[metric];
+  return getAccuracyColorRgb(metric, value, range);
 }
