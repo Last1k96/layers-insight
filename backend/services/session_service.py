@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -230,7 +232,7 @@ class SessionService:
     def save_graph_cache(self, session_id: str, graph_data: dict) -> None:
         """Save graph data with positions to session directory."""
         path = self._session_path(session_id) / "graph_cache.json"
-        path.write_text(json.dumps(graph_data, default=str))
+        self._atomic_write(path, json.dumps(graph_data, default=str))
 
     def load_graph_cache(self, session_id: str) -> Optional[dict]:
         """Load cached graph data."""
@@ -523,7 +525,20 @@ class SessionService:
     def _read_metadata(self, session_id: str) -> dict:
         return json.loads(self._metadata_path(session_id).read_text())
 
+    @staticmethod
+    def _atomic_write(path: Path, content: str) -> None:
+        """Write content to file atomically via temp file + rename."""
+        fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(content)
+            os.replace(tmp, path)
+        except BaseException:
+            os.unlink(tmp)
+            raise
+
     def _write_metadata(self, session_id: str, metadata: dict) -> None:
-        self._metadata_path(session_id).write_text(
-            json.dumps(metadata, indent=2, default=str)
+        self._atomic_write(
+            self._metadata_path(session_id),
+            json.dumps(metadata, indent=2, default=str),
         )

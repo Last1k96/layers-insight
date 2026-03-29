@@ -5,6 +5,8 @@ from typing import Any, Optional
 
 import numpy as np
 
+from backend.utils.ov_graph_utils import get_reachable_params
+
 
 class ModelCutService:
     """Handles model cutting and sub-session creation."""
@@ -25,7 +27,7 @@ class ModelCutService:
             raise ValueError(f"Node '{target_node_name}' not found in model")
 
         new_outputs = target_op.outputs()
-        reachable_params = self._get_reachable_params(model, new_outputs)
+        reachable_params = get_reachable_params(model, new_outputs)
         cut_model = ov.Model(new_outputs, reachable_params, f"output_at_{target_node_name}")
         cut_model.validate_nodes_and_infer_types()
 
@@ -144,7 +146,7 @@ class ModelCutService:
 
         # Find all reachable parameters — the new_param plus any original
         # Parameters still reachable via paths that don't cross the cut point
-        reachable_params = self._get_reachable_params(model, original_results)
+        reachable_params = get_reachable_params(model, original_results)
         # Add new_param (it won't be in model.get_parameters())
         all_params = [new_param] + [p for p in reachable_params if id(p) != id(new_param)]
 
@@ -157,33 +159,6 @@ class ModelCutService:
         grayed_nodes = sorted(all_node_names - cut_node_names)
 
         return cut_model, input_data, grayed_nodes
-
-    def _get_reachable_params(self, model: Any, target_outputs) -> list:
-        """Walk backward from target outputs to find only reachable Parameter nodes."""
-        # Use name-based matching — OV Python bindings may create new wrapper
-        # objects each call, so id() is unreliable.
-        param_by_name = {p.get_friendly_name(): p for p in model.get_parameters()}
-        visited = set()
-        params = []
-        stack = list(target_outputs)
-
-        while stack:
-            output = stack.pop()
-            node = output.get_node()
-            node_name = node.get_friendly_name()
-            if node_name in visited:
-                continue
-            visited.add(node_name)
-
-            if node_name in param_by_name:
-                params.append(param_by_name[node_name])
-                continue
-
-            for i in range(node.get_input_size()):
-                source_output = node.input(i).get_source_output()
-                stack.append(source_output)
-
-        return params
 
     def _find_op(self, model: Any, name: str) -> Any:
         """Find an operation by friendly name."""

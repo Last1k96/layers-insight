@@ -43,14 +43,22 @@ class TensorStore {
       this.cache = newCache;
 
       // Store meta
+      let min = Infinity, max = -Infinity, sum = 0;
+      for (let i = 0; i < fp32.length; i++) {
+        const v = fp32[i];
+        if (v < min) min = v;
+        if (v > max) max = v;
+        sum += v;
+      }
+
       const newMeta = new Map(this.metaCache);
       newMeta.set(key, {
         shape,
         dtype,
         size_bytes: buffer.byteLength,
-        min: Math.min(...fp32),
-        max: Math.max(...fp32),
-        mean: fp32.reduce((a, b) => a + b, 0) / fp32.length,
+        min,
+        max,
+        mean: fp32.length > 0 ? sum / fp32.length : 0,
         std: 0, // computed on demand
       });
       this.metaCache = newMeta;

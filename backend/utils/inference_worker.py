@@ -19,6 +19,8 @@ from pathlib import Path
 
 import numpy as np
 
+from backend.utils.ov_graph_utils import get_reachable_params
+
 
 def _log(level: str, msg: str) -> None:
     """Write a structured log line to stderr as JSON."""
@@ -85,7 +87,7 @@ def main() -> None:
         # Cut model — only include parameters reachable from the target outputs
         _log("info", "Cutting model at target node...")
         new_outputs = target_op.outputs()
-        reachable_params = _get_reachable_params(model, new_outputs)
+        reachable_params = get_reachable_params(model, new_outputs)
         cut_model = ov.Model(new_outputs, reachable_params, f"cut_at_{node_name}")
         cut_model.validate_nodes_and_infer_types()
         _log("info", f"Cut model created: {len(reachable_params)} parameters, {len(new_outputs)} outputs")
@@ -195,35 +197,6 @@ def main() -> None:
         _log("error", f"{type(e).__name__}: {e}")
         _emit({"error": f"{type(e).__name__}: {e}", "traceback": traceback.format_exc()}, _file=real_stdout)
 
-
-
-def _get_reachable_params(model, target_outputs) -> list:
-    """Walk backward from target outputs to find only reachable Parameter nodes."""
-    # Build a name->Parameter map using the actual Parameter objects from the model.
-    # We can't use id() because OV Python bindings create new wrapper objects each call.
-    param_by_name = {p.get_friendly_name(): p for p in model.get_parameters()}
-    visited = set()
-    params = []
-    stack = list(target_outputs)
-
-    while stack:
-        output = stack.pop()
-        node = output.get_node()
-        node_name = node.get_friendly_name()
-        if node_name in visited:
-            continue
-        visited.add(node_name)
-
-        # Check if this node is a Parameter by name match
-        if node_name in param_by_name:
-            params.append(param_by_name[node_name])
-            continue
-
-        for i in range(node.get_input_size()):
-            source_output = node.input(i).get_source_output()
-            stack.append(source_output)
-
-    return params
 
 
 def _extract_params(model) -> list[dict]:
