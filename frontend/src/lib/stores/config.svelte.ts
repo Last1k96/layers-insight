@@ -1,4 +1,4 @@
-import type { AppDefaults, ModelInputInfo, OvValidationResult } from './types';
+import type { AppDefaults, DeviceProperty, ModelInputInfo, OvValidationResult } from './types';
 import { DEFAULT_RANGES, type AccuracyMetricKey, type AccuracyRange } from '../utils/accuracyColors';
 
 /** localStorage key for accuracy settings */
@@ -150,6 +150,18 @@ class ConfigStore {
       }
     } catch (e) {
       console.error('Failed to fetch model inputs:', e);
+    }
+    return [];
+  }
+
+  async fetchDeviceConfig(deviceName: string): Promise<DeviceProperty[]> {
+    try {
+      const res = await fetch(`/api/device-config/${encodeURIComponent(deviceName)}`);
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.error('Failed to fetch device config:', e);
     }
     return [];
   }

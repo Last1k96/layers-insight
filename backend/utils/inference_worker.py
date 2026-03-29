@@ -153,7 +153,8 @@ def _run_inference(cfg: dict, core, cut_model, fp16_cut_model, inputs: dict):
     # Infer on main device
     _log("info", f"Compiling model for {main_device}...")
     main_model = fp16_cut_model if _is_fp16_device(main_device) else cut_model
-    main_outs, main_results, main_err = _run_on_device(core, main_model, main_device, inputs)
+    plugin_config = cfg.get("plugin_config") or None
+    main_outs, main_results, main_err = _run_on_device(core, main_model, main_device, inputs, plugin_config)
     if main_err:
         raise RuntimeError(main_err)
     _log("info", f"Inference on {main_device} complete ({len(main_outs)} output(s))")
@@ -161,7 +162,7 @@ def _run_inference(cfg: dict, core, cut_model, fp16_cut_model, inputs: dict):
     # Infer on reference device
     _log("info", f"Compiling model for {ref_device}...")
     ref_model = fp16_cut_model if _is_fp16_device(ref_device) else cut_model
-    ref_outs, ref_results, ref_err = _run_on_device(core, ref_model, ref_device, inputs)
+    ref_outs, ref_results, ref_err = _run_on_device(core, ref_model, ref_device, inputs, plugin_config)
     if ref_err:
         raise RuntimeError(ref_err)
     _log("info", f"Inference on {ref_device} complete ({len(ref_outs)} output(s))")
@@ -322,7 +323,7 @@ def _parse_virtual_device(device: str) -> tuple[str, dict]:
     return (device, {})
 
 
-def _run_on_device(core, model, device: str, inputs: dict):
+def _run_on_device(core, model, device: str, inputs: dict, plugin_config: dict[str, str] | None = None):
     """Run inference and return ALL outputs.
 
     Returns:
@@ -332,6 +333,9 @@ def _run_on_device(core, model, device: str, inputs: dict):
         - error: str | None
     """
     actual_device, config = _parse_virtual_device(device)
+    # Merge user plugin_config into device config
+    if plugin_config:
+        config.update(plugin_config)
     try:
         _log("info", f"Compiling on {device}...")
         compiled = core.compile_model(model, actual_device, config)

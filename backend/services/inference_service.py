@@ -63,6 +63,7 @@ class InferenceService:
         stage_callback: Optional[Callable[[str], None]] = None,
         ov_log_level: str = "WARNING",
         runtime_dir: Optional[str] = None,
+        plugin_config: Optional[dict[str, str]] = None,
     ) -> InferenceTask:
         """Cut the model at target node and run inference on both devices.
 
@@ -124,6 +125,7 @@ class InferenceService:
                 "input_configs": input_configs,
                 "out_dir": tmp_dir,
                 "ov_log_level": ov_log_level,
+                "plugin_config": plugin_config or {},
             }
 
             stderr_lines: list[str] = []      # all lines

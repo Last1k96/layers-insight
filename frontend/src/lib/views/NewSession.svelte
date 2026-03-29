@@ -2,7 +2,7 @@
   import { sessionStore } from '../stores/session.svelte';
   import { configStore } from '../stores/config.svelte';
   import { onMount } from 'svelte';
-  import type { InputConfig, ModelInputInfo } from '../stores/types';
+  import type { InputConfig, ModelInputInfo, DeviceProperty } from '../stores/types';
   import FileBrowser from '../components/FileBrowser.svelte';
   import PathInput from '../components/PathInput.svelte';
 
@@ -30,6 +30,38 @@
   let loadingInputs = $state(false);
   let inputsError = $state<string | null>(null);
   let inspectedModelPath = $state('');
+
+  // Plugin configuration
+  let pluginConfigExpanded = $state(false);
+  let pluginProperties = $state<DeviceProperty[]>([]);
+  let pluginConfigValues = $state<Record<string, string>>({});
+  let loadingPluginConfig = $state(false);
+
+  async function fetchPluginConfig(device: string) {
+    loadingPluginConfig = true;
+    pluginProperties = await configStore.fetchDeviceConfig(device);
+    // Reset user overrides when device changes
+    pluginConfigValues = {};
+    loadingPluginConfig = false;
+  }
+
+  function onMainDeviceChange() {
+    if (pluginConfigExpanded) {
+      fetchPluginConfig(mainDevice);
+    }
+  }
+
+  function getPluginConfigPayload(): Record<string, string> {
+    // Only include values that differ from defaults
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(pluginConfigValues)) {
+      const prop = pluginProperties.find(p => p.name === key);
+      if (prop && value !== prop.value) {
+        result[key] = value;
+      }
+    }
+    return result;
+  }
 
   // File browser state
   let showBrowser = $state(false);
@@ -323,6 +355,7 @@
     submitting = true;
     error = null;
 
+    const pluginCfg = getPluginConfigPayload();
     const info = await sessionStore.createSession({
       ov_path: ovPath || undefined,
       model_path: modelPath,
@@ -331,6 +364,7 @@
       input_precision: modelInputs.length > 0 ? modelInputs[0].data_type : 'fp32',
       input_layout: modelInputs.length > 0 ? modelInputs[0].layout : 'NCHW',
       inputs: modelInputs.length > 0 ? modelInputs : undefined,
+      plugin_config: Object.keys(pluginCfg).length > 0 ? pluginCfg : undefined,
     });
 
     submitting = false;
@@ -558,7 +592,7 @@
       <div class="grid grid-cols-2 gap-3">
         <div>
           <label for="main-device" class="block text-xs text-content-secondary mb-0.5">Main Device</label>
-          <select id="main-device" bind:value={mainDevice} class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none">
+          <select id="main-device" bind:value={mainDevice} onchange={onMainDeviceChange} class="w-full px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none">
             {#each configStore.devices as device (device)}
               <option value={device}>{device}</option>
             {/each}
@@ -573,6 +607,79 @@
           </select>
         </div>
       </div>
+
+      <!-- Plugin Configuration -->
+      <details
+        class="border border-[--border-color] rounded"
+        ontoggle={(e) => {
+          const open = (e.currentTarget as HTMLDetailsElement).open;
+          pluginConfigExpanded = open;
+          if (open && pluginProperties.length === 0) {
+            fetchPluginConfig(mainDevice);
+          }
+        }}
+      >
+        <summary class="px-3 py-2 text-xs text-content-secondary cursor-pointer hover:text-content-primary select-none">
+          Plugin Configuration
+          {#if Object.keys(getPluginConfigPayload()).length > 0}
+            <span class="ml-1 text-accent">({Object.keys(getPluginConfigPayload()).length} changed)</span>
+          {/if}
+        </summary>
+        <div class="px-3 pb-3 space-y-2">
+          {#if loadingPluginConfig}
+            <div class="text-xs text-content-secondary py-2">Loading device properties...</div>
+          {:else if pluginProperties.length === 0}
+            <div class="text-xs text-content-secondary py-2">No configurable properties available for this device.</div>
+          {:else}
+            <div class="text-[11px] text-content-secondary mb-1">
+              Only changed values will be sent to the inference engine.
+            </div>
+            <div class="space-y-1.5 max-h-48 overflow-y-auto">
+              {#each pluginProperties as prop (prop.name)}
+                <div class="flex items-center gap-2">
+                  <label for="plugin-{prop.name}" class="text-xs text-content-secondary font-mono truncate flex-1" title={prop.name}>
+                    {prop.name}
+                  </label>
+                  {#if prop.type === 'bool'}
+                    <select
+                      id="plugin-{prop.name}"
+                      value={pluginConfigValues[prop.name] ?? prop.value}
+                      onchange={(e) => { pluginConfigValues = { ...pluginConfigValues, [prop.name]: (e.target as HTMLSelectElement).value }; }}
+                      class="w-24 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
+                    >
+                      <option value="True">True</option>
+                      <option value="true">true</option>
+                      <option value="False">False</option>
+                      <option value="false">false</option>
+                      <option value="YES">YES</option>
+                      <option value="NO">NO</option>
+                    </select>
+                  {:else if prop.type === 'enum' && prop.options.length > 0}
+                    <select
+                      id="plugin-{prop.name}"
+                      value={pluginConfigValues[prop.name] ?? prop.value}
+                      onchange={(e) => { pluginConfigValues = { ...pluginConfigValues, [prop.name]: (e.target as HTMLSelectElement).value }; }}
+                      class="w-24 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
+                    >
+                      {#each prop.options as opt (opt)}
+                        <option value={opt}>{opt}</option>
+                      {/each}
+                    </select>
+                  {:else}
+                    <input
+                      id="plugin-{prop.name}"
+                      type={prop.type === 'int' ? 'number' : 'text'}
+                      value={pluginConfigValues[prop.name] ?? prop.value}
+                      oninput={(e) => { pluginConfigValues = { ...pluginConfigValues, [prop.name]: (e.target as HTMLInputElement).value }; }}
+                      class="w-24 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
+                    />
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </details>
 
       {#if error}
         <div class="p-3 bg-red-900/50 border border-red-700 rounded text-red-300 text-sm">
