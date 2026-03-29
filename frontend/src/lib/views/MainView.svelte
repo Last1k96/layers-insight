@@ -12,9 +12,11 @@
   import AccuracyView from '../accuracy/AccuracyView.svelte';
   import BatchQueue from '../panels/BatchQueue.svelte';
   import ShortcutsHelp from '../panels/ShortcutsHelp.svelte';
+  import BisectPanel from '../panels/BisectPanel.svelte';
   import { sessionStore } from '../stores/session.svelte';
   import { graphStore, type NodeStatus as NodeStatusData } from '../stores/graph.svelte';
   import { queueStore } from '../stores/queue.svelte';
+  import { bisectStore } from '../stores/bisect.svelte';
   import { cacheMetrics } from '../stores/metrics.svelte';
   import { connect, disconnect, setConnectionCallbacks } from '../ws/client';
   import { refreshRenderer } from '../graph/renderer';
@@ -25,6 +27,7 @@
   let showAccuracyView = $state(false);
   let accuracyOutputIndex = $state(0);
   let showBatchQueue = $state(false);
+  let showBisectPanel = $state(false);
 
   function restoreSessionTasks(): void {
     const session = sessionStore.currentSession;
@@ -159,6 +162,16 @@
   <!-- Sub-session navigation (Phase 2) -->
   <SubSessionNav />
 
+  <!-- Bisect toolbar button -->
+  <button
+    class="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-lg shadow text-xs font-medium text-gray-300 hover:text-gray-100 hover:border-blue-500/50 transition-colors"
+    class:border-blue-500={bisectStore.isRunning}
+    class:text-blue-400={bisectStore.isRunning}
+    onclick={() => showBisectPanel = !showBisectPanel}
+  >
+    {bisectStore.isRunning ? `Bisect (${bisectStore.step}/${bisectStore.totalSteps})` : 'Bisect'}
+  </button>
+
   <!-- Floating panels -->
   <FloatingPanel side="left" title="Queue">
     <QueuePanel />
@@ -202,3 +215,7 @@
 
 <!-- Keyboard shortcuts help overlay -->
 <ShortcutsHelp />
+
+{#if showBisectPanel}
+  <BisectPanel onclose={() => showBisectPanel = false} />
+{/if}

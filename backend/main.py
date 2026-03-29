@@ -10,7 +10,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import AppConfig, parse_cli_args
-from backend.routers import devices, graph, inference, sessions, tensors
+from backend.routers import bisect, devices, graph, inference, sessions, tensors
 from backend.services.inference_service import InferenceService
 from backend.utils.ov_helpers import register_plugins
 from backend.services.queue_service import QueueService
@@ -62,9 +62,16 @@ async def lifespan(app: FastAPI):
     queue_service = QueueService()
     app.state.queue_service = queue_service
 
+    from backend.services.bisect_service import BisectService
+    bisect_service = BisectService()
+    app.state.bisect_service = bisect_service
+
     # Set up queue callbacks
     async def on_task_notify(task):
         await ws_manager.send_task_status(task)
+        # Notify bisect service of task completion so it can advance
+        if task.status.value in ("success", "failed") and bisect_service.is_running:
+            bisect_service.on_task_complete(task)
 
     async def on_infer(task):
         if inference_service is None:
@@ -205,6 +212,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router)
     app.include_router(graph.router)
     app.include_router(inference.router)
+    app.include_router(bisect.router)
     app.include_router(tensors.router)
 
     # WebSocket endpoint
