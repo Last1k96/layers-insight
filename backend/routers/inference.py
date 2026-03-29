@@ -58,6 +58,43 @@ async def enqueue_batch(req: BatchEnqueueRequest, request: Request) -> list[Infe
     return tasks
 
 
+@router.post("/pause")
+async def pause_queue(request: Request) -> dict:
+    """Pause the queue worker. Kills the currently executing task and re-queues it."""
+    queue_svc = request.app.state.queue_service
+    inference_svc = request.app.state.inference_service
+
+    kill_fn = None
+    if inference_svc:
+        kill_fn = lambda tid: inference_svc.kill_current(tid)
+
+    requeued_id = await queue_svc.pause(kill_callback=kill_fn)
+    return {"paused": True, "requeued_task_id": requeued_id}
+
+
+@router.post("/resume")
+async def resume_queue(request: Request) -> dict:
+    """Resume the queue worker."""
+    queue_svc = request.app.state.queue_service
+    await queue_svc.resume()
+    return {"paused": False}
+
+
+@router.post("/cancel-all")
+async def cancel_all_tasks(request: Request) -> dict:
+    """Cancel all waiting tasks."""
+    queue_svc = request.app.state.queue_service
+    count = await queue_svc.cancel_all()
+    return {"cancelled": count}
+
+
+@router.get("/queue-state")
+async def get_queue_state(request: Request) -> dict:
+    """Get current queue state (paused/running)."""
+    queue_svc = request.app.state.queue_service
+    return {"paused": queue_svc.paused}
+
+
 @router.put("/reorder")
 async def reorder_tasks(req: ReorderRequest, request: Request) -> dict:
     """Reorder queued tasks."""

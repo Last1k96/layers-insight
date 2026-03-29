@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { queueStore } from '../stores/queue.svelte';
+  import { queueStore, type SortColumn } from '../stores/queue.svelte';
   import { graphStore } from '../stores/graph.svelte';
   import { centerOnNode, refreshRenderer } from '../graph/renderer';
   import { getStatusColor } from '../graph/opColors';
@@ -22,14 +22,121 @@
   }
 
   function formatMse(mse: number): string {
-    if (mse < 0.0001) return mse.toExponential(2);
-    return mse.toFixed(6);
+    if (mse < 0.0001) return mse.toExponential(1);
+    if (mse < 0.01) return mse.toExponential(1);
+    return mse.toFixed(4);
+  }
+
+  function formatCosine(cos: number): string {
+    return cos.toFixed(4);
+  }
+
+  function mseColor(mse: number): string {
+    if (mse < 0.001) return '#34C77B';   // green
+    if (mse <= 0.01) return '#E5A820';   // yellow
+    return '#E54D4D';                     // red
+  }
+
+  function cosineColor(cos: number): string {
+    if (cos > 0.999) return '#34C77B';   // green
+    if (cos >= 0.99) return '#E5A820';   // yellow
+    return '#E54D4D';                     // red
+  }
+
+  function sortArrow(column: SortColumn): string {
+    if (queueStore.sortColumn !== column) return '';
+    return queueStore.sortDirection === 'asc' ? '\u25B2' : '\u25BC';
+  }
+
+  function handleSort(column: SortColumn) {
+    queueStore.toggleSort(column);
+  }
+
+  function handlePauseResume() {
+    if (queueStore.paused) {
+      queueStore.resumeQueue();
+    } else {
+      queueStore.pauseQueue();
+    }
+  }
+
+  function handleCancelAll() {
+    if (confirm('Cancel all waiting tasks?')) {
+      queueStore.cancelAll();
+    }
   }
 </script>
 
 <div class="flex flex-col h-full" role="listbox" onkeydown={handleKeydown} tabindex="-1">
+  <!-- Header controls -->
+  <div class="flex items-center gap-1 px-2 py-1.5 border-b border-[--border-color] shrink-0">
+    <button
+      class="flex items-center justify-center w-6 h-6 rounded hover:bg-[--bg-menu] transition-colors"
+      title={queueStore.paused ? 'Resume queue' : 'Pause queue'}
+      onclick={handlePauseResume}
+    >
+      {#if queueStore.paused}
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <polygon points="4,2 14,8 4,14" />
+        </svg>
+      {:else}
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+          <rect x="3" y="2" width="4" height="12" />
+          <rect x="9" y="2" width="4" height="12" />
+        </svg>
+      {/if}
+    </button>
+    <button
+      class="flex items-center justify-center w-6 h-6 rounded transition-colors"
+      class:hover:bg-[--bg-menu]={queueStore.waitingCount > 0}
+      class:text-gray-600={queueStore.waitingCount === 0}
+      class:cursor-not-allowed={queueStore.waitingCount === 0}
+      title="Cancel all waiting tasks"
+      disabled={queueStore.waitingCount === 0}
+      onclick={handleCancelAll}
+    >
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="4" y1="4" x2="12" y2="12" />
+        <line x1="12" y1="4" x2="4" y2="12" />
+      </svg>
+    </button>
+    {#if queueStore.paused}
+      <span class="ml-1 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-yellow-900/40 text-yellow-400 rounded">Paused</span>
+    {/if}
+    <div class="flex-1"></div>
+    <span class="text-[10px] text-gray-500">{queueStore.filteredTasks.length} tasks</span>
+  </div>
+
+  <!-- Column headers -->
+  <div class="flex items-center gap-2 px-3 py-1 border-b border-[--border-color] text-[10px] text-gray-500 uppercase tracking-wider shrink-0">
+    <div class="w-2 shrink-0"></div>
+    <button
+      class="flex-1 text-left flex items-center gap-0.5 hover:text-gray-300 transition-colors cursor-pointer"
+      class:text-gray-300={queueStore.sortColumn === 'topo'}
+      onclick={() => handleSort('topo')}
+    >
+      Node {sortArrow('topo')}
+    </button>
+    <span class="w-16 text-right shrink-0">Type</span>
+    <button
+      class="w-14 text-right shrink-0 flex items-center justify-end gap-0.5 hover:text-gray-300 transition-colors cursor-pointer"
+      class:text-gray-300={queueStore.sortColumn === 'cosine'}
+      onclick={() => handleSort('cosine')}
+    >
+      Cos {sortArrow('cosine')}
+    </button>
+    <button
+      class="w-16 text-right shrink-0 flex items-center justify-end gap-0.5 hover:text-gray-300 transition-colors cursor-pointer"
+      class:text-gray-300={queueStore.sortColumn === 'mse'}
+      onclick={() => handleSort('mse')}
+    >
+      MSE {sortArrow('mse')}
+    </button>
+    <div class="w-5 shrink-0"></div>
+  </div>
+
   <!-- Task list -->
-  <div class="flex-1 overflow-y-auto">
+  <div class="flex-1 overflow-y-auto" class:opacity-50={queueStore.paused}>
     {#if queueStore.filteredTasks.length === 0}
       <div class="p-4 text-center text-gray-500 text-sm">
         No tasks yet. Click a node to start inference.
@@ -62,12 +169,21 @@
           <span class="flex-1 truncate font-mono text-xs">{task.node_name}</span>
 
           <!-- Op type -->
-          <span class="text-gray-500 text-xs shrink-0">{task.node_type}</span>
+          <span class="text-gray-500 text-xs shrink-0 w-16 text-right truncate">{task.node_type}</span>
+
+          <!-- Cosine for completed -->
+          <span class="text-xs font-mono w-14 text-right shrink-0">
+            {#if task.status === 'success' && task.metrics}
+              <span style:color={cosineColor(task.metrics.cosine_similarity)}>{formatCosine(task.metrics.cosine_similarity)}</span>
+            {/if}
+          </span>
 
           <!-- MSE for completed -->
-          {#if task.status === 'success' && task.metrics}
-            <span class="text-xs text-gray-400 font-mono">{formatMse(task.metrics.mse)}</span>
-          {/if}
+          <span class="text-xs font-mono w-16 text-right shrink-0">
+            {#if task.status === 'success' && task.metrics}
+              <span style:color={mseColor(task.metrics.mse)}>{formatMse(task.metrics.mse)}</span>
+            {/if}
+          </span>
 
           <!-- Delete button -->
           <button

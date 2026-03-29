@@ -18,6 +18,10 @@ class QueueService:
         self._worker_task: Optional[asyncio.Task] = None
         self._notify_callback: Optional[Callable] = None
         self._infer_callback: Optional[Callable] = None
+        self._paused: bool = False
+        self._pause_event: asyncio.Event = asyncio.Event()
+        self._pause_event.set()  # Start unpaused (event is "set" = not blocked)
+        self._executing_task_id: Optional[str] = None
 
     def set_callbacks(
         self,
@@ -106,6 +110,75 @@ class QueueService:
         new_task.sub_session_id = old_task.sub_session_id
         return await self.enqueue(new_task)
 
+    @property
+    def paused(self) -> bool:
+        """Whether the queue worker is paused."""
+        return self._paused
+
+    async def pause(self, kill_callback: Optional[Callable] = None) -> Optional[str]:
+        """Pause the queue. If a task is executing, kill it and re-queue at front.
+
+        Args:
+            kill_callback: Optional callable(task_id) -> bool to kill the running subprocess.
+
+        Returns:
+            The task_id of the re-queued task, or None.
+        """
+        self._paused = True
+        self._pause_event.clear()
+
+        requeued_id = None
+        # If a task is currently executing, kill it and re-queue
+        if self._executing_task_id:
+            task = self._tasks.get(self._executing_task_id)
+            if task and task.status == TaskStatus.EXECUTING:
+                if kill_callback:
+                    kill_callback(self._executing_task_id)
+                # Reset task to waiting and push to front of queue
+                task.status = TaskStatus.WAITING
+                task.stage = None
+                task.error_detail = None
+                requeued_id = task.task_id
+
+                # Drain existing queue, prepend re-queued task, re-add rest
+                old_items = []
+                while not self._queue.empty():
+                    try:
+                        old_items.append(self._queue.get_nowait())
+                    except asyncio.QueueEmpty:
+                        break
+                await self._queue.put(task)
+                for item in old_items:
+                    await self._queue.put(item)
+
+                await self._notify(task)
+
+        return requeued_id
+
+    async def resume(self) -> None:
+        """Resume the queue worker."""
+        self._paused = False
+        self._pause_event.set()
+
+    async def cancel_all(self) -> int:
+        """Cancel all waiting tasks. Returns count of cancelled tasks."""
+        cancelled = 0
+        for task in list(self._tasks.values()):
+            if task.status == TaskStatus.WAITING:
+                task.status = TaskStatus.FAILED
+                task.error_detail = "Cancelled"
+                await self._notify(task)
+                cancelled += 1
+
+        # Drain the queue (items are now marked failed, worker will skip them)
+        while not self._queue.empty():
+            try:
+                self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+
+        return cancelled
+
     async def cancel(self, task_id: str) -> bool:
         """Cancel a waiting task."""
         task = self._tasks.get(task_id)
@@ -149,6 +222,9 @@ class QueueService:
     async def _worker_loop(self) -> None:
         """Sequential worker: process one task at a time."""
         while True:
+            # Wait until unpaused before dequeuing
+            await self._pause_event.wait()
+
             task = await self._queue.get()
 
             # Skip cancelled tasks
@@ -161,6 +237,14 @@ class QueueService:
                 self._queue.task_done()
                 continue
 
+            # Check again after dequeue — we may have been paused between wait and get
+            if self._paused:
+                # Put it back and wait
+                await self._queue.put(task)
+                self._queue.task_done()
+                continue
+
+            self._executing_task_id = task.task_id
             task.status = TaskStatus.EXECUTING
             await self._notify(task)
 
@@ -177,6 +261,7 @@ class QueueService:
                     task.error_detail = f"Worker error: {e}"
                     await self._notify(task)
             finally:
+                self._executing_task_id = None
                 self._queue.task_done()
 
     async def _notify(self, task: InferenceTask) -> None:
