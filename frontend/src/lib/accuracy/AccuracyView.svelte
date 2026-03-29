@@ -19,10 +19,12 @@
   let {
     taskId,
     nodeId,
+    outputIndex = 0,
     onclose,
   }: {
     taskId: string;
     nodeId: string;
+    outputIndex?: number;
     onclose: () => void;
   } = $props();
 
@@ -43,16 +45,21 @@
     if (!session) return;
     loadingTensors = true;
 
+    // Use indexed tensor names (main_output_0, main_output_1, etc.)
+    // The backend falls back to main_output.npy if _0 is not found
+    const mainName = `main_output_${outputIndex}`;
+    const refName = `ref_output_${outputIndex}`;
+
     const [main, ref] = await Promise.all([
-      tensorStore.fetchTensor(session.id, taskId, 'main_output'),
-      tensorStore.fetchTensor(session.id, taskId, 'ref_output'),
+      tensorStore.fetchTensor(session.id, taskId, mainName),
+      tensorStore.fetchTensor(session.id, taskId, refName),
     ]);
 
     mainTensor = main;
     refTensor = ref;
 
     // Get shape from meta
-    const meta = await tensorStore.fetchMeta(session.id, taskId, 'main_output');
+    const meta = await tensorStore.fetchMeta(session.id, taskId, mainName);
     if (meta) tensorShape = meta.shape;
 
     loadingTensors = false;
@@ -137,7 +144,7 @@
   <!-- Header -->
   <div class="flex items-center justify-between px-4 py-3 border-b border-edge shrink-0">
     <div>
-      <h3 class="font-medium text-content-primary">Deep Accuracy View</h3>
+      <h3 class="font-medium text-content-primary">Deep Accuracy View{outputIndex > 0 ? ` (Output ${outputIndex})` : ''}</h3>
       <p class="text-xs text-content-secondary mt-0.5">Node: {nodeId}</p>
     </div>
     <button

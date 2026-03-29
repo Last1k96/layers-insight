@@ -16,9 +16,16 @@ async def get_tensor(session_id: str, task_id: str, output_name: str, request: R
 
     The tensor is converted to float16 for efficient transfer.
     Client converts to Float32Array in browser.
+
+    Supports both legacy names (main_output, ref_output) and indexed names
+    (main_output_0, ref_output_1, etc.).
     """
     svc = request.app.state.session_service
     tensor_path = svc.get_tensor_path(session_id, task_id, output_name)
+
+    # Backward compat: main_output -> main_output_0, ref_output -> ref_output_0
+    if tensor_path is None and output_name in ("main_output", "ref_output"):
+        tensor_path = svc.get_tensor_path(session_id, task_id, f"{output_name}_0")
 
     if tensor_path is None:
         raise HTTPException(status_code=404, detail="Tensor not found")
@@ -48,6 +55,10 @@ async def get_tensor_meta(session_id: str, task_id: str, output_name: str, reque
     """Get tensor metadata without downloading the data."""
     svc = request.app.state.session_service
     tensor_path = svc.get_tensor_path(session_id, task_id, output_name)
+
+    # Backward compat: main_output -> main_output_0, ref_output -> ref_output_0
+    if tensor_path is None and output_name in ("main_output", "ref_output"):
+        tensor_path = svc.get_tensor_path(session_id, task_id, f"{output_name}_0")
 
     if tensor_path is None:
         raise HTTPException(status_code=404, detail="Tensor not found")

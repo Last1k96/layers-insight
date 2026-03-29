@@ -76,16 +76,21 @@
   }
 
   let {
-    onshowaccuracy = () => {},
+    onshowaccuracy = (_outputIdx?: number) => {},
     onshowbatchqueue = () => {},
   }: {
-    onshowaccuracy?: () => void;
+    onshowaccuracy?: (outputIdx?: number) => void;
     onshowbatchqueue?: () => void;
   } = $props();
 
-  function handleDeepAccuracy() {
-    onshowaccuracy();
+  function handleDeepAccuracy(outputIdx?: number) {
+    onshowaccuracy(outputIdx);
   }
+
+  /** Number of outputs for the current task (1 for single-output nodes). */
+  let outputCount = $derived(
+    nodeStatus?.perOutputMetrics ? nodeStatus.perOutputMetrics.length : 1
+  );
 
   async function handleCut(cutType: 'output' | 'input' | 'input_random') {
     const session = sessionStore.currentSession;
@@ -244,99 +249,224 @@
         Success
       </div>
 
-      {#if nodeStatus.metrics}
-        <div class="space-y-2">
-          <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Accuracy</h4>
-          <table class="w-full text-xs">
-            <tbody>
-              <tr class="border-b border-[--border-color]/50">
-                <td class="py-1 text-gray-400">MSE</td>
-                <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.mse)}</td>
-              </tr>
-              <tr class="border-b border-[--border-color]/50">
-                <td class="py-1 text-gray-400">Max Abs Diff</td>
-                <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
-              </tr>
-              <tr>
-                <td class="py-1 text-gray-400">Cosine Sim</td>
-                <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      {/if}
-
-      <!-- Per-device results -->
-      {#if nodeStatus.mainResult || nodeStatus.refResult}
-        {@const main = nodeStatus.mainResult}
-        {@const ref = nodeStatus.refResult}
-        <div class="mt-3">
-          <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Device Outputs</h4>
-          <table class="w-full text-xs table-fixed">
-            <colgroup>
-              <col class="w-[20%]" />
-              <col class="w-[26.6%]" />
-              <col class="w-[26.6%]" />
-              {#if main && ref}<col class="w-[26.6%]" />{/if}
-            </colgroup>
-            <thead>
-              <tr class="text-gray-500">
-                <th class="py-1 text-left font-normal"></th>
-                {#if main}<th class="py-1 text-right font-normal">{main.device}</th>{/if}
-                {#if ref}<th class="py-1 text-right font-normal">{ref.device}</th>{/if}
-                {#if main && ref}<th class="py-1 text-right font-normal">Diff</th>{/if}
-              </tr>
-            </thead>
-            <tbody>
-              {#each [
-                { label: 'Min', key: 'min_val' as const },
-                { label: 'Max', key: 'max_val' as const },
-                { label: 'Mean', key: 'mean_val' as const },
-                { label: 'Std', key: 'std_val' as const },
-              ] as row}
-                <tr class="border-t border-[--border-color]/50">
-                  <td class="py-1 text-gray-400">{row.label}</td>
-                  {#if main}<td class="py-1 text-right font-mono truncate">{fmt4(main[row.key])}</td>{/if}
-                  {#if ref}<td class="py-1 text-right font-mono truncate">{fmt4(ref[row.key])}</td>{/if}
-                  {#if main && ref}
-                    <td class="py-1 text-right font-mono text-yellow-400 truncate">{fmt4(diff(main[row.key], ref[row.key]))}</td>
-                  {/if}
+      {#if outputCount <= 1}
+        <!-- Single output: original layout (no visual change) -->
+        {#if nodeStatus.metrics}
+          <div class="space-y-2">
+            <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Accuracy</h4>
+            <table class="w-full text-xs">
+              <tbody>
+                <tr class="border-b border-[--border-color]/50">
+                  <td class="py-1 text-gray-400">MSE</td>
+                  <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.mse)}</td>
                 </tr>
-              {/each}
-            </tbody>
-          </table>
+                <tr class="border-b border-[--border-color]/50">
+                  <td class="py-1 text-gray-400">Max Abs Diff</td>
+                  <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
+                </tr>
+                <tr>
+                  <td class="py-1 text-gray-400">Cosine Sim</td>
+                  <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        {/if}
+
+        <!-- Per-device results -->
+        {#if nodeStatus.mainResult || nodeStatus.refResult}
+          {@const main = nodeStatus.mainResult}
+          {@const ref = nodeStatus.refResult}
+          <div class="mt-3">
+            <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Device Outputs</h4>
+            <table class="w-full text-xs table-fixed">
+              <colgroup>
+                <col class="w-[20%]" />
+                <col class="w-[26.6%]" />
+                <col class="w-[26.6%]" />
+                {#if main && ref}<col class="w-[26.6%]" />{/if}
+              </colgroup>
+              <thead>
+                <tr class="text-gray-500">
+                  <th class="py-1 text-left font-normal"></th>
+                  {#if main}<th class="py-1 text-right font-normal">{main.device}</th>{/if}
+                  {#if ref}<th class="py-1 text-right font-normal">{ref.device}</th>{/if}
+                  {#if main && ref}<th class="py-1 text-right font-normal">Diff</th>{/if}
+                </tr>
+              </thead>
+              <tbody>
+                {#each [
+                  { label: 'Min', key: 'min_val' as const },
+                  { label: 'Max', key: 'max_val' as const },
+                  { label: 'Mean', key: 'mean_val' as const },
+                  { label: 'Std', key: 'std_val' as const },
+                ] as row}
+                  <tr class="border-t border-[--border-color]/50">
+                    <td class="py-1 text-gray-400">{row.label}</td>
+                    {#if main}<td class="py-1 text-right font-mono truncate">{fmt4(main[row.key])}</td>{/if}
+                    {#if ref}<td class="py-1 text-right font-mono truncate">{fmt4(ref[row.key])}</td>{/if}
+                    {#if main && ref}
+                      <td class="py-1 text-right font-mono text-yellow-400 truncate">{fmt4(diff(main[row.key], ref[row.key]))}</td>
+                    {/if}
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+
+        <!-- Phase 2 actions -->
+        <div class="mt-3 space-y-2">
+          <button
+            class="w-full py-1.5 bg-accent hover:bg-accent-hover rounded text-xs transition-colors"
+            onclick={() => handleDeepAccuracy()}
+          >
+            Deep Accuracy View
+          </button>
+          <button
+            class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+            onclick={onshowbatchqueue}
+          >
+            Batch Queue
+          </button>
+          <div class="flex gap-2">
+            <button
+              class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+              onclick={() => handleCut('input')}
+            >
+              Make Parameter
+            </button>
+            <button
+              class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+              onclick={() => handleCut('output')}
+            >
+              Make Output
+            </button>
+          </div>
+        </div>
+
+      {:else}
+        <!-- Multi-output: aggregate worst-case header -->
+        {#if nodeStatus.metrics}
+          <div class="space-y-2 mb-3">
+            <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Worst-Case Accuracy ({outputCount} outputs)</h4>
+            <table class="w-full text-xs">
+              <tbody>
+                <tr class="border-b border-[--border-color]/50">
+                  <td class="py-1 text-gray-400">MSE</td>
+                  <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.mse)}</td>
+                </tr>
+                <tr class="border-b border-[--border-color]/50">
+                  <td class="py-1 text-gray-400">Max Abs Diff</td>
+                  <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
+                </tr>
+                <tr>
+                  <td class="py-1 text-gray-400">Cosine Sim</td>
+                  <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        {/if}
+
+        <!-- Per-output breakdown stacked vertically -->
+        {#each nodeStatus.perOutputMetrics! as outMetrics, outIdx}
+          {@const outMain = nodeStatus.perOutputMainResults?.[outIdx]}
+          {@const outRef = nodeStatus.perOutputRefResults?.[outIdx]}
+          <div class="border-t border-[--border-color]/50 pt-2 mt-2">
+            <h4 class="text-xs font-medium text-gray-300 mb-1">
+              Output {outIdx}
+              {#if outMain?.dtype}
+                <span class="text-gray-500 font-normal ml-1">[{outMain.dtype}, {outMain.output_shapes?.[0]?.join('x') ?? '?'}]</span>
+              {/if}
+            </h4>
+
+            <table class="w-full text-xs mb-1">
+              <tbody>
+                <tr class="border-b border-[--border-color]/30">
+                  <td class="py-0.5 text-gray-400">MSE</td>
+                  <td class="py-0.5 text-right font-mono">{formatValue(outMetrics.mse)}</td>
+                </tr>
+                <tr class="border-b border-[--border-color]/30">
+                  <td class="py-0.5 text-gray-400">Max Abs Diff</td>
+                  <td class="py-0.5 text-right font-mono">{formatValue(outMetrics.max_abs_diff)}</td>
+                </tr>
+                <tr>
+                  <td class="py-0.5 text-gray-400">Cosine Sim</td>
+                  <td class="py-0.5 text-right font-mono">{formatValue(outMetrics.cosine_similarity)}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            {#if outMain || outRef}
+              <table class="w-full text-xs table-fixed mb-1">
+                <colgroup>
+                  <col class="w-[20%]" />
+                  <col class="w-[26.6%]" />
+                  <col class="w-[26.6%]" />
+                  {#if outMain && outRef}<col class="w-[26.6%]" />{/if}
+                </colgroup>
+                <thead>
+                  <tr class="text-gray-500">
+                    <th class="py-0.5 text-left font-normal"></th>
+                    {#if outMain}<th class="py-0.5 text-right font-normal">{outMain.device}</th>{/if}
+                    {#if outRef}<th class="py-0.5 text-right font-normal">{outRef.device}</th>{/if}
+                    {#if outMain && outRef}<th class="py-0.5 text-right font-normal">Diff</th>{/if}
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each [
+                    { label: 'Min', key: 'min_val' as const },
+                    { label: 'Max', key: 'max_val' as const },
+                    { label: 'Mean', key: 'mean_val' as const },
+                    { label: 'Std', key: 'std_val' as const },
+                  ] as row}
+                    <tr class="border-t border-[--border-color]/30">
+                      <td class="py-0.5 text-gray-400">{row.label}</td>
+                      {#if outMain}<td class="py-0.5 text-right font-mono truncate">{fmt4(outMain[row.key])}</td>{/if}
+                      {#if outRef}<td class="py-0.5 text-right font-mono truncate">{fmt4(outRef[row.key])}</td>{/if}
+                      {#if outMain && outRef}
+                        <td class="py-0.5 text-right font-mono text-yellow-400 truncate">{fmt4(diff(outMain[row.key], outRef[row.key]))}</td>
+                      {/if}
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            {/if}
+
+            <button
+              class="w-full py-1 bg-accent hover:bg-accent-hover rounded text-xs transition-colors"
+              onclick={() => handleDeepAccuracy(outIdx)}
+            >
+              Deep Accuracy View
+            </button>
+          </div>
+        {/each}
+
+        <!-- Shared actions below all outputs -->
+        <div class="mt-3 space-y-2">
+          <button
+            class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+            onclick={onshowbatchqueue}
+          >
+            Batch Queue
+          </button>
+          <div class="flex gap-2">
+            <button
+              class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+              onclick={() => handleCut('input')}
+            >
+              Make Parameter
+            </button>
+            <button
+              class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+              onclick={() => handleCut('output')}
+            >
+              Make Output
+            </button>
+          </div>
         </div>
       {/if}
-
-      <!-- Phase 2 actions -->
-      <div class="mt-3 space-y-2">
-        <button
-          class="w-full py-1.5 bg-accent hover:bg-accent-hover rounded text-xs transition-colors"
-          onclick={handleDeepAccuracy}
-        >
-          Deep Accuracy View
-        </button>
-        <button
-          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
-          onclick={onshowbatchqueue}
-        >
-          Batch Queue
-        </button>
-        <div class="flex gap-2">
-          <button
-            class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
-            onclick={() => handleCut('input')}
-          >
-            Make Parameter
-          </button>
-          <button
-            class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
-            onclick={() => handleCut('output')}
-          >
-            Make Output
-          </button>
-        </div>
-      </div>
 
       <button
         class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors text-red-400"

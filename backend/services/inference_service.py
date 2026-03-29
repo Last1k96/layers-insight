@@ -259,6 +259,11 @@ class InferenceService:
             task.main_result = DeviceResult(**result["main_result"])
             task.ref_result = DeviceResult(**result["ref_result"])
             task.metrics = AccuracyMetrics(**result["metrics"])
+            # Multi-output: parse per-output breakdowns if present
+            if "per_output_metrics" in result:
+                task.per_output_metrics = [AccuracyMetrics(**m) for m in result["per_output_metrics"]]
+                task.per_output_main_results = [DeviceResult(**r) for r in result["per_output_main_results"]]
+                task.per_output_ref_results = [DeviceResult(**r) for r in result["per_output_ref_results"]]
             task.status = TaskStatus.SUCCESS
             task.stage = None
 

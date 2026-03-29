@@ -8,6 +8,9 @@ export interface NodeStatus {
   metrics?: AccuracyMetrics;
   mainResult?: DeviceResult;
   refResult?: DeviceResult;
+  perOutputMetrics?: AccuracyMetrics[];
+  perOutputMainResults?: DeviceResult[];
+  perOutputRefResults?: DeviceResult[];
   errorDetail?: string;
 }
 

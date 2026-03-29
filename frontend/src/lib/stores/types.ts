@@ -144,6 +144,9 @@ export interface InferenceTask {
   main_result?: DeviceResult;
   ref_result?: DeviceResult;
   metrics?: AccuracyMetrics;
+  per_output_metrics?: AccuracyMetrics[];
+  per_output_main_results?: DeviceResult[];
+  per_output_ref_results?: DeviceResult[];
   sub_session_id?: string | null;
 }
 
@@ -158,6 +161,9 @@ export interface TaskStatusMessage {
   metrics?: AccuracyMetrics;
   main_result?: DeviceResult;
   ref_result?: DeviceResult;
+  per_output_metrics?: AccuracyMetrics[];
+  per_output_main_results?: DeviceResult[];
+  per_output_ref_results?: DeviceResult[];
   sub_session_id?: string;
 }
 
