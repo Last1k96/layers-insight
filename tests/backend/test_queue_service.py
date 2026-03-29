@@ -157,3 +157,129 @@ class TestQueueService:
         await queue_service.stop_worker()
 
         assert t1.task_id not in results
+
+    @pytest.mark.asyncio
+    async def test_pause_sets_state(self, queue_service):
+        """Pausing sets the paused flag."""
+        queue_service.set_callbacks(notify=lambda t: None, infer=lambda t: t)
+        assert queue_service.paused is False
+        await queue_service.pause()
+        assert queue_service.paused is True
+
+    @pytest.mark.asyncio
+    async def test_resume_clears_state(self, queue_service):
+        """Resuming clears the paused flag."""
+        queue_service.set_callbacks(notify=lambda t: None, infer=lambda t: t)
+        await queue_service.pause()
+        assert queue_service.paused is True
+        await queue_service.resume()
+        assert queue_service.paused is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_all_waiting(self, queue_service):
+        """cancel_all marks all waiting tasks as failed."""
+        queue_service.set_callbacks(notify=lambda t: None, infer=lambda t: t)
+
+        t1 = queue_service.create_task("s1", "n1", "conv1", "Convolution")
+        t2 = queue_service.create_task("s1", "n2", "relu1", "Relu")
+        await queue_service.enqueue(t1)
+        await queue_service.enqueue(t2)
+
+        count = await queue_service.cancel_all()
+        assert count == 2
+        assert queue_service.get_task(t1.task_id).status == TaskStatus.FAILED
+        assert queue_service.get_task(t2.task_id).status == TaskStatus.FAILED
+        assert queue_service.get_task(t1.task_id).error_detail == "Cancelled"
+        assert queue_service.get_task(t2.task_id).error_detail == "Cancelled"
+
+    @pytest.mark.asyncio
+    async def test_cancel_all_skips_non_waiting(self, queue_service):
+        """cancel_all does not affect already-completed tasks."""
+        queue_service.set_callbacks(notify=lambda t: None, infer=lambda t: t)
+
+        t1 = queue_service.create_task("s1", "n1", "conv1", "Convolution")
+        t1.status = TaskStatus.SUCCESS
+        queue_service._tasks[t1.task_id] = t1
+
+        t2 = queue_service.create_task("s1", "n2", "relu1", "Relu")
+        await queue_service.enqueue(t2)
+
+        count = await queue_service.cancel_all()
+        assert count == 1
+        assert queue_service.get_task(t1.task_id).status == TaskStatus.SUCCESS
+        assert queue_service.get_task(t2.task_id).status == TaskStatus.FAILED
+
+    @pytest.mark.asyncio
+    async def test_pause_requeues_executing(self, queue_service):
+        """Pausing when a task is executing kills it and re-queues at front."""
+        kill_called = []
+
+        queue_service.set_callbacks(notify=lambda t: None, infer=lambda t: t)
+
+        t1 = queue_service.create_task("s1", "n1", "conv1", "Convolution")
+        t1.status = TaskStatus.EXECUTING
+        queue_service._tasks[t1.task_id] = t1
+        queue_service._executing_task_id = t1.task_id
+
+        t2 = queue_service.create_task("s1", "n2", "relu1", "Relu")
+        await queue_service.enqueue(t2)
+
+        requeued_id = await queue_service.pause(
+            kill_callback=lambda tid: kill_called.append(tid)
+        )
+
+        assert requeued_id == t1.task_id
+        assert t1.status == TaskStatus.WAITING
+        assert len(kill_called) == 1
+        assert kill_called[0] == t1.task_id
+
+    @pytest.mark.asyncio
+    async def test_worker_paused_does_not_execute(self, queue_service):
+        """Worker should not process tasks while paused."""
+        results = []
+
+        async def mock_infer(task):
+            results.append(task.task_id)
+            task.status = TaskStatus.SUCCESS
+            return task
+
+        queue_service.set_callbacks(notify=lambda t: None, infer=mock_infer)
+        await queue_service.pause()
+
+        t1 = queue_service.create_task("s1", "n1", "conv1", "Convolution")
+        await queue_service.enqueue(t1)
+
+        await queue_service.start_worker()
+        await asyncio.sleep(0.15)
+
+        # Task should not have been processed
+        assert t1.task_id not in results
+        assert queue_service.get_task(t1.task_id).status == TaskStatus.WAITING
+
+        await queue_service.stop_worker()
+
+    @pytest.mark.asyncio
+    async def test_worker_resumes_after_pause(self, queue_service):
+        """Worker processes tasks after resume."""
+        results = []
+
+        async def mock_infer(task):
+            results.append(task.task_id)
+            task.status = TaskStatus.SUCCESS
+            return task
+
+        queue_service.set_callbacks(notify=lambda t: None, infer=mock_infer)
+        await queue_service.pause()
+
+        t1 = queue_service.create_task("s1", "n1", "conv1", "Convolution")
+        await queue_service.enqueue(t1)
+
+        await queue_service.start_worker()
+        await asyncio.sleep(0.05)
+        assert t1.task_id not in results  # still paused
+
+        await queue_service.resume()
+        await asyncio.sleep(0.15)
+
+        assert t1.task_id in results
+        await queue_service.stop_worker()

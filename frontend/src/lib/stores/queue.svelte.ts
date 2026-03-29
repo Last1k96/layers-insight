@@ -1,12 +1,22 @@
 import type { InferenceTask, TaskStatus } from './types';
 import { graphStore } from './graph.svelte';
 
+export type SortColumn = 'topo' | 'cosine' | 'mse';
+export type SortDirection = 'asc' | 'desc';
+
 class QueueStore {
   /** All tasks across all sub-sessions. */
   tasks = $state<InferenceTask[]>([]);
   selectedTaskId = $state<string | null>(null);
   filterText = $state('');
   filterStatus = $state<TaskStatus | 'all'>('all');
+
+  /** Sorting state */
+  sortColumn = $state<SortColumn>('topo');
+  sortDirection = $state<SortDirection>('asc');
+
+  /** Queue pause state */
+  paused = $state(false);
 
   /** Tasks visible for the current active sub-session. */
   get visibleTasks(): InferenceTask[] {
@@ -24,6 +34,16 @@ class QueueStore {
     this.selectedTaskId = idx >= 0 && idx < tasks.length ? tasks[idx].task_id : null;
   }
 
+  /** Topo index map: node_id -> index in graphStore.graphData.nodes */
+  get topoIndexMap(): Map<string, number> {
+    const nodes = graphStore.graphData?.nodes;
+    const map = new Map<string, number>();
+    if (nodes) {
+      nodes.forEach((n, i) => map.set(n.id, i));
+    }
+    return map;
+  }
+
   get filteredTasks(): InferenceTask[] {
     let result = this.sortedTasks;
     if (this.filterText) {
@@ -38,23 +58,53 @@ class QueueStore {
     return result;
   }
 
-  get sortedTasks(): InferenceTask[] {
-    const nodes = graphStore.graphData?.nodes;
-    const orderMap = new Map<string, number>();
-    if (nodes) {
-      nodes.forEach((n, i) => orderMap.set(n.id, i));
-    }
+  /** Returns the number of waiting tasks */
+  get waitingCount(): number {
+    return this.visibleTasks.filter(t => t.status === 'waiting').length;
+  }
 
+  get sortedTasks(): InferenceTask[] {
+    const topoMap = this.topoIndexMap;
     const visible = this.visibleTasks;
 
-    const done = visible
-      .filter(t => t.status === 'success' || t.status === 'failed')
-      .sort((a, b) => (orderMap.get(a.node_id) ?? 0) - (orderMap.get(b.node_id) ?? 0));
-
+    const done = visible.filter(t => t.status === 'success' || t.status === 'failed');
     const executing = visible.filter(t => t.status === 'executing');
     const waiting = visible.filter(t => t.status === 'waiting');
 
+    const col = this.sortColumn;
+    const dir = this.sortDirection;
+    const mul = dir === 'asc' ? 1 : -1;
+
+    done.sort((a, b) => {
+      if (col === 'cosine') {
+        const av = a.status === 'success' && a.metrics ? a.metrics.cosine_similarity : (dir === 'asc' ? Infinity : -Infinity);
+        const bv = b.status === 'success' && b.metrics ? b.metrics.cosine_similarity : (dir === 'asc' ? Infinity : -Infinity);
+        const cmp = (av - bv) * mul;
+        if (cmp !== 0) return cmp;
+      } else if (col === 'mse') {
+        const av = a.status === 'success' && a.metrics ? a.metrics.mse : (dir === 'asc' ? -Infinity : Infinity);
+        const bv = b.status === 'success' && b.metrics ? b.metrics.mse : (dir === 'asc' ? -Infinity : Infinity);
+        const cmp = (av - bv) * mul;
+        if (cmp !== 0) return cmp;
+      }
+      // Default/fallback: topological order
+      return (topoMap.get(a.node_id) ?? 0) - (topoMap.get(b.node_id) ?? 0);
+    });
+
     return [...done, ...executing, ...waiting];
+  }
+
+  /** Toggle sort column. If same column, flip direction. Otherwise set column with its default direction. */
+  toggleSort(column: SortColumn): void {
+    if (this.sortColumn === column) {
+      this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortColumn = column;
+      // Default sort directions: cosine asc (worst first), mse desc (worst first), topo asc
+      if (column === 'cosine') this.sortDirection = 'asc';
+      else if (column === 'mse') this.sortDirection = 'desc';
+      else this.sortDirection = 'asc';
+    }
   }
 
 
@@ -147,6 +197,55 @@ class QueueStore {
       }
     }
     this.tasks = this.tasks.filter(t => !names.has(t.node_name));
+  }
+
+  async pauseQueue(): Promise<void> {
+    try {
+      const res = await fetch('/api/inference/pause', { method: 'POST' });
+      if (res.ok) {
+        this.paused = true;
+      }
+    } catch (e) {
+      console.error('Pause failed:', e);
+    }
+  }
+
+  async resumeQueue(): Promise<void> {
+    try {
+      const res = await fetch('/api/inference/resume', { method: 'POST' });
+      if (res.ok) {
+        this.paused = false;
+      }
+    } catch (e) {
+      console.error('Resume failed:', e);
+    }
+  }
+
+  async cancelAll(): Promise<void> {
+    try {
+      const res = await fetch('/api/inference/cancel-all', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        // Update local tasks that were cancelled
+        this.tasks = this.tasks.map(t =>
+          t.status === 'waiting' ? { ...t, status: 'failed' as TaskStatus, error_detail: 'Cancelled' } : t
+        );
+      }
+    } catch (e) {
+      console.error('Cancel all failed:', e);
+    }
+  }
+
+  async fetchQueueState(): Promise<void> {
+    try {
+      const res = await fetch('/api/inference/queue-state');
+      if (res.ok) {
+        const data = await res.json();
+        this.paused = data.paused;
+      }
+    } catch (e) {
+      console.error('Fetch queue state failed:', e);
+    }
   }
 
   clear(): void {

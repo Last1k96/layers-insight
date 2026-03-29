@@ -150,3 +150,56 @@ class TestReorderTasks:
         })
         assert resp.status_code == 200
         assert resp.json()["reordered"] is True
+
+
+class TestQueueState:
+    @pytest.mark.asyncio
+    async def test_get_queue_state(self, async_client):
+        resp = await async_client.get("/api/inference/queue-state")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["paused"] is False
+
+    @pytest.mark.asyncio
+    async def test_pause(self, async_client):
+        resp = await async_client.post("/api/inference/pause")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["paused"] is True
+
+        # Check state
+        resp = await async_client.get("/api/inference/queue-state")
+        assert resp.json()["paused"] is True
+
+    @pytest.mark.asyncio
+    async def test_resume(self, async_client):
+        await async_client.post("/api/inference/pause")
+        resp = await async_client.post("/api/inference/resume")
+        assert resp.status_code == 200
+        assert resp.json()["paused"] is False
+
+        resp = await async_client.get("/api/inference/queue-state")
+        assert resp.json()["paused"] is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_all(self, async_client, test_session):
+        # Enqueue two tasks
+        await async_client.post("/api/inference/enqueue", json={
+            "session_id": test_session.id,
+            "node_id": "conv_0", "node_name": "conv1", "node_type": "Convolution",
+        })
+        await async_client.post("/api/inference/enqueue", json={
+            "session_id": test_session.id,
+            "node_id": "relu_0", "node_name": "relu1", "node_type": "Relu",
+        })
+
+        resp = await async_client.post("/api/inference/cancel-all")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["cancelled"] == 2
+
+    @pytest.mark.asyncio
+    async def test_cancel_all_empty(self, async_client):
+        resp = await async_client.post("/api/inference/cancel-all")
+        assert resp.status_code == 200
+        assert resp.json()["cancelled"] == 0
