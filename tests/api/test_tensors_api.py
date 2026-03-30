@@ -109,16 +109,7 @@ class TestExportReproducer:
             "metrics": {"mse": 0.0042, "cosine_similarity": 0.9987, "max_abs_diff": 0.31},
         }
 
-        # save_task_result only moves *_output.npy files; we need to manually
-        # place the cut_model and input files into the task dir afterward.
         svc.save_task_result(session_id, "t_export", task_data, artifacts_dir=str(artifacts_dir))
-
-        # Place cut_model and input files into the task dir (inference_worker
-        # saves them in the same out_dir; save_task_result only moves *_output.npy)
-        task_dir = svc.get_task_dir(session_id, "t_export")
-        (task_dir / "cut_model.xml").write_text("<model/>")
-        (task_dir / "cut_model.bin").write_bytes(b"\x00" * 32)
-        np.save(str(task_dir / "input_image.npy"), input_data)
 
         return input_data, main_out, ref_out
 
@@ -145,7 +136,7 @@ class TestExportReproducer:
         assert "reproducer/cut_model.xml" in names
         assert "reproducer/cut_model.bin" in names
         assert "reproducer/info.json" in names
-        assert "reproducer/convert_npy.py" in names
+        assert "reproducer/convert_npy.py" not in names
 
         # Check output bins
         assert "reproducer/main_output.bin" in names

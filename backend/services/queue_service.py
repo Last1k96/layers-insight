@@ -251,12 +251,13 @@ class QueueService:
             try:
                 if self._infer_callback:
                     result = await self._infer_callback(task)
-                    # Only store/notify if not deleted during execution
+                    # Only store/notify if not deleted or paused during execution
                     if task.task_id in self._tasks and isinstance(result, InferenceTask):
-                        self._tasks[task.task_id] = result
-                        await self._notify(result)
+                        if result.status != TaskStatus.WAITING:
+                            self._tasks[task.task_id] = result
+                            await self._notify(result)
             except Exception as e:
-                if task.task_id in self._tasks:
+                if task.task_id in self._tasks and task.status != TaskStatus.WAITING:
                     task.status = TaskStatus.FAILED
                     task.error_detail = f"Worker error: {e}"
                     await self._notify(task)

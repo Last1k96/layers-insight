@@ -165,6 +165,7 @@ class SessionService:
             "schema_version": 2,
             "info": info.model_dump(),
             "config": config.model_dump(),
+            "original_model_path": str(original_xml),
             "tasks": {},
             "sub_sessions": [],
         }
@@ -292,7 +293,7 @@ class SessionService:
             task_dir.mkdir(parents=True, exist_ok=True)
             src = Path(artifacts_dir)
             for f in src.iterdir():
-                if f.is_file() and f.name.endswith("_output.npy"):
+                if f.is_file():
                     shutil.move(str(f), str(task_dir / f.name))
 
     def load_task_result(self, session_id: str, task_id: str) -> dict:

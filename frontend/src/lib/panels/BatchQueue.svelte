@@ -343,6 +343,7 @@
               min="1"
               max="100"
               bind:value={stride}
+              onwheel={(e) => { e.preventDefault(); const d = e.deltaY < 0 ? 1 : -1; const s = e.shiftKey ? 10 : 1; stride = Math.max(1, Math.min(100, stride + d * s)); }}
               class="w-full mt-1 px-2 py-1 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
             />
           </label>
@@ -353,6 +354,7 @@
               min="1"
               max="5000"
               bind:value={maxCount}
+              onwheel={(e) => { e.preventDefault(); const d = e.deltaY < 0 ? 1 : -1; const s = e.shiftKey ? 100 : 10; maxCount = Math.max(1, Math.min(5000, maxCount + d * s)); }}
               class="w-full mt-1 px-2 py-1 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
             />
           </label>
@@ -366,6 +368,7 @@
               min="1"
               max="5000"
               bind:value={maxCount}
+              onwheel={(e) => { e.preventDefault(); const d = e.deltaY < 0 ? 1 : -1; const s = e.shiftKey ? 100 : 10; maxCount = Math.max(1, Math.min(5000, maxCount + d * s)); }}
               class="w-full mt-1 px-2 py-1 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
             />
           </label>

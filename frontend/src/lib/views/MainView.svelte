@@ -151,14 +151,23 @@
   <!-- Graph fills entire background -->
   <GraphCanvas />
 
-  <!-- Infer All button -->
+  <!-- Top-center toolbar -->
   {#if graphStore.graphData}
-    <button
-      class="absolute top-3 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 bg-accent hover:bg-accent-hover rounded-lg text-xs font-medium transition-colors shadow-lg"
-      onclick={() => { batchQueueInitialMode = 'all'; showBatchQueue = true; }}
-    >
-      Infer All
-    </button>
+    <div class="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-lg shadow-lg overflow-hidden">
+      <button
+        class="px-3 py-1.5 text-xs font-medium transition-colors text-gray-300 hover:text-gray-100"
+        onclick={() => { batchQueueInitialMode = 'all'; showBatchQueue = true; }}
+      >
+        Infer All
+      </button>
+      <div class="w-px h-5 bg-[--border-color]"></div>
+      <button
+        class="px-3 py-1.5 text-xs font-medium transition-colors hover:text-gray-100 {bisectStore.isRunning ? 'text-blue-400' : 'text-gray-300'}"
+        onclick={() => showBisectPanel = !showBisectPanel}
+      >
+        {bisectStore.isRunning ? `Bisect (${bisectStore.step}/${bisectStore.totalSteps})` : 'Bisect'}
+      </button>
+    </div>
   {/if}
 
   <!-- Minimap -->
@@ -172,16 +181,6 @@
 
   <!-- Sub-session navigation (Phase 2) -->
   <SubSessionNav />
-
-  <!-- Bisect toolbar button -->
-  <button
-    class="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-lg shadow text-xs font-medium text-gray-300 hover:text-gray-100 hover:border-blue-500/50 transition-colors"
-    class:border-blue-500={bisectStore.isRunning}
-    class:text-blue-400={bisectStore.isRunning}
-    onclick={() => showBisectPanel = !showBisectPanel}
-  >
-    {bisectStore.isRunning ? `Bisect (${bisectStore.step}/${bisectStore.totalSteps})` : 'Bisect'}
-  </button>
 
   <!-- Floating panels -->
   <FloatingPanel side="left" title="Queue">

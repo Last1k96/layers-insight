@@ -11,15 +11,6 @@
     refreshRenderer();
   }
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      const task = queueStore.moveSelection(e.key === 'ArrowDown' ? 1 : -1);
-      if (task) {
-        selectTask(task);
-      }
-    }
-  }
 
   function formatMse(mse: number): string {
     if (mse < 0.0001) return mse.toExponential(1);
@@ -67,7 +58,7 @@
   }
 </script>
 
-<div class="flex flex-col h-full" role="listbox" onkeydown={handleKeydown} tabindex="-1">
+<div class="flex flex-col h-full" role="listbox" tabindex="-1">
   <!-- Header controls -->
   <div class="flex items-center gap-1 px-2 py-1.5 border-b border-[--border-color] shrink-0">
     <button
@@ -87,12 +78,10 @@
       {/if}
     </button>
     <button
-      class="flex items-center justify-center w-6 h-6 rounded transition-colors"
-      class:hover:bg-[--bg-menu]={queueStore.waitingCount > 0}
+      class="flex items-center justify-center w-6 h-6 rounded transition-colors hover:bg-[--bg-menu]"
       class:text-gray-600={queueStore.waitingCount === 0}
-      class:cursor-not-allowed={queueStore.waitingCount === 0}
+      class:pointer-events-none={queueStore.waitingCount === 0}
       title="Cancel all waiting tasks"
-      disabled={queueStore.waitingCount === 0}
       onclick={handleCancelAll}
     >
       <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
@@ -117,7 +106,13 @@
     >
       Node {sortArrow('topo')}
     </button>
-    <span class="w-16 text-right shrink-0">Type</span>
+    <button
+      class="w-16 text-right shrink-0 flex items-center justify-end gap-0.5 hover:text-gray-300 transition-colors cursor-pointer"
+      class:text-gray-300={queueStore.sortColumn === 'type'}
+      onclick={() => handleSort('type')}
+    >
+      Type {sortArrow('type')}
+    </button>
     <button
       class="w-14 text-right shrink-0 flex items-center justify-end gap-0.5 hover:text-gray-300 transition-colors cursor-pointer"
       class:text-gray-300={queueStore.sortColumn === 'cosine'}
@@ -136,7 +131,7 @@
   </div>
 
   <!-- Task list -->
-  <div class="flex-1 overflow-y-auto" class:opacity-50={queueStore.paused}>
+  <div class="flex-1 overflow-y-auto">
     {#if queueStore.filteredTasks.length === 0}
       <div class="p-4 text-center text-gray-500 text-sm">
         No tasks yet. Click a node to start inference.
@@ -151,10 +146,10 @@
           </div>
         {/if}
         <div
-          class="w-full text-left px-3 py-2 text-sm border-b border-[--border-color] hover:bg-[--bg-menu] flex items-center gap-2 transition-colors cursor-pointer"
+          class="w-full text-left px-3 py-2 text-sm border-b border-[--border-color] hover:bg-[--bg-menu] flex items-center gap-2 transition-colors cursor-pointer outline-none"
           class:bg-[--bg-menu]={i === queueStore.selectedIndex}
           role="button"
-          tabindex="0"
+          tabindex="-1"
           onclick={() => { queueStore.selectedIndex = i; selectTask(task); }}
           onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedIndex = i; selectTask(task); }}}
         >

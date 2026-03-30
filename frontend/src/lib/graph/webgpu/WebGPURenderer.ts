@@ -258,9 +258,9 @@ export class WebGPURenderer {
 
       // Selection highlight: bright cyan stroke + fill tint
       if (isSelected) {
-        fill.r = fill.r + (1.0 - fill.r) * 0.2;
-        fill.g = fill.g + (1.0 - fill.g) * 0.2;
-        fill.b = fill.b + (1.0 - fill.b) * 0.2;
+        fill.r = fill.r + (1.0 - fill.r) * 0.4;
+        fill.g = fill.g + (1.0 - fill.g) * 0.4;
+        fill.b = fill.b + (1.0 - fill.b) * 0.4;
         strokeR = 0.298; strokeG = 0.553; strokeB = 1.0; // #4C8DFF
         strokeWidth = 3;
       }

@@ -126,8 +126,14 @@
             <span class="text-gray-400">Threshold:</span>
             <input
               type="number"
-              step="any"
+              step="0.01"
               bind:value={bisectStore.threshold}
+              onwheel={(e) => {
+                e.preventDefault();
+                const step = e.shiftKey ? 0.1 : 0.01;
+                const delta = e.deltaY < 0 ? step : -step;
+                bisectStore.threshold = Math.round((bisectStore.threshold + delta) * 1000) / 1000;
+              }}
               class="w-full mt-1 px-2 py-1.5 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none font-mono"
             />
           </label>

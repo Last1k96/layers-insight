@@ -13,6 +13,7 @@ from backend.config import AppConfig, parse_cli_args
 from backend.routers import bisect, devices, graph, inference, sessions, tensors
 from backend.services.inference_service import InferenceService
 from backend.utils.ov_helpers import register_plugins
+from backend.schemas.inference import TaskStatus
 from backend.services.queue_service import QueueService
 from backend.services.session_service import SessionService
 from backend.ws.handler import ws_manager
@@ -164,6 +165,10 @@ async def lifespan(app: FastAPI):
 
         # If the task was deleted while executing, skip saving results
         if queue_service.is_deleted(task.task_id):
+            return task
+
+        # If the task was paused (reset to WAITING), skip saving results
+        if task.status == TaskStatus.WAITING:
             return task
 
         # Handle tuple result (task, artifacts_dir)

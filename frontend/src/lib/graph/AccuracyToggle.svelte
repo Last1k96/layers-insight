@@ -49,6 +49,18 @@
     configStore.setAccuracyRange(metric, { ...DEFAULT_RANGES[metric] });
     refreshRenderer();
   }
+
+  function handleRangeWheel(field: 'min' | 'max', e: WheelEvent) {
+    e.preventDefault();
+    const delta = e.deltaY < 0 ? 0.01 : -0.01;
+    const step = e.shiftKey ? 0.1 : 0.01;
+    const actual = e.deltaY < 0 ? step : -step;
+    const metric = configStore.accuracyMetric;
+    const current = configStore.accuracyRanges[metric];
+    const val = Math.round((current[field] + actual) * 1000) / 1000;
+    configStore.setAccuracyRange(metric, { ...current, [field]: val });
+    refreshRenderer();
+  }
 </script>
 
 <div class="absolute top-3 right-3 z-30 flex items-start gap-2">
@@ -132,9 +144,10 @@
           <input
             id="acc-range-min"
             type="number"
-            step="any"
+            step="0.01"
             value={configStore.activeRange.min}
             oninput={(e) => handleRangeInput('min', e)}
+            onwheel={(e) => handleRangeWheel('min', e)}
             class="w-full bg-[--bg-primary] border border-[--border-color] rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-blue-500"
           />
         </div>
@@ -145,9 +158,10 @@
           <input
             id="acc-range-max"
             type="number"
-            step="any"
+            step="0.01"
             value={configStore.activeRange.max}
             oninput={(e) => handleRangeInput('max', e)}
+            onwheel={(e) => handleRangeWheel('max', e)}
             class="w-full bg-[--bg-primary] border border-[--border-color] rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-blue-500"
           />
         </div>

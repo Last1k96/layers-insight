@@ -338,7 +338,7 @@
         <!-- Phase 2 actions -->
         <div class="mt-3 space-y-2">
           <button
-            class="w-full py-1.5 bg-accent hover:bg-accent-hover rounded text-xs transition-colors"
+            class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
             onclick={() => handleDeepAccuracy()}
           >
             Deep Accuracy View
@@ -455,7 +455,7 @@
             {/if}
 
             <button
-              class="w-full py-1 bg-accent hover:bg-accent-hover rounded text-xs transition-colors"
+              class="w-full py-1 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
               onclick={() => handleDeepAccuracy(outIdx)}
             >
               Deep Accuracy View

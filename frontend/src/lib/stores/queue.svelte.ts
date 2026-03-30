@@ -1,7 +1,7 @@
 import type { InferenceTask, TaskStatus } from './types';
 import { graphStore } from './graph.svelte';
 
-export type SortColumn = 'topo' | 'cosine' | 'mse';
+export type SortColumn = 'topo' | 'type' | 'cosine' | 'mse';
 export type SortDirection = 'asc' | 'desc';
 
 class QueueStore {
@@ -76,7 +76,12 @@ class QueueStore {
     const mul = dir === 'asc' ? 1 : -1;
 
     done.sort((a, b) => {
-      if (col === 'cosine') {
+      if (col === 'topo') {
+        return ((topoMap.get(a.node_id) ?? 0) - (topoMap.get(b.node_id) ?? 0)) * mul;
+      } else if (col === 'type') {
+        const cmp = a.node_type.localeCompare(b.node_type) * mul;
+        if (cmp !== 0) return cmp;
+      } else if (col === 'cosine') {
         const av = a.status === 'success' && a.metrics ? a.metrics.cosine_similarity : (dir === 'asc' ? Infinity : -Infinity);
         const bv = b.status === 'success' && b.metrics ? b.metrics.cosine_similarity : (dir === 'asc' ? Infinity : -Infinity);
         const cmp = (av - bv) * mul;
@@ -100,7 +105,7 @@ class QueueStore {
       this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
     } else {
       this.sortColumn = column;
-      // Default sort directions: cosine asc (worst first), mse desc (worst first), topo asc
+      // Default sort directions: cosine asc (worst first), mse desc (worst first), topo/type asc
       if (column === 'cosine') this.sortDirection = 'asc';
       else if (column === 'mse') this.sortDirection = 'desc';
       else this.sortDirection = 'asc';

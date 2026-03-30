@@ -191,8 +191,11 @@ class InferenceService:
                 task.error_detail = f"Subprocess error: {e}"
                 return task
 
-            # Check if process was killed by timeout
+            # Check if process was killed by timeout or pause
             if proc.returncode == -9:
+                # If pause already reset task to WAITING, don't overwrite
+                if task.status == TaskStatus.WAITING:
+                    return task
                 task.status = TaskStatus.FAILED
                 task.error_detail = "Inference timed out (300s)"
                 _log("error", "Inference timed out (300s)")

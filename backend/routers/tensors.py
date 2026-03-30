@@ -13,61 +13,6 @@ from fastapi.responses import Response, StreamingResponse
 router = APIRouter(prefix="/api/tensors", tags=["tensors"])
 
 
-_CONVERT_NPY_SCRIPT = '''\
-#!/usr/bin/env python3
-"""Convert between .npy and raw .bin formats using info.json metadata.
-
-Usage:
-    python convert_npy.py to_npy       # .bin -> .npy (using info.json)
-    python convert_npy.py to_bin       # .npy -> .bin (updates info.json)
-"""
-import json
-import sys
-from pathlib import Path
-
-import numpy as np
-
-
-def to_npy():
-    """Convert .bin files to .npy using shapes/dtypes from info.json."""
-    info = json.loads(Path("info.json").read_text())
-    for entry in info.get("inputs", []) + info.get("outputs", []):
-        bin_file = Path(entry["file"])
-        if not bin_file.exists():
-            print(f"  skip {bin_file} (not found)")
-            continue
-        arr = np.frombuffer(bin_file.read_bytes(), dtype=entry["dtype"]).reshape(entry["shape"])
-        npy_path = bin_file.with_suffix(".npy")
-        np.save(str(npy_path), arr)
-        print(f"  {bin_file} -> {npy_path}")
-
-
-def to_bin():
-    """Convert .npy files to .bin and update info.json with shapes/dtypes."""
-    info = json.loads(Path("info.json").read_text())
-    for entry in info.get("inputs", []) + info.get("outputs", []):
-        npy_path = Path(entry["file"]).with_suffix(".npy")
-        if not npy_path.exists():
-            print(f"  skip {npy_path} (not found)")
-            continue
-        arr = np.load(str(npy_path))
-        entry["shape"] = list(arr.shape)
-        entry["dtype"] = str(arr.dtype)
-        bin_path = npy_path.with_suffix(".bin")
-        bin_path.write_bytes(arr.tobytes())
-        print(f"  {npy_path} -> {bin_path}")
-    Path("info.json").write_text(json.dumps(info, indent=2))
-    print("  info.json updated")
-
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2 or sys.argv[1] not in ("to_npy", "to_bin"):
-        print(__doc__)
-        sys.exit(1)
-    {"to_npy": to_npy, "to_bin": to_bin}[sys.argv[1]]()
-'''
-
-
 # --- Export route MUST be registered before the wildcard {output_name} routes
 #     so that "/export" is matched as a fixed segment, not as output_name. ---
 
@@ -99,10 +44,11 @@ async def export_reproducer(session_id: str, task_id: str, request: Request) -> 
     node_name = task_data.get("node_name", "unknown")
     node_type = task_data.get("node_type", "")
 
-    # Build info.json
+    # Build info.json with all available data
     info: dict = {
         "node_name": node_name,
         "node_type": node_type,
+        "model_name": session_detail.info.model_name,
         "main_device": session_detail.config.main_device,
         "ref_device": session_detail.config.ref_device,
         "metrics": task_data.get("metrics"),
@@ -110,11 +56,34 @@ async def export_reproducer(session_id: str, task_id: str, request: Request) -> 
         "outputs": [],
         "session_config": {
             "ov_path": session_detail.config.ov_path,
+            "model_path": svc._read_metadata(session_id).get("original_model_path", session_detail.config.model_path),
             "main_device": session_detail.config.main_device,
             "ref_device": session_detail.config.ref_device,
             "input_precision": session_detail.config.input_precision,
         },
     }
+
+    # Add device output stats
+    if task_data.get("main_result"):
+        info["main_result"] = task_data["main_result"]
+    if task_data.get("ref_result"):
+        info["ref_result"] = task_data["ref_result"]
+
+    # Add per-output breakdowns for multi-output nodes
+    if task_data.get("per_output_metrics"):
+        info["per_output_metrics"] = task_data["per_output_metrics"]
+    if task_data.get("per_output_main_results"):
+        info["per_output_main_results"] = task_data["per_output_main_results"]
+    if task_data.get("per_output_ref_results"):
+        info["per_output_ref_results"] = task_data["per_output_ref_results"]
+
+    # Add plugin configs if non-empty
+    if session_detail.config.plugin_config:
+        info["session_config"]["plugin_config"] = session_detail.config.plugin_config
+    if session_detail.config.ref_plugin_config:
+        info["session_config"]["ref_plugin_config"] = session_detail.config.ref_plugin_config
+    if session_detail.config.original_format:
+        info["session_config"]["original_format"] = session_detail.config.original_format
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -138,25 +107,39 @@ async def export_reproducer(session_id: str, task_id: str, request: Request) -> 
                 "file": bin_name,
             })
 
-        # Add output tensors (main_output.npy, ref_output.npy -> .bin)
-        for output_name in ("main_output", "ref_output"):
-            npy_path = tensor_dir / f"{output_name}.npy"
-            if npy_path.exists():
-                arr = np.load(str(npy_path))
-                bin_name = f"{output_name}.bin"
-                zf.writestr(f"{prefix}{bin_name}", arr.tobytes())
-                info["outputs"].append({
-                    "name": output_name,
-                    "shape": list(arr.shape),
-                    "dtype": str(arr.dtype),
-                    "file": bin_name,
-                })
+        # Add output tensors — handle both single-output (main_output.npy)
+        # and multi-output (main_output_0.npy, main_output_1.npy, ...) patterns.
+        # The worker saves backward-compat copies (main_output.npy = output 0),
+        # so skip the unnumbered file when indexed files exist to avoid duplicates.
+        for side in ("main_output", "ref_output"):
+            indexed = sorted(tensor_dir.glob(f"{side}_[0-9]*.npy"))
+            if indexed:
+                for npy_path in indexed:
+                    arr = np.load(str(npy_path))
+                    bin_name = npy_path.stem + ".bin"
+                    zf.writestr(f"{prefix}{bin_name}", arr.tobytes())
+                    info["outputs"].append({
+                        "name": npy_path.stem,
+                        "shape": list(arr.shape),
+                        "dtype": str(arr.dtype),
+                        "file": bin_name,
+                    })
+            else:
+                npy_path = tensor_dir / f"{side}.npy"
+                if npy_path.exists():
+                    arr = np.load(str(npy_path))
+                    bin_name = f"{side}.bin"
+                    zf.writestr(f"{prefix}{bin_name}", arr.tobytes())
+                    info["outputs"].append({
+                        "name": side,
+                        "shape": list(arr.shape),
+                        "dtype": str(arr.dtype),
+                        "file": bin_name,
+                    })
 
         # Write info.json
         zf.writestr(f"{prefix}info.json", json.dumps(info, indent=2))
 
-        # Write convert_npy.py helper
-        zf.writestr(f"{prefix}convert_npy.py", _CONVERT_NPY_SCRIPT)
 
     buf.seek(0)
     safe_name = node_name.replace("/", "_").replace("\\", "_").replace(" ", "_")
