@@ -100,8 +100,9 @@ function handleMessage(msg: any): void {
   if (msg.type === 'task_status') {
     const tsMsg = msg as TaskStatusMessage;
 
-    // Update queue store
-    queueStore.updateTask(tsMsg.task_id, {
+    // Upsert queue store — WS messages may arrive before the HTTP enqueue
+    // response, so the task might not exist in the store yet.
+    const taskData = {
       status: tsMsg.status,
       stage: tsMsg.stage,
       error_detail: tsMsg.error_detail,
@@ -112,7 +113,19 @@ function handleMessage(msg: any): void {
       per_output_main_results: tsMsg.per_output_main_results,
       per_output_ref_results: tsMsg.per_output_ref_results,
       sub_session_id: tsMsg.sub_session_id,
-    });
+    };
+    if (queueStore.hasTask(tsMsg.task_id)) {
+      queueStore.updateTask(tsMsg.task_id, taskData);
+    } else {
+      queueStore.addTask({
+        task_id: tsMsg.task_id,
+        session_id: tsMsg.session_id,
+        node_id: tsMsg.node_id,
+        node_name: tsMsg.node_name,
+        node_type: tsMsg.node_type,
+        ...taskData,
+      });
+    }
 
     // Update graph node status
     const nodeStatus: NodeStatus = {

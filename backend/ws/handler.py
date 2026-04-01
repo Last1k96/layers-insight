@@ -58,8 +58,10 @@ class ConnectionManager:
         message = {
             "type": "task_status",
             "task_id": task.task_id,
+            "session_id": task.session_id,
             "node_id": task.node_id,
             "node_name": task.node_name,
+            "node_type": task.node_type,
             "status": task.status.value,
             "stage": task.stage,
             "error_detail": task.error_detail,

@@ -113,6 +113,10 @@ class QueueStore {
   }
 
 
+  hasTask(taskId: string): boolean {
+    return this.tasks.some(t => t.task_id === taskId);
+  }
+
   addTask(task: InferenceTask): void {
     const existing = this.tasks.findIndex(t => t.task_id === task.task_id);
     if (existing >= 0) {

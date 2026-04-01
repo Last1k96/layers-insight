@@ -76,19 +76,19 @@ async def lifespan(app: FastAPI):
 
     async def on_infer(task):
         if inference_service is None:
-            task.status = "failed"
+            task.status = TaskStatus.FAILED
             task.error_detail = "OpenVINO not available"
             return task
 
         model = app.state.models.get(task.session_id)
         if model is None:
-            task.status = "failed"
+            task.status = TaskStatus.FAILED
             task.error_detail = "Model not loaded. Open the graph first."
             return task
 
         session = session_service.get_session(task.session_id)
         if session is None:
-            task.status = "failed"
+            task.status = TaskStatus.FAILED
             task.error_detail = "Session not found"
             return task
 
@@ -198,8 +198,9 @@ async def lifespan(app: FastAPI):
 
     import socket
     host_ip = socket.gethostbyname(socket.gethostname())
-    print(f"\n  Open in browser: http://{host_ip}:{config.port}")
-    print(f"                   http://localhost:{config.port}\n")
+    scheme = "https" if config.https else "http"
+    print(f"\n  Open in browser: {scheme}://{host_ip}:{config.port}")
+    print(f"                   {scheme}://localhost:{config.port}\n")
     yield
 
     # Shutdown
@@ -255,9 +256,15 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
     config = app.state.config
+    ssl_kwargs = {}
+    if config.https:
+        from backend.certs import ensure_certs
+        certfile, keyfile = ensure_certs()
+        ssl_kwargs = {"ssl_certfile": str(certfile), "ssl_keyfile": str(keyfile)}
     uvicorn.run(
         "backend.main:app",
         host=config.host,
         port=config.port,
         reload=False,
+        **ssl_kwargs,
     )

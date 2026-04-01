@@ -19,6 +19,7 @@ class AppConfig(BaseSettings):
     port: int = 8000
     host: str = "0.0.0.0"
     sessions_dir: Path = Path("sessions")
+    https: bool = True
 
     model_config = {"env_prefix": "LI_"}
 
@@ -36,6 +37,8 @@ def parse_cli_args() -> dict:
     parser.add_argument("--port", type=int, help="Server port")
     parser.add_argument("--host", help="Server host")
     parser.add_argument("--sessions-dir", help="Directory for session storage")
+    parser.add_argument("--no-https", dest="https", action="store_false", default=None,
+                        help="Disable HTTPS (enabled by default with auto-generated certificate)")
 
     args = parser.parse_args()
     result = {k: v for k, v in vars(args).items() if v is not None}

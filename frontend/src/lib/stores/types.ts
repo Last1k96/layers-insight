@@ -162,8 +162,10 @@ export interface InferenceTask {
 export interface TaskStatusMessage {
   type: 'task_status';
   task_id: string;
+  session_id: string;
   node_id: string;
   node_name: string;
+  node_type: string;
   status: TaskStatus;
   stage?: string;
   error_detail?: string;
