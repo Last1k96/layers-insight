@@ -82,6 +82,9 @@ def test_app(tmp_path, sample_model_files):
     from backend.services.bisect_service import BisectService
     app.state.bisect_service = BisectService()
 
+    import asyncio
+    app.state.pause_resume_lock = asyncio.Lock()
+
     app.include_router(devices.router)
     app.include_router(sessions.router)
     app.include_router(graph.router)

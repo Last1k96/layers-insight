@@ -67,11 +67,14 @@ async def lifespan(app: FastAPI):
     bisect_service = BisectService()
     app.state.bisect_service = bisect_service
 
+    # Serialize pause/resume/start/stop operations to prevent interleaving
+    app.state.pause_resume_lock = asyncio.Lock()
+
     # Set up queue callbacks
     async def on_task_notify(task):
         await ws_manager.send_task_status(task)
         # Notify bisect service of task completion so it can advance
-        if task.status.value in ("success", "failed") and bisect_service.is_running:
+        if task.status.value in ("success", "failed") and bisect_service.is_active:
             bisect_service.on_task_complete(task)
 
     async def on_infer(task):

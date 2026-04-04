@@ -66,6 +66,7 @@ class BisectService:
         self._lo: int = 0
         self._hi: int = 0
         self._step: int = 0
+        self._pending_task_id: Optional[str] = None  # task we're waiting on (survives pause)
         self._nodes: list[str] = []
         self._node_map: dict[str, Any] = {}
         self._request: Any = None
@@ -202,7 +203,11 @@ class BisectService:
         return self._job
 
     async def stop(self) -> Optional[BisectJobInfo]:
-        """Stop the bisect entirely and clean up."""
+        """Stop the bisect entirely and clean up.
+
+        Also cancels any waiting bisect child tasks still in the queue
+        to prevent orphan tasks.
+        """
         if self._job is None:
             return None
 
@@ -215,6 +220,12 @@ class BisectService:
                 except (asyncio.TimeoutError, asyncio.CancelledError):
                     self._task.cancel()
                 self._task = None
+
+        # Cancel any waiting bisect child tasks left in the queue
+        if self._queue_service:
+            for task in list(self._queue_service.get_all_tasks()):
+                if task.batch_id == "bisect" and task.status == TaskStatus.WAITING:
+                    await self._queue_service.cancel(task.task_id)
 
         job = self._job
         if job:
@@ -235,6 +246,7 @@ class BisectService:
         self._lo = 0
         self._hi = 0
         self._step = 0
+        self._pending_task_id = None
         self._request = None
         self._graph_data = None
         self._queue_service = None
@@ -313,13 +325,67 @@ class BisectService:
             })
 
     async def _run_loop(self) -> None:
-        """The main bisection binary search loop. Reads from self._lo, self._hi, self._step."""
+        """The main bisection binary search loop. Reads from self._lo, self._hi, self._step.
+
+        On resume after pause, if ``_pending_task_id`` is set, the loop skips
+        creating a new task and waits for the already-enqueued one to finish.
+        This prevents duplicate tasks when pause interrupts an executing step.
+        """
         request = self._request
         lo = self._lo
         hi = self._hi
         step = self._step
 
         try:
+            # ── Handle resume with a pending (interrupted) task ──
+            if self._pending_task_id is not None:
+                if self._step_result is None:
+                    # Task hasn't completed yet — wait for it
+                    self._step_done.clear()
+                    await self._step_done.wait()
+
+                    if self._cancel_event.is_set():
+                        self._lo = lo
+                        self._hi = hi
+                        self._step = step
+                        return
+
+                result = self._step_result
+                self._step_result = None
+                self._pending_task_id = None
+
+                if result is None:
+                    if self._job:
+                        self._job.status = BisectStatus.ERROR
+                        self._job.error = "Inference result was lost"
+                    self._progress.status = BisectStatus.ERROR
+                    self._progress.error = "Inference result was lost"
+                    await self._broadcast_job_status()
+                    return
+
+                mid = (lo + hi) // 2
+                mid_node_id = self._nodes[mid]
+
+                passed, metric_value, error = self._evaluate_step(
+                    result, request.search_for, request.metric, request.threshold,
+                )
+
+                step_info = BisectStepInfo(
+                    node_name=result.node_name,
+                    node_id=mid_node_id,
+                    task_id=result.task_id if result.task_id else None,
+                    metric_value=metric_value,
+                    passed=passed,
+                    error=error,
+                )
+                self._progress.steps_history.append(step_info)
+
+                if passed:
+                    lo = mid + 1
+                else:
+                    hi = mid
+
+            # ── Normal binary search loop ──
             while lo < hi:
                 if self._cancel_event.is_set():
                     # Save state for resume
@@ -379,6 +445,7 @@ class BisectService:
                         task.sub_session_id = request.sub_session_id
                     task.batch_id = "bisect"
 
+                    self._pending_task_id = task.task_id
                     await self._queue_service.enqueue(task)
 
                     # Wait for the task to complete (or cancellation)
@@ -390,6 +457,7 @@ class BisectService:
                         self._step = step
                         return
 
+                    self._pending_task_id = None
                     result = self._step_result
                     if result is None:
                         if self._job:

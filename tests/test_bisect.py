@@ -212,6 +212,12 @@ async def test_bisect_stop():
         async def enqueue(self, task):
             return task
 
+        def get_all_tasks(self, session_id=None):
+            return []
+
+        async def cancel(self, task_id):
+            return True
+
     async def noop_broadcast(sid, msg):
         pass
 
@@ -249,6 +255,12 @@ async def test_bisect_pause_resume():
             created_tasks.append(task)
             return task
 
+        def get_all_tasks(self, session_id=None):
+            return []
+
+        async def cancel(self, task_id):
+            return True
+
     async def noop_broadcast(sid, msg):
         pass
 
@@ -272,6 +284,86 @@ async def test_bisect_pause_resume():
     assert job.status == BisectStatus.RUNNING
 
     # Stop to clean up
+    await svc.stop()
+
+
+@pytest.mark.asyncio
+async def test_bisect_pause_resume_with_completed_task():
+    """Regression: task completing while bisect is paused must not hang on resume.
+
+    Reproduces the race where on_task_complete fires after pause sets status to
+    PAUSED, so the result must be picked up on resume without waiting forever.
+    """
+    svc = BisectService()
+    graph = _make_graph(10)
+    req = BisectRequest(session_id="s1", threshold=0.999)
+
+    created_tasks: list[InferenceTask] = []
+
+    class FakeQueue:
+        def create_task(self, session_id, node_id, node_name, node_type):
+            return InferenceTask(
+                task_id=f"t_{node_name}",
+                session_id=session_id,
+                node_id=node_id,
+                node_name=node_name,
+                node_type=node_type,
+                status=TaskStatus.WAITING,
+            )
+
+        async def enqueue(self, task):
+            created_tasks.append(task)
+            return task
+
+        def get_all_tasks(self, session_id=None):
+            return []
+
+        async def cancel(self, task_id):
+            return True
+
+    async def noop_broadcast(sid, msg):
+        pass
+
+    await svc.start(
+        request=req, graph_data=graph,
+        queue_service=FakeQueue(), session_service=None,
+        broadcast=noop_broadcast,
+    )
+
+    # Let it enqueue the first task
+    await asyncio.sleep(0.05)
+    assert len(created_tasks) >= 1
+    assert svc._pending_task_id is not None
+
+    # Pause the bisect (loop exits with _pending_task_id still set)
+    await svc.pause()
+    assert svc.is_paused
+
+    # Simulate the race: task completes AFTER pause (on_task_complete fires
+    # while bisect is paused — the is_active fix allows this)
+    task = created_tasks[-1]
+    result = _make_task(task.task_id, task.node_name, TaskStatus.SUCCESS, cos=1.0)
+    svc.on_task_complete(result)
+
+    # Resume — the loop must pick up the stored result without hanging
+    await svc.resume()
+
+    # Give the loop time to process (with timeout to detect hangs)
+    async def wait_for_next_step():
+        for _ in range(100):
+            await asyncio.sleep(0.01)
+            # Loop should have consumed the result and moved on
+            if svc._pending_task_id is None:
+                return True
+            # Or if it enqueued a new task for the next step
+            if len(created_tasks) > 1:
+                return True
+        return False
+
+    ok = await asyncio.wait_for(wait_for_next_step(), timeout=3.0)
+    assert ok, "Bisect loop hung after resume — _pending_task_id was never cleared"
+
+    # Clean up
     await svc.stop()
 
 

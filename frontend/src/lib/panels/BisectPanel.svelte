@@ -9,8 +9,6 @@
     onclose: () => void;
   } = $props();
 
-  let starting = $state(false);
-
   const metricLabels: Record<string, string> = {
     cosine_similarity: 'Cosine similarity',
     mse: 'MSE',
@@ -44,10 +42,8 @@
   async function startBisect() {
     const session = sessionStore.currentSession;
     if (!session) return;
-    starting = true;
     bisectStore.error = null;
     const ok = await bisectStore.start(session.id, graphStore.activeSubSessionId);
-    starting = false;
     if (ok) {
       onclose();
     }
@@ -137,10 +133,10 @@
 
         <button
           class="w-full py-2 bg-accent hover:bg-accent-hover disabled:bg-[--bg-panel] disabled:text-content-secondary rounded text-sm font-medium transition-colors"
-          disabled={starting}
+          disabled={bisectStore.busy}
           onclick={startBisect}
         >
-          {starting ? 'Starting...' : 'Start Bisection'}
+          {bisectStore.busy ? 'Starting...' : 'Start Bisection'}
         </button>
 
         {#if bisectStore.error}
