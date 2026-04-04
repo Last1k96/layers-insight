@@ -1,4 +1,5 @@
 import type { BisectQueueItem, BisectJobStatus } from './types';
+import { queueStore } from './queue.svelte';
 
 export type BisectSearchFor = 'accuracy_drop' | 'compilation_failure';
 export type BisectMetric = 'cosine_similarity' | 'mse' | 'max_abs_diff';
@@ -58,13 +59,48 @@ class BisectStore {
 
   async stop(): Promise<void> {
     try {
-      const res = await fetch('/api/inference/bisect/stop', { method: 'POST' });
-      if (res.ok) {
-        this.job = null;
-      }
+      await fetch('/api/inference/bisect/stop', { method: 'POST' });
+      // Keep job with 'stopped' status so UI can show merge/dismiss controls.
+      // The WS handler will update the status.
     } catch (e) {
       console.error('Bisect stop failed:', e);
     }
+  }
+
+  /** Merge bisect child tasks into the main task list and dismiss. */
+  merge(): void {
+    queueStore.mergeBisectTasks();
+    this.job = null;
+    this.error = null;
+  }
+
+  /** Cancel any in-flight bisect tasks and remove them from the store. */
+  private async cancelInFlightBisectTasks(): Promise<void> {
+    const inFlight = queueStore.tasks.filter(
+      t => t.batch_id === 'bisect' && (t.status === 'waiting' || t.status === 'executing')
+    );
+    await Promise.all(inFlight.map(t => queueStore.deleteTask(t.task_id)));
+  }
+
+  /** Stop bisect, cancel in-flight tasks, merge completed ones into the main list. */
+  async stopAndMerge(): Promise<void> {
+    await this.stop();
+    await this.cancelInFlightBisectTasks();
+    this.merge();
+  }
+
+  /** Stop bisect and delete all bisect tasks from frontend and backend. */
+  async stopAndDiscard(): Promise<void> {
+    await this.stop();
+    await this.discard();
+  }
+
+  /** Discard bisect tasks from both frontend and backend. */
+  async discard(): Promise<void> {
+    const bisectTasks = queueStore.tasks.filter(t => t.batch_id === 'bisect');
+    await Promise.all(bisectTasks.map(t => queueStore.deleteTask(t.task_id)));
+    this.job = null;
+    this.error = null;
   }
 
   handleWsMessage(msg: any): void {
@@ -97,10 +133,7 @@ class BisectStore {
       if (msg.found_node) this.job.found_node = msg.found_node;
       if (msg.error) this.job.error = msg.error;
 
-      // Clear job on terminal states that indicate removal
-      if (msg.status === 'stopped') {
-        this.job = null;
-      }
+      // Keep job on 'stopped' so UI can show merge/dismiss controls
     }
   }
 

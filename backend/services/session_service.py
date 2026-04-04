@@ -182,6 +182,10 @@ class SessionService:
                 try:
                     meta = self._read_metadata(p.name)
                     info_data = dict(meta["info"])
+                    # Recompute counts from actual tasks dict
+                    tasks = meta.get("tasks", {})
+                    info_data["task_count"] = len(tasks)
+                    info_data["success_count"] = sum(1 for t in tasks.values() if t.get("status") == "success")
                     # Resolve model_path to absolute for consumers
                     if "model_path" in info_data:
                         info_data["model_path"] = str(
@@ -214,12 +218,16 @@ class SessionService:
 
         info_data = dict(meta["info"])
         info_data["model_path"] = str(self._resolve_path(session_id, info_data["model_path"]))
+        # Recompute counts from actual tasks dict
+        tasks = meta.get("tasks", {})
+        info_data["task_count"] = len(tasks)
+        info_data["success_count"] = sum(1 for t in tasks.values() if t.get("status") == "success")
 
         return SessionDetail(
             id=session_id,
             config=SessionConfig(**config_data),
             info=SessionInfo(**info_data),
-            tasks=list(meta.get("tasks", {}).values()),
+            tasks=list(tasks.values()),
         )
 
     def delete_session(self, session_id: str) -> bool:

@@ -60,9 +60,7 @@
     }
   }
 
-  function handleBisectStop() {
-    bisectStore.stop();
-  }
+  let bisectCollapsed = $state(false);
 
   function bisectProgressColor(status: string): string {
     if (status === 'running') return 'rgba(59, 130, 246, 0.1)';
@@ -107,48 +105,6 @@
     refreshRenderer();
   }
 </script>
-
-{#snippet bisectRow(bj: import('../stores/types').BisectQueueItem)}
-  <div
-    class="w-full relative px-3 py-2 text-sm flex items-center gap-2 overflow-hidden cursor-pointer row-hover"
-    role="button"
-    tabindex="-1"
-    onclick={handleBisectClick}
-    onkeydown={(e) => { if (e.key === 'Enter') handleBisectClick(e as unknown as MouseEvent); }}
-  >
-    {#if bj.total_steps > 0}
-      <div
-        class="absolute inset-0 transition-all duration-500 ease-out"
-        style:background-color={bisectProgressColor(bj.status)}
-        style:width="{Math.min(100, (bj.step / bj.total_steps) * 100)}%"
-      ></div>
-    {/if}
-    <div class="relative flex items-center gap-2 w-full">
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="shrink-0" style:color={bisectIconColor(bj.status)}>
-        <path d="M8 2v12M4 6l4-4 4 4" />
-      </svg>
-      <span class="flex-1 text-xs font-medium truncate" style:color={bisectTextColor(bj.status)}>
-        {#if bj.status === 'running'}
-          Bisecting... Step {bj.step}/{bj.total_steps}
-          {#if bj.current_node}
-            <span class="text-gray-500 font-mono ml-1">{bj.current_node}</span>
-          {/if}
-        {:else if bj.status === 'paused'}
-          Bisect paused at step {bj.step}/{bj.total_steps}
-        {:else if bj.status === 'done' && bj.found_node}
-          Found: {bj.found_node}
-        {:else if bj.status === 'error'}
-          Bisect error{bj.error ? `: ${bj.error}` : ''}
-        {/if}
-      </span>
-      <button
-        class="text-gray-600 hover:text-red-400 text-xs px-1 shrink-0 transition-colors relative"
-        title="Stop bisect"
-        onclick={(e) => { e.stopPropagation(); handleBisectStop(); }}
-      >&#x2715;</button>
-    </div>
-  </div>
-{/snippet}
 
 <div class="flex flex-col h-full" role="listbox" tabindex="-1">
   <!-- Header controls -->
@@ -224,7 +180,7 @@
 
   <!-- Task list -->
   <div class="flex-1 overflow-y-auto">
-    {#if queueStore.filteredTasks.length === 0 && !bisectStore.job}
+    {#if queueStore.filteredTasks.length === 0 && !bisectStore.job && queueStore.bisectTasks.length === 0}
       <div class="flex flex-col items-center justify-center py-12 px-4">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-content-secondary/20 mb-3">
           <circle cx="12" cy="12" r="10" />
@@ -233,6 +189,7 @@
         <span class="text-content-secondary/40 text-xs">Click a node to start inference</span>
       </div>
     {:else}
+      <!-- Regular tasks -->
       {#each queueStore.filteredTasks as task, i (task.task_id)}
         {#if i > 0 && (task.status === 'executing' || task.status === 'waiting') && (queueStore.filteredTasks[i - 1].status === 'success' || queueStore.filteredTasks[i - 1].status === 'failed')}
           <div class="flex items-center gap-2 px-3 py-1">
@@ -240,11 +197,6 @@
             <span class="text-[10px] text-content-secondary/30 uppercase tracking-wider shrink-0">Queue</span>
             <div class="flex-1 h-px bg-content-secondary/10"></div>
           </div>
-          <!-- Bisect row: right below the Queue divider -->
-          {#if bisectStore.job && bisectStore.job.status !== 'stopped'}
-            {@const bj = bisectStore.job}
-            {@render bisectRow(bj)}
-          {/if}
         {/if}
         <div
           class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 cursor-pointer outline-none row-hover"
@@ -254,35 +206,24 @@
           onclick={() => { queueStore.selectedIndex = i; selectTask(task); }}
           onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedIndex = i; selectTask(task); }}}
         >
-          <!-- Status dot -->
           <div
             class="w-2.5 h-2.5 rounded-full shrink-0"
             class:pulse-ring={task.status === 'executing'}
             class:status-glow={task.status === 'executing'}
             style:background-color={getStatusColor(task.status)}
           ></div>
-
-          <!-- Node name -->
           <span class="flex-1 truncate font-mono text-xs">{task.node_name}</span>
-
-          <!-- Op type -->
           <span class="text-content-secondary/40 text-xs shrink-0 text-right whitespace-nowrap">{task.node_type}</span>
-
-          <!-- Cosine for completed -->
           <span class="text-xs font-mono w-14 text-right shrink-0 tabular-nums">
             {#if task.status === 'success' && task.metrics}
               <span style:color={cosineColor(task.metrics.cosine_similarity)}>{formatCosine(task.metrics.cosine_similarity)}</span>
             {/if}
           </span>
-
-          <!-- MSE for completed -->
           <span class="text-xs font-mono w-16 text-right shrink-0 tabular-nums">
             {#if task.status === 'success' && task.metrics}
               <span style:color={mseColor(task.metrics.mse)}>{formatMse(task.metrics.mse)}</span>
             {/if}
           </span>
-
-          <!-- Delete button -->
           <button
             class="text-content-secondary/30 hover:text-red-400 text-xs px-1 shrink-0 transition-colors"
             title="Delete"
@@ -293,15 +234,117 @@
         </div>
       {/each}
 
-      <!-- Bisect row fallback: when the Queue divider didn't render (no done+pending mix) -->
-      {#if bisectStore.job && bisectStore.job.status !== 'stopped'}
-        {@const hasDivider = queueStore.filteredTasks.some((t, i) =>
-          i > 0 && (t.status === 'executing' || t.status === 'waiting') &&
-          (queueStore.filteredTasks[i - 1].status === 'success' || queueStore.filteredTasks[i - 1].status === 'failed')
-        )}
-        {#if !hasDivider}
-          {@const bj = bisectStore.job}
-          {@render bisectRow(bj)}
+      <!-- Bisect row: inline in the queue with child tasks nested below -->
+      {@const bTasks = queueStore.bisectTasks}
+      {#if bisectStore.job || bTasks.length > 0}
+        <!-- Bisect row — acts like a queue item with a collapsible child region -->
+        <div
+          class="w-full relative px-3 py-2 text-sm flex items-center gap-2 overflow-hidden cursor-pointer row-hover"
+          role="button"
+          tabindex="-1"
+          onclick={handleBisectClick}
+          onkeydown={(e) => { if (e.key === 'Enter') handleBisectClick(e as unknown as MouseEvent); }}
+        >
+          {#if bisectStore.job && bisectStore.job.total_steps > 0}
+            <div
+              class="absolute inset-0 transition-all duration-500 ease-out"
+              style:background-color={bisectProgressColor(bisectStore.job.status)}
+              style:width="{Math.min(100, (bisectStore.job.step / bisectStore.job.total_steps) * 100)}%"
+            ></div>
+          {/if}
+          <div class="relative flex items-center gap-2 w-full">
+            <button
+              class="text-content-secondary/50 hover:text-content-secondary transition-colors"
+              onclick={(e) => { e.stopPropagation(); bisectCollapsed = !bisectCollapsed; }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"
+                class="transition-transform duration-150 {bisectCollapsed ? '' : 'rotate-90'}"
+              >
+                <path d="M3 1l5 4-5 4z" />
+              </svg>
+            </button>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="shrink-0" style:color={bisectStore.job ? bisectIconColor(bisectStore.job.status) : '#9ca3af'}>
+              <path d="M8 2v12M4 6l4-4 4 4" />
+            </svg>
+            <span class="flex-1 text-xs font-medium truncate" style:color={bisectStore.job ? bisectTextColor(bisectStore.job.status) : '#d1d5db'}>
+              {#if bisectStore.job}
+                {#if bisectStore.job.status === 'running'}
+                  Bisecting... Step {bisectStore.job.step}/{bisectStore.job.total_steps}
+                  {#if bisectStore.job.current_node}
+                    <span class="text-gray-500 font-mono ml-1">{bisectStore.job.current_node}</span>
+                  {/if}
+                {:else if bisectStore.job.status === 'paused'}
+                  Bisect paused at step {bisectStore.job.step}/{bisectStore.job.total_steps}
+                {:else if bisectStore.job.status === 'done' && bisectStore.job.found_node}
+                  Found: {bisectStore.job.found_node}
+                {:else if bisectStore.job.status === 'error'}
+                  Bisect error{bisectStore.job.error ? `: ${bisectStore.job.error}` : ''}
+                {:else}
+                  Bisection ({bTasks.length})
+                {/if}
+              {:else}
+                Bisection ({bTasks.length})
+              {/if}
+            </span>
+            <!-- Action buttons -->
+            {#if bisectStore.isActive}
+              <button
+                class="text-[10px] px-2 py-0.5 rounded bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25 transition-colors shrink-0"
+                title="Stop bisection and merge completed nodes into the main list"
+                onclick={(e) => { e.stopPropagation(); bisectStore.stopAndMerge(); }}
+              >Stop &amp; Merge</button>
+              <button
+                class="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors shrink-0"
+                title="Stop bisection and delete all bisect results"
+                onclick={(e) => { e.stopPropagation(); bisectStore.stopAndDiscard(); }}
+              >Stop &amp; Discard</button>
+            {:else}
+              <button
+                class="text-[10px] px-2 py-0.5 rounded bg-green-500/15 text-green-400 hover:bg-green-500/25 transition-colors shrink-0"
+                title="Merge inferred nodes into the main list"
+                onclick={(e) => { e.stopPropagation(); bisectStore.merge(); }}
+              >Merge</button>
+              <button
+                class="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors shrink-0"
+                title="Discard bisection results"
+                onclick={(e) => { e.stopPropagation(); bisectStore.discard(); }}
+              >Discard</button>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Bisect child tasks (collapsible region below the bisect row) -->
+        {#if !bisectCollapsed}
+          {#each bTasks as task (task.task_id)}
+            <div
+              class="w-full text-left pl-8 pr-3 py-2 text-sm flex items-center gap-2 cursor-pointer outline-none row-hover"
+              style:background-color={queueStore.selectedTaskId === task.task_id ? 'rgba(76, 141, 255, 0.06)' : undefined}
+              role="button"
+              tabindex="-1"
+              onclick={() => { queueStore.selectedTaskId = task.task_id; selectTask(task); }}
+              onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedTaskId = task.task_id; selectTask(task); }}}
+            >
+              <div
+                class="w-2.5 h-2.5 rounded-full shrink-0"
+                class:pulse-ring={task.status === 'executing'}
+                class:status-glow={task.status === 'executing'}
+                style:background-color={getStatusColor(task.status)}
+              ></div>
+              <span class="flex-1 truncate font-mono text-xs">{task.node_name}</span>
+              <span class="text-content-secondary/40 text-xs shrink-0 text-right whitespace-nowrap">{task.node_type}</span>
+              <span class="text-xs font-mono w-14 text-right shrink-0 tabular-nums">
+                {#if task.status === 'success' && task.metrics}
+                  <span style:color={cosineColor(task.metrics.cosine_similarity)}>{formatCosine(task.metrics.cosine_similarity)}</span>
+                {/if}
+              </span>
+              <span class="text-xs font-mono w-16 text-right shrink-0 tabular-nums">
+                {#if task.status === 'success' && task.metrics}
+                  <span style:color={mseColor(task.metrics.mse)}>{formatMse(task.metrics.mse)}</span>
+                {/if}
+              </span>
+              <div class="w-5 shrink-0"></div>
+            </div>
+          {/each}
         {/if}
       {/if}
     {/if}
