@@ -17,6 +17,7 @@
   import { graphStore, type NodeStatus as NodeStatusData } from '../stores/graph.svelte';
   import { queueStore } from '../stores/queue.svelte';
   import { bisectStore } from '../stores/bisect.svelte';
+  import { logStore } from '../stores/log.svelte';
   import { cacheMetrics } from '../stores/metrics.svelte';
   import { connect, disconnect, setConnectionCallbacks } from '../ws/client';
   import { refreshRenderer } from '../graph/renderer';
@@ -158,7 +159,7 @@
         class="px-3 py-1.5 text-xs font-medium transition-colors text-gray-300 hover:text-gray-100"
         onclick={() => { batchQueueInitialMode = 'all'; showBatchQueue = true; }}
       >
-        Infer All
+        Batch Infer
       </button>
       <div class="w-px h-5 bg-[--border-color]"></div>
       <button
@@ -166,6 +167,13 @@
         onclick={() => showBisectPanel = !showBisectPanel}
       >
         Bisect{bisectStore.isActive ? ' \u25CF' : ''}
+      </button>
+      <div class="w-px h-5 bg-[--border-color]"></div>
+      <button
+        class="px-3 py-1.5 text-xs font-medium transition-colors hover:text-gray-100 {logStore.visible ? 'text-blue-400' : 'text-gray-300'}"
+        onclick={() => logStore.toggle()}
+      >
+        Logs{logStore.visible ? ' ●' : ''}
       </button>
     </div>
   {/if}

@@ -104,17 +104,6 @@
   });
 </script>
 
-<!-- Toggle button -->
-<button
-  class="fixed left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 text-xs font-medium rounded-full
-    bg-[--bg-panel]/90 backdrop-blur-sm text-content-secondary hover:text-content-primary transition-colors active:scale-95"
-  style:bottom={logStore.visible ? `${height + 4}px` : '0.5rem'}
-  style:box-shadow="var(--shadow-elevated)"
-  onclick={() => logStore.toggle()}
->
-  {logStore.visible ? 'Hide' : 'Show'} Logs
-</button>
-
 {#if logStore.visible}
   <div
     class="fixed bottom-0 left-0 right-0 z-40 bg-[--bg-panel]/95 backdrop-blur-xl flex flex-col"
@@ -139,6 +128,13 @@
           onclick={() => logStore.clear()}
         >
           Clear
+        </button>
+        <button
+          class="text-xs text-content-secondary/40 hover:text-content-secondary transition-colors"
+          onclick={() => logStore.toggle()}
+          title="Close logs"
+        >
+          ✕
         </button>
       </div>
     </div>
