@@ -69,7 +69,7 @@
       restoreSessionTasks();
 
       // Restore bisect state if a bisection was active before page refresh
-      bisectStore.fetchStatus();
+      bisectStore.fetchStatus(session.id);
 
       setConnectionCallbacks(
         () => { wsDisconnected = true; },

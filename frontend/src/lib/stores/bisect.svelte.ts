@@ -88,9 +88,11 @@ class BisectStore {
 
   /** Merge bisect child tasks into the main task list and dismiss. */
   merge(): void {
+    const sessionId = this.job?.session_id;
     queueStore.mergeBisectTasks();
     this.job = null;
     this.error = null;
+    if (sessionId) this._clearPersistedJob(sessionId);
   }
 
   /** Cancel any in-flight bisect tasks and remove them from the store. */
@@ -149,10 +151,12 @@ class BisectStore {
 
   /** Discard bisect tasks from both frontend and backend (no busy guard — called from guarded methods). */
   private async _discardTasks(): Promise<void> {
+    const sessionId = this.job?.session_id;
     const bisectTasks = queueStore.tasks.filter(t => t.batch_id === 'bisect');
     await Promise.all(bisectTasks.map(t => queueStore.deleteTask(t.task_id)));
     this.job = null;
     this.error = null;
+    if (sessionId) this._clearPersistedJob(sessionId);
   }
 
   /** Public discard — with busy guard. */
@@ -167,9 +171,12 @@ class BisectStore {
   }
 
   /** Fetch current bisect status from backend (for page reload recovery). */
-  async fetchStatus(): Promise<void> {
+  async fetchStatus(sessionId?: string): Promise<void> {
     try {
-      const res = await fetch('/api/inference/bisect/status');
+      const url = sessionId
+        ? `/api/inference/bisect/status?session_id=${sessionId}`
+        : '/api/inference/bisect/status';
+      const res = await fetch(url);
       if (!res.ok) return;
       const data = await res.json();
       if (data.status && data.status !== 'idle' && data.job_id) {
@@ -230,6 +237,10 @@ class BisectStore {
 
       // Keep job on 'stopped' so UI can show merge/dismiss controls
     }
+  }
+
+  private _clearPersistedJob(sessionId: string): void {
+    fetch(`/api/inference/bisect/status?session_id=${sessionId}`, { method: 'DELETE' }).catch(() => {});
   }
 
   reset(): void {

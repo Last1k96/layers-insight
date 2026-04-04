@@ -62,7 +62,7 @@ async def stop_bisection(request: Request) -> BisectJobInfo:
 
 
 @router.get("/status")
-async def get_bisection_status(request: Request) -> dict:
+async def get_bisection_status(request: Request, session_id: str | None = None) -> dict:
     """Get the current bisection state."""
     bisect_svc = request.app.state.bisect_service
     if bisect_svc is None:
@@ -71,4 +71,20 @@ async def get_bisection_status(request: Request) -> dict:
     job = bisect_svc.job
     if job:
         return job.model_dump()
+
+    # Fall back to persisted bisect result from session metadata
+    if session_id:
+        session_svc = request.app.state.session_service
+        job_data = session_svc.load_bisect_job(session_id)
+        if job_data:
+            return job_data
+
     return {"status": "idle"}
+
+
+@router.delete("/status")
+async def dismiss_bisect_job(request: Request, session_id: str) -> dict:
+    """Clear persisted bisect job from session metadata (after merge/discard)."""
+    session_svc = request.app.state.session_service
+    session_svc.clear_bisect_job(session_id)
+    return {"cleared": True}
