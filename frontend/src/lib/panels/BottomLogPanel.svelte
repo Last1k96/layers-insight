@@ -104,12 +104,12 @@
   });
 </script>
 
-<!-- Toggle button — always visible, centered at bottom to avoid overlap with side panels -->
+<!-- Toggle button -->
 <button
-  class="fixed left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 text-xs font-medium rounded-md
-    bg-[--bg-panel] border border-[--border-color] text-gray-200 shadow-lg
-    hover:bg-[--bg-menu] hover:text-white transition-colors"
+  class="fixed left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 text-xs font-medium rounded-full
+    bg-[--bg-panel]/90 backdrop-blur-sm text-content-secondary hover:text-content-primary transition-all duration-150 active:scale-95"
   style:bottom={logStore.visible ? `${height + 4}px` : '0.5rem'}
+  style:box-shadow="var(--shadow-elevated)"
   onclick={() => logStore.toggle()}
 >
   {logStore.visible ? 'Hide' : 'Show'} Logs
@@ -117,24 +117,25 @@
 
 {#if logStore.visible}
   <div
-    class="fixed bottom-0 left-0 right-0 z-40 bg-[--bg-panel] backdrop-blur border-t border-[--border-color] flex flex-col"
+    class="fixed bottom-0 left-0 right-0 z-40 bg-[--bg-panel]/95 backdrop-blur-xl flex flex-col"
     style:height={`${height}px`}
+    style:box-shadow="0 -4px 24px rgba(0, 0, 0, 0.2)"
   >
     <!-- Resize handle -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
-      class="h-1 cursor-row-resize hover:bg-blue-500/50 transition-colors shrink-0"
+      class="h-1.5 cursor-row-resize hover:bg-accent/30 transition-colors shrink-0"
       role="separator"
       aria-orientation="horizontal"
       onmousedown={startResize}
     ></div>
 
     <!-- Header -->
-    <div class="flex items-center justify-between px-3 py-1 border-b border-[--border-color] shrink-0">
-      <span class="text-sm font-medium text-content-primary">Inference Logs</span>
+    <div class="flex items-center justify-between px-3 py-1.5 shrink-0 bg-[--bg-panel]">
+      <span class="text-[13px] font-medium tracking-tight text-content-primary">Inference Logs</span>
       <div class="flex items-center gap-2">
         <button
-          class="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+          class="text-xs text-content-secondary/40 hover:text-content-secondary transition-colors"
           onclick={() => logStore.clear()}
         >
           Clear
@@ -151,23 +152,23 @@
       <div style:height="{totalHeight}px" style:position="relative">
         <div style:position="absolute" style:top="{startIndex * ROW_HEIGHT}px" style:left="0" style:right="0">
           {#each visibleEntries as entry (entry._id)}
-            <div class="flex gap-2 px-2 hover:bg-[--bg-menu]" style:height="{ROW_HEIGHT}px" style:line-height="{ROW_HEIGHT}px">
-              <span class="text-content-secondary/50 shrink-0">{entry.formattedTime}</span>
-              <span class="shrink-0 px-1 rounded text-[10px] uppercase font-semibold {LEVEL_COLORS[entry.level] ?? 'text-gray-400'} {LEVEL_BG[entry.level] ?? 'bg-gray-700/50'}">
+            <div class="flex gap-2 px-3 row-hover" style:height="{ROW_HEIGHT}px" style:line-height="{ROW_HEIGHT}px">
+              <span class="text-content-secondary/30 shrink-0 tabular-nums">{entry.formattedTime}</span>
+              <span class="shrink-0 px-1.5 rounded-full text-[10px] uppercase font-semibold {LEVEL_COLORS[entry.level] ?? 'text-gray-400'} {LEVEL_BG[entry.level] ?? 'bg-gray-700/50'}">
                 {entry.level}
               </span>
               {#if entry.node_name}
-                <span class="text-cyan-400/70 shrink-0 truncate max-w-[150px]" title={entry.node_name}>
+                <span class="text-cyan-400/60 shrink-0 truncate max-w-[150px]" title={entry.node_name}>
                   {entry.node_name}
                 </span>
               {/if}
-              <span class="text-content-primary truncate">{entry.message}</span>
+              <span class="text-content-primary/80 truncate">{entry.message}</span>
             </div>
           {/each}
         </div>
       </div>
       {#if logStore.entries.length === 0}
-        <div class="text-gray-600 text-center py-4">No log entries yet. Click a node to trigger inference.</div>
+        <div class="text-content-secondary/20 text-center py-6">No log entries yet</div>
       {/if}
     </div>
   </div>

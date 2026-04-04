@@ -272,18 +272,18 @@
 </script>
 
 <div class="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[28rem]">
-  <div class="bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-xl shadow-2xl">
+  <div class="bg-[--bg-panel]/95 backdrop-blur-xl rounded-2xl overflow-hidden" style:box-shadow="var(--shadow-modal)">
     <!-- Header -->
-    <div class="flex items-center justify-between px-4 py-3 border-b border-[--border-color]">
-      <h3 class="text-sm font-medium text-gray-200">Batch Queue</h3>
-      <button class="text-gray-400 hover:text-gray-200 text-xs" onclick={onclose}>Close</button>
+    <div class="flex items-center justify-between px-4 py-3 bg-[--bg-panel]">
+      <h3 class="text-[13px] font-medium tracking-tight text-content-primary">Batch Queue</h3>
+      <button class="text-content-secondary/40 hover:text-content-secondary text-xs transition-colors" onclick={onclose}>Close</button>
     </div>
 
     <!-- Mode Tabs -->
-    <div class="flex border-b border-[--border-color]">
+    <div class="flex bg-surface-base/50">
       {#each (['all', 'by-type', 'uninferred', 'from-selection'] as const) as m (m)}
         <button
-          class="flex-1 px-2 py-2 text-xs text-center transition-colors {mode === m ? 'text-accent border-b-2 border-accent' : 'text-gray-400 hover:text-gray-200'}"
+          class="flex-1 px-2 py-2.5 text-xs text-center transition-all duration-100 {mode === m ? 'text-accent border-b-2 border-accent' : 'text-content-secondary/40 hover:text-content-secondary'}"
           disabled={m === 'from-selection' && !nodeId}
           onclick={() => { _mode = m; }}
         >
@@ -293,7 +293,7 @@
     </div>
 
     <!-- Mode Config -->
-    <div class="p-4 space-y-3 border-b border-[--border-color]">
+    <div class="p-4 space-y-3">
       {#if mode === 'from-selection'}
         <div class="text-xs text-gray-400">
           Starting from: <span class="text-gray-200 font-mono">{nodeName ?? '(none)'}</span>
@@ -319,9 +319,9 @@
             <button class="text-[10px] text-gray-400 hover:text-gray-200" onclick={deselectAllTypes}>None</button>
           </div>
         </div>
-        <div class="max-h-32 overflow-y-auto space-y-0.5 border border-[--border-color] rounded p-2">
+        <div class="max-h-32 overflow-y-auto space-y-0.5 bg-surface-base rounded-lg p-2">
           {#each availableTypes as item (item.type)}
-            <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-[--bg-primary] px-1 py-0.5 rounded">
+            <label class="flex items-center gap-2 text-xs cursor-pointer hover:bg-surface-elevated px-1.5 py-1 rounded-md transition-colors">
               <input
                 type="checkbox"
                 checked={selectedTypes.has(item.type)}
@@ -344,7 +344,7 @@
               max="100"
               bind:value={stride}
               onwheel={(e) => { e.preventDefault(); const d = e.deltaY < 0 ? 1 : -1; const s = e.shiftKey ? 10 : 1; stride = Math.max(1, Math.min(100, stride + d * s)); }}
-              class="w-full mt-1 px-2 py-1 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
+              class="w-full mt-1 px-2.5 py-1.5 bg-[--bg-input] rounded-lg text-xs font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-accent/30 transition-shadow"
             />
           </label>
           <label class="text-xs">
@@ -355,7 +355,7 @@
               max="5000"
               bind:value={maxCount}
               onwheel={(e) => { e.preventDefault(); const d = e.deltaY < 0 ? 1 : -1; const s = e.shiftKey ? 100 : 10; maxCount = Math.max(1, Math.min(5000, maxCount + d * s)); }}
-              class="w-full mt-1 px-2 py-1 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
+              class="w-full mt-1 px-2.5 py-1.5 bg-[--bg-input] rounded-lg text-xs font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-accent/30 transition-shadow"
             />
           </label>
         </div>
@@ -369,7 +369,7 @@
               max="5000"
               bind:value={maxCount}
               onwheel={(e) => { e.preventDefault(); const d = e.deltaY < 0 ? 1 : -1; const s = e.shiftKey ? 100 : 10; maxCount = Math.max(1, Math.min(5000, maxCount + d * s)); }}
-              class="w-full mt-1 px-2 py-1 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
+              class="w-full mt-1 px-2.5 py-1.5 bg-[--bg-input] rounded-lg text-xs font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-accent/30 transition-shadow"
             />
           </label>
         </div>
@@ -384,12 +384,12 @@
     <!-- Preview List -->
     <div class="max-h-48 overflow-y-auto">
       {#if previewNodes.length === 0}
-        <div class="p-4 text-center text-gray-500 text-xs">No nodes found</div>
+        <div class="p-6 text-center text-content-secondary/25 text-xs">No nodes found</div>
       {:else}
         {#each previewNodes as node, i (node.id)}
-          <div class="px-4 py-1.5 text-xs flex justify-between border-b border-[--border-color]">
-            <span class="font-mono text-gray-300 truncate">{node.name}</span>
-            <span class="text-gray-500">{node.type}</span>
+          <div class="px-4 py-2 text-xs flex justify-between row-hover">
+            <span class="font-mono text-content-secondary/70 truncate">{node.name}</span>
+            <span class="text-content-secondary/30">{node.type}</span>
           </div>
         {/each}
       {/if}
@@ -398,7 +398,7 @@
     <!-- Actions -->
     <div class="p-4">
       <button
-        class="w-full py-2 bg-accent hover:bg-accent-hover disabled:bg-[--bg-panel] disabled:text-content-secondary rounded text-sm font-medium transition-colors"
+        class="w-full py-2.5 bg-accent hover:bg-accent-hover disabled:bg-surface-elevated disabled:text-content-secondary/30 rounded-lg text-sm font-medium transition-all duration-100 active:scale-[0.98]"
         disabled={previewNodes.length === 0 || submitting}
         onclick={queueAll}
       >
