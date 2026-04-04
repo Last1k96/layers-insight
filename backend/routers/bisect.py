@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request
 
-from backend.schemas.bisect import BisectJobInfo, BisectProgress, BisectRequest
+from backend.schemas.bisect import BisectJobInfo, BisectRequest
 from backend.schemas.graph import GraphData
 
 router = APIRouter(prefix="/api/inference/bisect", tags=["bisect"])
@@ -16,9 +16,6 @@ async def start_bisection(req: BisectRequest, request: Request) -> BisectJobInfo
         bisect_svc = request.app.state.bisect_service
         if bisect_svc is None:
             raise HTTPException(status_code=503, detail="Bisect service not available")
-
-        if bisect_svc.is_active:
-            raise HTTPException(status_code=409, detail="A bisection is already running")
 
         # Load graph data for topological ordering
         session_svc = request.app.state.session_service
@@ -39,52 +36,50 @@ async def start_bisection(req: BisectRequest, request: Request) -> BisectJobInfo
                 session_service=session_svc,
                 broadcast=ws_manager.broadcast,
             )
-        except RuntimeError as e:
-            raise HTTPException(status_code=409, detail=str(e))
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
         return job
 
 
-@router.post("/stop", response_model=BisectJobInfo)
-async def stop_bisection(request: Request) -> BisectJobInfo:
-    """Stop the running bisection search entirely."""
+@router.post("/{job_id}/stop", response_model=BisectJobInfo)
+async def stop_bisection(job_id: str, request: Request) -> BisectJobInfo:
+    """Stop a specific bisection job."""
     async with request.app.state.pause_resume_lock:
         bisect_svc = request.app.state.bisect_service
         if bisect_svc is None:
             raise HTTPException(status_code=503, detail="Bisect service not available")
 
-        job = await bisect_svc.stop()
+        job = await bisect_svc.stop(job_id)
         if job is None:
-            raise HTTPException(status_code=404, detail="No bisect job active")
+            raise HTTPException(status_code=404, detail="Bisect job not found")
         return job
 
 
 @router.get("/status")
 async def get_bisection_status(request: Request, session_id: str | None = None) -> dict:
-    """Get the current bisection state."""
+    """Get all bisection jobs (active + persisted)."""
     bisect_svc = request.app.state.bisect_service
     if bisect_svc is None:
         raise HTTPException(status_code=503, detail="Bisect service not available")
 
-    job = bisect_svc.job
-    if job:
-        return job.model_dump()
+    jobs = [j.model_dump() for j in bisect_svc.get_jobs()]
 
-    # Fall back to persisted bisect result from session metadata
+    # Also include persisted jobs from session metadata (for reload after backend restart)
     if session_id:
         session_svc = request.app.state.session_service
-        job_data = session_svc.load_bisect_job(session_id)
-        if job_data:
-            return job_data
+        persisted = session_svc.load_bisect_jobs(session_id)
+        active_ids = {j["job_id"] for j in jobs}
+        for jid, jdata in persisted.items():
+            if jid not in active_ids:
+                jobs.append(jdata)
 
-    return {"status": "idle"}
+    return {"jobs": jobs}
 
 
-@router.delete("/status")
-async def dismiss_bisect_job(request: Request, session_id: str) -> dict:
-    """Clear persisted bisect job from session metadata (after merge/discard)."""
+@router.delete("/{job_id}")
+async def dismiss_bisect_job(job_id: str, request: Request, session_id: str) -> dict:
+    """Clear a persisted bisect job from session metadata (after merge/discard)."""
     session_svc = request.app.state.session_service
-    session_svc.clear_bisect_job(session_id)
+    session_svc.clear_bisect_job(session_id, job_id)
     return {"cleared": True}

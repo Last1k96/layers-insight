@@ -12,8 +12,8 @@ class BisectStore {
   panelOpen = $state(false);
   error = $state<string | null>(null);
 
-  // Active job (rendered in queue panel)
-  job = $state<BisectQueueItem | null>(null);
+  // All tracked bisect jobs
+  jobs = $state<BisectQueueItem[]>([]);
 
   /**
    * True while an async transition is in flight (start, stop, merge, discard).
@@ -21,16 +21,20 @@ class BisectStore {
    */
   busy = $state(false);
 
+  get activeJobs(): BisectQueueItem[] {
+    return this.jobs.filter(j => j.status === 'running' || j.status === 'paused');
+  }
+
+  get finishedJobs(): BisectQueueItem[] {
+    return this.jobs.filter(j => j.status === 'done' || j.status === 'error' || j.status === 'stopped');
+  }
+
   get isActive(): boolean {
-    return this.job !== null && (this.job.status === 'running' || this.job.status === 'paused');
+    return this.activeJobs.length > 0;
   }
 
-  get isRunning(): boolean {
-    return this.job !== null && this.job.status === 'running';
-  }
-
-  get isDone(): boolean {
-    return this.job !== null && this.job.status === 'done';
+  get hasJobs(): boolean {
+    return this.jobs.length > 0;
   }
 
   async start(sessionId: string, subSessionId?: string | null): Promise<boolean> {
@@ -56,7 +60,7 @@ class BisectStore {
         return false;
       }
       const data: BisectQueueItem = await res.json();
-      this.job = data;
+      this.jobs = [...this.jobs, data];
       this.error = null;
       return true;
     } catch (e: any) {
@@ -67,17 +71,14 @@ class BisectStore {
     }
   }
 
-  async stop(): Promise<void> {
+  async stop(jobId: string): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
-      const res = await fetch('/api/inference/bisect/stop', { method: 'POST' });
+      const res = await fetch(`/api/inference/bisect/${jobId}/stop`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
-        // Update job status synchronously from HTTP response — don't rely on WS.
-        if (this.job) {
-          this.job.status = (data.status as BisectJobStatus) || 'stopped';
-        }
+        this._updateJob(jobId, { status: (data.status as BisectJobStatus) || 'stopped' });
       }
     } catch (e) {
       console.error('Bisect stop failed:', e);
@@ -86,40 +87,27 @@ class BisectStore {
     }
   }
 
-  /** Merge bisect child tasks into the main task list and dismiss. */
-  merge(): void {
-    const sessionId = this.job?.session_id;
-    queueStore.mergeBisectTasks();
-    this.job = null;
-    this.error = null;
-    if (sessionId) this._clearPersistedJob(sessionId);
+  /** Merge a specific bisect job's child tasks into the main task list. */
+  merge(jobId: string): void {
+    const job = this.jobs.find(j => j.job_id === jobId);
+    const sessionId = job?.session_id;
+    queueStore.mergeBisectTasks(jobId);
+    this.jobs = this.jobs.filter(j => j.job_id !== jobId);
+    if (sessionId) this._clearPersistedJob(jobId, sessionId);
   }
 
-  /** Cancel any in-flight bisect tasks and remove them from the store. */
-  private async cancelInFlightBisectTasks(): Promise<void> {
-    const inFlight = queueStore.tasks.filter(
-      t => t.batch_id === 'bisect' && (t.status === 'waiting' || t.status === 'executing')
-    );
-    await Promise.all(inFlight.map(t => queueStore.deleteTask(t.task_id)));
-  }
-
-  /** Stop bisect, cancel in-flight tasks, merge completed ones into the main list. */
-  async stopAndMerge(): Promise<void> {
+  /** Stop bisect, cancel in-flight tasks, merge completed ones. */
+  async stopAndMerge(jobId: string): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
-      // 1. Stop the bisect on the backend (also cancels waiting bisect tasks server-side)
-      const res = await fetch('/api/inference/bisect/stop', { method: 'POST' });
+      const res = await fetch(`/api/inference/bisect/${jobId}/stop`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
-        if (this.job) {
-          this.job.status = (data.status as BisectJobStatus) || 'stopped';
-        }
+        this._updateJob(jobId, { status: (data.status as BisectJobStatus) || 'stopped' });
       }
-      // 2. Cancel any in-flight tasks still visible on the frontend
-      await this.cancelInFlightBisectTasks();
-      // 3. Merge completed bisect tasks into the main list
-      this.merge();
+      await this._cancelInFlightTasks(jobId);
+      this.merge(jobId);
     } catch (e) {
       console.error('Bisect stopAndMerge failed:', e);
     } finally {
@@ -127,21 +115,17 @@ class BisectStore {
     }
   }
 
-  /** Stop bisect and delete all bisect tasks from frontend and backend. */
-  async stopAndDiscard(): Promise<void> {
+  /** Stop bisect and delete all its tasks. */
+  async stopAndDiscard(jobId: string): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
-      // 1. Stop the bisect on the backend (also cancels waiting bisect tasks server-side)
-      const res = await fetch('/api/inference/bisect/stop', { method: 'POST' });
+      const res = await fetch(`/api/inference/bisect/${jobId}/stop`, { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
-        if (this.job) {
-          this.job.status = (data.status as BisectJobStatus) || 'stopped';
-        }
+        this._updateJob(jobId, { status: (data.status as BisectJobStatus) || 'stopped' });
       }
-      // 2. Discard all bisect tasks
-      await this._discardTasks();
+      await this._discardTasks(jobId);
     } catch (e) {
       console.error('Bisect stopAndDiscard failed:', e);
     } finally {
@@ -149,28 +133,40 @@ class BisectStore {
     }
   }
 
-  /** Discard bisect tasks from both frontend and backend (no busy guard — called from guarded methods). */
-  private async _discardTasks(): Promise<void> {
-    const sessionId = this.job?.session_id;
-    const bisectTasks = queueStore.tasks.filter(t => t.batch_id === 'bisect');
-    await Promise.all(bisectTasks.map(t => queueStore.deleteTask(t.task_id)));
-    this.job = null;
-    this.error = null;
-    if (sessionId) this._clearPersistedJob(sessionId);
-  }
-
-  /** Public discard — with busy guard. */
-  async discard(): Promise<void> {
+  /** Discard a finished bisect job's tasks. */
+  async discard(jobId: string): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
-      await this._discardTasks();
+      await this._discardTasks(jobId);
     } finally {
       this.busy = false;
     }
   }
 
-  /** Fetch current bisect status from backend (for page reload recovery). */
+  private async _cancelInFlightTasks(jobId: string): Promise<void> {
+    const batchId = `bisect:${jobId}`;
+    const inFlight = queueStore.tasks.filter(
+      t => t.batch_id === batchId && (t.status === 'waiting' || t.status === 'executing')
+    );
+    await Promise.all(inFlight.map(t => queueStore.deleteTask(t.task_id)));
+  }
+
+  private async _discardTasks(jobId: string): Promise<void> {
+    const job = this.jobs.find(j => j.job_id === jobId);
+    const sessionId = job?.session_id;
+    const batchId = `bisect:${jobId}`;
+    const tasks = queueStore.tasks.filter(t => t.batch_id === batchId);
+    await Promise.all(tasks.map(t => queueStore.deleteTask(t.task_id)));
+    this.jobs = this.jobs.filter(j => j.job_id !== jobId);
+    if (sessionId) this._clearPersistedJob(jobId, sessionId);
+  }
+
+  private _clearPersistedJob(jobId: string, sessionId: string): void {
+    fetch(`/api/inference/bisect/${jobId}?session_id=${sessionId}`, { method: 'DELETE' }).catch(() => {});
+  }
+
+  /** Fetch all bisect jobs from backend (for page reload recovery). */
   async fetchStatus(sessionId?: string): Promise<void> {
     try {
       const url = sessionId
@@ -179,39 +175,54 @@ class BisectStore {
       const res = await fetch(url);
       if (!res.ok) return;
       const data = await res.json();
-      if (data.status && data.status !== 'idle' && data.job_id) {
-        this.job = {
-          job_id: data.job_id,
-          session_id: data.session_id || '',
-          status: data.status,
-          search_for: data.search_for || 'accuracy_drop',
-          metric: data.metric || 'cosine_similarity',
-          threshold: data.threshold ?? 0.999,
-          step: data.step ?? 0,
-          total_steps: data.total_steps ?? 0,
-          current_node: data.current_node,
-          found_node: data.found_node,
-          error: data.error,
-          sub_session_id: data.sub_session_id,
-        };
+      const jobList: any[] = data.jobs || [];
+      const restored: BisectQueueItem[] = [];
+      for (const j of jobList) {
+        if (j.status && j.status !== 'idle' && j.job_id) {
+          restored.push({
+            job_id: j.job_id,
+            session_id: j.session_id || '',
+            status: j.status,
+            search_for: j.search_for || 'accuracy_drop',
+            metric: j.metric || 'cosine_similarity',
+            threshold: j.threshold ?? 0.999,
+            step: j.step ?? 0,
+            total_steps: j.total_steps ?? 0,
+            current_node: j.current_node,
+            found_node: j.found_node,
+            error: j.error,
+            sub_session_id: j.sub_session_id,
+          });
+        }
+      }
+      if (restored.length > 0) {
+        this.jobs = restored;
+        // Migrate legacy batch_id="bisect" tasks to new "bisect:{jobId}" format
+        const legacyTasks = queueStore.tasks.filter(t => t.batch_id === 'bisect');
+        if (legacyTasks.length > 0 && restored.length === 1) {
+          const newBatchId = `bisect:${restored[0].job_id}`;
+          queueStore.tasks = queueStore.tasks.map(t =>
+            t.batch_id === 'bisect' ? { ...t, batch_id: newBatchId } : t
+          );
+        }
       }
     } catch {
-      // Ignore — best effort
+      // Best effort
     }
   }
 
   handleWsMessage(msg: any): void {
     if (msg.type !== 'bisect_job_status') return;
-
-    // Ignore WS updates while a transition is in flight — the HTTP response
-    // already set the authoritative state and we don't want a stale WS
-    // message to overwrite it.
     if (this.busy) return;
 
-    if (!this.job && msg.job_id) {
-      // Job was started (e.g. on another tab) — create it
-      this.job = {
-        job_id: msg.job_id,
+    const jobId = msg.job_id;
+    if (!jobId) return;
+
+    const existing = this.jobs.find(j => j.job_id === jobId);
+    if (!existing) {
+      // New job (e.g. started from another tab)
+      this.jobs = [...this.jobs, {
+        job_id: jobId,
         session_id: msg.session_id || '',
         status: msg.status || 'running',
         search_for: msg.search_for || 'accuracy_drop',
@@ -223,28 +234,26 @@ class BisectStore {
         found_node: msg.found_node,
         error: msg.error,
         sub_session_id: msg.sub_session_id,
-      };
+      }];
       return;
     }
 
-    if (this.job) {
-      if (msg.status) this.job.status = msg.status as BisectJobStatus;
-      if (msg.step !== undefined) this.job.step = msg.step;
-      if (msg.total_steps !== undefined) this.job.total_steps = msg.total_steps;
-      if (msg.current_node !== undefined) this.job.current_node = msg.current_node;
-      if (msg.found_node) this.job.found_node = msg.found_node;
-      if (msg.error) this.job.error = msg.error;
-
-      // Keep job on 'stopped' so UI can show merge/dismiss controls
-    }
+    // Update existing job in-place
+    if (msg.status) existing.status = msg.status as BisectJobStatus;
+    if (msg.step !== undefined) existing.step = msg.step;
+    if (msg.total_steps !== undefined) existing.total_steps = msg.total_steps;
+    if (msg.current_node !== undefined) existing.current_node = msg.current_node;
+    if (msg.found_node) existing.found_node = msg.found_node;
+    if (msg.error) existing.error = msg.error;
   }
 
-  private _clearPersistedJob(sessionId: string): void {
-    fetch(`/api/inference/bisect/status?session_id=${sessionId}`, { method: 'DELETE' }).catch(() => {});
+  private _updateJob(jobId: string, updates: Partial<BisectQueueItem>): void {
+    const job = this.jobs.find(j => j.job_id === jobId);
+    if (job) Object.assign(job, updates);
   }
 
   reset(): void {
-    this.job = null;
+    this.jobs = [];
     this.error = null;
     this.busy = false;
   }

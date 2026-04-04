@@ -166,7 +166,7 @@
       </button>
       <div class="w-px h-5 bg-[--border-color]"></div>
       <button
-        class="px-3 py-1.5 text-xs font-medium transition-colors hover:text-gray-100 {bisectStore.isRunning ? 'text-blue-400' : 'text-gray-300'}"
+        class="px-3 py-1.5 text-xs font-medium transition-colors hover:text-gray-100 {bisectStore.isActive ? 'text-blue-400' : 'text-gray-300'}"
         onclick={() => showBisectPanel = !showBisectPanel}
       >
         Bisect{bisectStore.isActive ? ' \u25CF' : ''}

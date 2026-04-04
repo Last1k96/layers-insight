@@ -76,10 +76,10 @@ async def pause_queue(request: Request) -> dict:
 
         requeued_id = await queue_svc.pause(kill_callback=kill_fn)
 
-        # Also pause bisect if running
+        # Also pause all bisect jobs if any are running
         bisect_svc = request.app.state.bisect_service
-        if bisect_svc and bisect_svc.is_running:
-            await bisect_svc.pause()
+        if bisect_svc and bisect_svc.has_running_jobs:
+            await bisect_svc.pause_all()
 
         return {"paused": True, "requeued_task_id": requeued_id}
 
@@ -96,10 +96,10 @@ async def resume_queue(request: Request) -> dict:
 
         await queue_svc.resume()
 
-        # Also resume bisect if paused
+        # Also resume all paused bisect jobs
         bisect_svc = request.app.state.bisect_service
-        if bisect_svc and bisect_svc.is_paused:
-            await bisect_svc.resume()
+        if bisect_svc and bisect_svc.has_paused_jobs:
+            await bisect_svc.resume_all()
 
         return {"paused": False}
 

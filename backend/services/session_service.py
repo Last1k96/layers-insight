@@ -763,22 +763,38 @@ class SessionService:
 
         return {"nodes": nodes, "summary": summary}
 
-    def save_bisect_job(self, session_id: str, job_data: dict) -> None:
+    def save_bisect_job(self, session_id: str, job_id: str, job_data: dict) -> None:
         """Persist bisect job info to session metadata (survives backend restart)."""
         meta = self._read_metadata(session_id)
-        meta["bisect_job"] = job_data
+        if "bisect_jobs" not in meta:
+            meta["bisect_jobs"] = {}
+        meta["bisect_jobs"][job_id] = job_data
         self._write_metadata(session_id, meta)
 
-    def load_bisect_job(self, session_id: str) -> Optional[dict]:
-        """Load persisted bisect job info from session metadata."""
+    def load_bisect_jobs(self, session_id: str) -> dict[str, dict]:
+        """Load all persisted bisect jobs from session metadata."""
         meta = self._read_metadata(session_id)
-        return meta.get("bisect_job")
-
-    def clear_bisect_job(self, session_id: str) -> None:
-        """Remove persisted bisect job info from session metadata."""
-        meta = self._read_metadata(session_id)
+        if "bisect_jobs" in meta:
+            return meta["bisect_jobs"]
+        # Legacy single-job format
         if "bisect_job" in meta:
-            del meta["bisect_job"]
+            job = meta["bisect_job"]
+            return {job["job_id"]: job} if "job_id" in job else {}
+        return {}
+
+    def clear_bisect_job(self, session_id: str, job_id: str) -> None:
+        """Remove a specific persisted bisect job from session metadata."""
+        meta = self._read_metadata(session_id)
+        changed = False
+        if "bisect_jobs" in meta and job_id in meta["bisect_jobs"]:
+            del meta["bisect_jobs"][job_id]
+            changed = True
+        # Also clean up legacy key if present
+        if "bisect_job" in meta:
+            if meta["bisect_job"].get("job_id") == job_id:
+                del meta["bisect_job"]
+                changed = True
+        if changed:
             self._write_metadata(session_id, meta)
 
     def _write_metadata(self, session_id: str, metadata: dict) -> None:
