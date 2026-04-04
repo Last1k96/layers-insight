@@ -111,10 +111,16 @@
   <div class="flex items-center gap-1.5 px-3 py-2 shrink-0">
     <button
       class="flex items-center justify-center w-7 h-7 rounded-lg hover:bg-surface-elevated transition-all duration-100 active:scale-95"
+      class:opacity-50={queueStore.pauseTransitioning}
       title={queueStore.paused ? 'Resume queue' : 'Pause queue'}
+      disabled={queueStore.pauseTransitioning}
       onclick={handlePauseResume}
     >
-      {#if queueStore.paused}
+      {#if queueStore.pauseTransitioning}
+        <svg class="animate-spin" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="8" cy="8" r="6" stroke-dasharray="28" stroke-dashoffset="7" />
+        </svg>
+      {:else if queueStore.paused}
         <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
           <polygon points="4,2 14,8 4,14" />
         </svg>
@@ -137,7 +143,11 @@
         <line x1="12" y1="4" x2="4" y2="12" />
       </svg>
     </button>
-    {#if queueStore.paused}
+    {#if queueStore.pauseTransitioning}
+      <span class="ml-1 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-blue-500/15 text-blue-400 rounded-full animate-pulse">
+        {queueStore.paused ? 'Resuming' : 'Pausing'}
+      </span>
+    {:else if queueStore.paused}
       <span class="ml-1 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-yellow-500/15 text-yellow-400 rounded-full">Paused</span>
     {/if}
     <div class="flex-1"></div>
@@ -287,7 +297,9 @@
               {/if}
             </span>
             <!-- Action buttons -->
-            {#if bisectStore.isActive}
+            {#if bisectStore.busy}
+              <span class="text-[10px] px-2 py-0.5 rounded bg-gray-500/15 text-gray-400 shrink-0 animate-pulse">Working...</span>
+            {:else if bisectStore.isActive}
               <button
                 class="text-[10px] px-2 py-0.5 rounded bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25 transition-colors shrink-0"
                 title="Stop bisection and merge completed nodes into the main list"

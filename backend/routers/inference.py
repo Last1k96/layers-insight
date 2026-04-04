@@ -61,35 +61,47 @@ async def enqueue_batch(req: BatchEnqueueRequest, request: Request) -> list[Infe
 @router.post("/pause")
 async def pause_queue(request: Request) -> dict:
     """Pause the queue worker. Kills the currently executing task and re-queues it."""
-    queue_svc = request.app.state.queue_service
-    inference_svc = request.app.state.inference_service
+    async with request.app.state.pause_resume_lock:
+        queue_svc = request.app.state.queue_service
 
-    kill_fn = None
-    if inference_svc:
-        kill_fn = lambda tid: inference_svc.kill_current(tid)
+        # Idempotent: already paused → no-op
+        if queue_svc.paused:
+            return {"paused": True, "requeued_task_id": None}
 
-    requeued_id = await queue_svc.pause(kill_callback=kill_fn)
+        inference_svc = request.app.state.inference_service
 
-    # Also pause bisect if running
-    bisect_svc = request.app.state.bisect_service
-    if bisect_svc and bisect_svc.is_running:
-        await bisect_svc.pause()
+        kill_fn = None
+        if inference_svc:
+            kill_fn = lambda tid: inference_svc.kill_current(tid)
 
-    return {"paused": True, "requeued_task_id": requeued_id}
+        requeued_id = await queue_svc.pause(kill_callback=kill_fn)
+
+        # Also pause bisect if running
+        bisect_svc = request.app.state.bisect_service
+        if bisect_svc and bisect_svc.is_running:
+            await bisect_svc.pause()
+
+        return {"paused": True, "requeued_task_id": requeued_id}
 
 
 @router.post("/resume")
 async def resume_queue(request: Request) -> dict:
     """Resume the queue worker."""
-    queue_svc = request.app.state.queue_service
-    await queue_svc.resume()
+    async with request.app.state.pause_resume_lock:
+        queue_svc = request.app.state.queue_service
 
-    # Also resume bisect if paused
-    bisect_svc = request.app.state.bisect_service
-    if bisect_svc and bisect_svc.is_paused:
-        await bisect_svc.resume()
+        # Idempotent: already running → no-op
+        if not queue_svc.paused:
+            return {"paused": False}
 
-    return {"paused": False}
+        await queue_svc.resume()
+
+        # Also resume bisect if paused
+        bisect_svc = request.app.state.bisect_service
+        if bisect_svc and bisect_svc.is_paused:
+            await bisect_svc.resume()
+
+        return {"paused": False}
 
 
 @router.post("/cancel-all")

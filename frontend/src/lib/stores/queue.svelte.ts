@@ -19,6 +19,9 @@ class QueueStore {
   /** Queue pause state */
   paused = $state(false);
 
+  /** True while a pause/resume request is in flight. */
+  pauseTransitioning = $state(false);
+
   /** Tasks visible for the current active sub-session.
    *  Always excludes bisect child tasks — they render in the bisect section. */
   get visibleTasks(): InferenceTask[] {
@@ -236,6 +239,8 @@ class QueueStore {
   }
 
   async pauseQueue(): Promise<void> {
+    if (this.pauseTransitioning) return;
+    this.pauseTransitioning = true;
     try {
       const res = await fetch('/api/inference/pause', { method: 'POST' });
       if (res.ok) {
@@ -243,10 +248,14 @@ class QueueStore {
       }
     } catch (e) {
       console.error('Pause failed:', e);
+    } finally {
+      this.pauseTransitioning = false;
     }
   }
 
   async resumeQueue(): Promise<void> {
+    if (this.pauseTransitioning) return;
+    this.pauseTransitioning = true;
     try {
       const res = await fetch('/api/inference/resume', { method: 'POST' });
       if (res.ok) {
@@ -254,6 +263,8 @@ class QueueStore {
       }
     } catch (e) {
       console.error('Resume failed:', e);
+    } finally {
+      this.pauseTransitioning = false;
     }
   }
 
