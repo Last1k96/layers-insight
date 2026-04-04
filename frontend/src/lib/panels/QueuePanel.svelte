@@ -3,6 +3,8 @@
   import { graphStore } from '../stores/graph.svelte';
   import { centerOnNode, refreshRenderer } from '../graph/renderer';
   import { getStatusColor } from '../graph/opColors';
+  import { advancedFilterStore } from '../stores/advancedFilter.svelte';
+  import AdvancedFilter from '../components/AdvancedFilter.svelte';
   import type { InferenceTask } from '../stores/types';
 
   function selectTask(task: InferenceTask) {
@@ -193,26 +195,41 @@
     {/if}
   </div>
 
-  <!-- Simple filter -->
+  <!-- Filter -->
   <div class="border-t border-[--border-color] p-2 shrink-0">
-    <input
-      type="text"
-      bind:value={queueStore.filterText}
-      placeholder="Filter by name or type..."
-      class="w-full px-2 py-1 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
-    />
-    <div class="flex gap-1 mt-1">
-      {#each ['all', 'success', 'failed'] as status (status)}
+    {#if advancedFilterStore.active}
+      <AdvancedFilter ontoggle={() => advancedFilterStore.active = false} />
+    {:else}
+      <div class="flex gap-1">
+        <input
+          type="text"
+          bind:value={queueStore.filterText}
+          placeholder="Filter by name or type..."
+          class="flex-1 px-2 py-1 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
+        />
         <button
-          class="px-2 py-0.5 text-xs rounded transition-colors"
-          class:bg-surface-elevated={queueStore.filterStatus === status}
-          class:text-content-primary={queueStore.filterStatus === status}
-          class:text-content-secondary={queueStore.filterStatus !== status}
-          onclick={() => queueStore.filterStatus = status as any}
+          class="px-1.5 py-1 rounded border border-[--border-color] hover:bg-[--bg-menu] transition-colors text-gray-400 hover:text-gray-200 shrink-0"
+          title="Advanced filter"
+          onclick={() => advancedFilterStore.active = true}
         >
-          {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M1 3h14M3 8h10M5 13h6" />
+          </svg>
         </button>
-      {/each}
-    </div>
+      </div>
+      <div class="flex gap-1 mt-1">
+        {#each ['all', 'success', 'failed'] as status (status)}
+          <button
+            class="px-2 py-0.5 text-xs rounded transition-colors"
+            class:bg-surface-elevated={queueStore.filterStatus === status}
+            class:text-content-primary={queueStore.filterStatus === status}
+            class:text-content-secondary={queueStore.filterStatus !== status}
+            onclick={() => queueStore.filterStatus = status as any}
+          >
+            {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
+          </button>
+        {/each}
+      </div>
+    {/if}
   </div>
 </div>

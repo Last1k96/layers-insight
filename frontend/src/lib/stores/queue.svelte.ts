@@ -1,5 +1,6 @@
 import type { InferenceTask, TaskStatus } from './types';
 import { graphStore } from './graph.svelte';
+import { advancedFilterStore } from './advancedFilter.svelte';
 
 export type SortColumn = 'topo' | 'type' | 'cosine' | 'mse';
 export type SortDirection = 'asc' | 'desc';
@@ -46,14 +47,18 @@ class QueueStore {
 
   get filteredTasks(): InferenceTask[] {
     let result = this.sortedTasks;
-    if (this.filterText) {
-      const q = this.filterText.toLowerCase();
-      result = result.filter(t =>
-        t.node_name.toLowerCase().includes(q) || t.node_type.toLowerCase().includes(q)
-      );
-    }
-    if (this.filterStatus !== 'all') {
-      result = result.filter(t => t.status === this.filterStatus);
+    if (advancedFilterStore.active && advancedFilterStore.rules.length > 0) {
+      result = advancedFilterStore.applyFilter(result);
+    } else {
+      if (this.filterText) {
+        const q = this.filterText.toLowerCase();
+        result = result.filter(t =>
+          t.node_name.toLowerCase().includes(q) || t.node_type.toLowerCase().includes(q)
+        );
+      }
+      if (this.filterStatus !== 'all') {
+        result = result.filter(t => t.status === this.filterStatus);
+      }
     }
     return result;
   }
