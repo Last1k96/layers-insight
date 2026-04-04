@@ -136,7 +136,7 @@
   </div>
 
   <!-- Content -->
-  <div class="max-h-52 overflow-y-auto">
+  <div>
     {#if advancedFilterStore.rules.length === 0}
       <div class="flex">
         <div class="{CONN_COL_W} shrink-0"></div>
@@ -185,13 +185,14 @@
           {/each}
         </div>
 
-        <!-- Add Rule button -->
+        <!-- Add Rule button (max 10 rules) -->
         <div class="flex mt-1.5">
           <div class="{CONN_COL_W} shrink-0"></div>
           <button
-            class="flex-1 min-w-0 py-2 text-xs rounded border border-dashed border-[--border-color] text-gray-500 hover:text-blue-400 hover:border-blue-500/40 transition-colors"
+            class="flex-1 min-w-0 py-2 text-xs rounded border border-dashed border-[--border-color] transition-colors {advancedFilterStore.rules.length >= 10 ? 'text-gray-600 cursor-not-allowed opacity-50' : 'text-gray-500 hover:text-blue-400 hover:border-blue-500/40'}"
+            disabled={advancedFilterStore.rules.length >= 10}
             onclick={() => advancedFilterStore.addRule()}
-          >+ Add Rule</button>
+          >+ Add Rule{advancedFilterStore.rules.length >= 10 ? ' (max 10)' : ''}</button>
         </div>
       </div>
     {/if}

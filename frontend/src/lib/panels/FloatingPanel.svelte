@@ -56,7 +56,8 @@
 </script>
 
 <div
-  class="absolute top-2 bottom-2 flex flex-col bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-lg shadow-xl z-10 transition-all"
+  class="absolute top-2 bottom-2 flex flex-col bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-lg shadow-xl z-10"
+  class:transition-all={!resizing}
   class:left-2={side === 'left'}
   class:right-2={side === 'right'}
   style:width={collapsed ? '40px' : `${width}px`}
