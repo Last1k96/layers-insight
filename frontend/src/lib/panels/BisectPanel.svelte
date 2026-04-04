@@ -67,21 +67,6 @@
       <button class="text-gray-400 hover:text-gray-200 text-xs" onclick={onclose}>Close</button>
     </div>
 
-    {#if bisectStore.isActive}
-      <!-- Bisect is already running — show message -->
-      <div class="p-4 space-y-3">
-        <div class="text-xs text-gray-400">
-          Bisect is active — see the queue panel for progress.
-        </div>
-        <button
-          class="w-full py-2 bg-[--bg-panel] border border-[--border-color] hover:bg-gray-700 rounded text-sm font-medium transition-colors"
-          onclick={onclose}
-        >
-          Close
-        </button>
-      </div>
-    {:else}
-      <!-- Config -->
       <div class="p-4 space-y-3">
         <label class="block text-xs">
           <span class="text-gray-400">Search for:</span>
@@ -143,6 +128,5 @@
           <div class="text-xs text-red-400 mt-1">{bisectStore.error}</div>
         {/if}
       </div>
-    {/if}
   </div>
 </div>

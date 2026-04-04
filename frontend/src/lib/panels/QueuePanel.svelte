@@ -60,7 +60,15 @@
     }
   }
 
-  let bisectCollapsed = $state(false);
+  let bisectCollapsed = $state<Record<string, boolean>>({});
+
+  function isBisectCollapsed(jobId: string): boolean {
+    return bisectCollapsed[jobId] ?? false;
+  }
+
+  function toggleBisectCollapsed(jobId: string): void {
+    bisectCollapsed = { ...bisectCollapsed, [jobId]: !isBisectCollapsed(jobId) };
+  }
 
   function bisectProgressColor(status: string): string {
     if (status === 'running') return 'rgba(59, 130, 246, 0.1)';
@@ -86,11 +94,7 @@
     return '#d1d5db';
   }
 
-  function handleBisectClick(e: MouseEvent) {
-    const bj = bisectStore.job;
-    if (!bj) return;
-
-    // Determine which node to target: found_node when done, else current_node
+  function handleBisectClick(e: MouseEvent, bj: import('../stores/types').BisectQueueItem) {
     const nodeName = bj.status === 'done' ? bj.found_node : bj.current_node;
     if (!nodeName) return;
 
@@ -98,7 +102,6 @@
     if (!node) return;
 
     graphStore.selectNode(node.id);
-    // Ctrl+click (or Cmd on Mac) centers the view on that node
     if (e.ctrlKey || e.metaKey) {
       centerOnNode(node.id);
     }
@@ -190,7 +193,7 @@
 
   <!-- Task list -->
   <div class="flex-1 overflow-y-auto">
-    {#if queueStore.filteredTasks.length === 0 && !bisectStore.job && queueStore.bisectTasks.length === 0}
+    {#if queueStore.filteredTasks.length === 0 && !bisectStore.hasJobs && queueStore.bisectTasks.length === 0}
       <div class="flex flex-col items-center justify-center py-12 px-4">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-content-secondary/20 mb-3">
           <circle cx="12" cy="12" r="10" />
@@ -244,121 +247,148 @@
         </div>
       {/each}
 
-      <!-- Bisect row: inline in the queue with child tasks nested below -->
-      {@const bTasks = queueStore.bisectTasks}
-      {#if bisectStore.job || bTasks.length > 0}
-        <!-- Bisect row — acts like a queue item with a collapsible child region -->
+      <!-- Active bisect jobs -->
+      {#each bisectStore.activeJobs as bj (bj.job_id)}
+        {@const jobTasks = queueStore.bisectTasksForJob(bj.job_id)}
+        {@const isActive = bj.status === 'running' || bj.status === 'paused'}
         <div
           class="w-full relative px-3 py-2 text-sm flex items-center gap-2 overflow-hidden cursor-pointer row-hover"
-          role="button"
-          tabindex="-1"
-          onclick={handleBisectClick}
-          onkeydown={(e) => { if (e.key === 'Enter') handleBisectClick(e as unknown as MouseEvent); }}
+          role="button" tabindex="-1"
+          onclick={(e) => handleBisectClick(e, bj)}
+          onkeydown={(e) => { if (e.key === 'Enter') handleBisectClick(e as unknown as MouseEvent, bj); }}
         >
-          {#if bisectStore.job && bisectStore.job.total_steps > 0}
+          {#if bj.total_steps > 0}
             <div
               class="absolute inset-y-0 left-0 transition-all duration-500 ease-out"
-              style:background-color={bisectProgressColor(bisectStore.job.status)}
-              style:width={bisectStore.job.status === 'done' || bisectStore.job.status === 'error' ? '100%' : `${Math.min(100, (bisectStore.job.step / bisectStore.job.total_steps) * 100)}%`}
+              style:background-color={bisectProgressColor(bj.status)}
+              style:width={bj.status === 'done' || bj.status === 'error' ? '100%' : `${Math.min(100, (bj.step / bj.total_steps) * 100)}%`}
             ></div>
           {/if}
           <div class="relative flex items-center gap-2 w-full">
-            <button
-              class="text-content-secondary/50 hover:text-content-secondary transition-colors"
-              onclick={(e) => { e.stopPropagation(); bisectCollapsed = !bisectCollapsed; }}
+            <button class="text-content-secondary/50 hover:text-content-secondary transition-colors"
+              onclick={(e) => { e.stopPropagation(); toggleBisectCollapsed(bj.job_id); }}
             >
               <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"
-                class="transition-transform duration-150 {bisectCollapsed ? '' : 'rotate-90'}"
-              >
-                <path d="M3 1l5 4-5 4z" />
-              </svg>
+                class="transition-transform duration-150 {isBisectCollapsed(bj.job_id) ? '' : 'rotate-90'}"
+              ><path d="M3 1l5 4-5 4z" /></svg>
             </button>
-            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="shrink-0" style:color={bisectStore.job ? bisectIconColor(bisectStore.job.status) : '#9ca3af'}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="shrink-0" style:color={bisectIconColor(bj.status)}>
               <path d="M8 2v12M4 6l4-4 4 4" />
             </svg>
-            <span class="flex-1 text-xs font-medium truncate" style:color={bisectStore.job ? bisectTextColor(bisectStore.job.status) : '#d1d5db'}>
-              {#if bisectStore.job}
-                {#if bisectStore.job.status === 'running'}
-                  Bisecting... Step {bisectStore.job.step}/{bisectStore.job.total_steps}
-                  {#if bisectStore.job.current_node}
-                    <span class="text-gray-500 font-mono ml-1">{bisectStore.job.current_node}</span>
-                  {/if}
-                {:else if bisectStore.job.status === 'paused'}
-                  Bisect paused at step {bisectStore.job.step}/{bisectStore.job.total_steps}
-                {:else if bisectStore.job.status === 'done' && bisectStore.job.found_node}
-                  Found: {bisectStore.job.found_node}
-                {:else if bisectStore.job.status === 'error'}
-                  Bisect error{bisectStore.job.error ? `: ${bisectStore.job.error}` : ''}
-                {:else}
-                  Bisection ({bTasks.length})
-                {/if}
-              {:else}
-                Bisection ({bTasks.length})
+            <span class="flex-1 text-xs font-medium truncate" style:color={bisectTextColor(bj.status)}>
+              {#if bj.status === 'running'}
+                Bisecting... Step {bj.step}/{bj.total_steps}
+                {#if bj.current_node}<span class="text-gray-500 font-mono ml-1">{bj.current_node}</span>{/if}
+              {:else if bj.status === 'paused'}
+                Bisect paused at step {bj.step}/{bj.total_steps}
               {/if}
             </span>
-            <!-- Action buttons -->
             {#if bisectStore.busy}
               <span class="text-[10px] px-2 py-0.5 rounded bg-gray-500/15 text-gray-400 shrink-0 animate-pulse">Working...</span>
-            {:else if bisectStore.isActive}
-              <button
-                class="text-[10px] px-2 py-0.5 rounded bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25 transition-colors shrink-0"
-                title="Stop bisection and merge completed nodes into the main list"
-                onclick={(e) => { e.stopPropagation(); bisectStore.stopAndMerge(); }}
-              >Stop &amp; Merge</button>
-              <button
-                class="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors shrink-0"
-                title="Stop bisection and delete all bisect results"
-                onclick={(e) => { e.stopPropagation(); bisectStore.stopAndDiscard(); }}
-              >Stop &amp; Discard</button>
             {:else}
-              <button
-                class="text-[10px] px-2 py-0.5 rounded bg-green-500/15 text-green-400 hover:bg-green-500/25 transition-colors shrink-0"
-                title="Merge inferred nodes into the main list"
-                onclick={(e) => { e.stopPropagation(); bisectStore.merge(); }}
-              >Merge</button>
-              <button
-                class="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors shrink-0"
-                title="Discard bisection results"
-                onclick={(e) => { e.stopPropagation(); bisectStore.discard(); }}
-              >Discard</button>
+              <button class="text-[10px] px-2 py-0.5 rounded bg-yellow-500/15 text-yellow-400 hover:bg-yellow-500/25 transition-colors shrink-0"
+                onclick={(e) => { e.stopPropagation(); bisectStore.stopAndMerge(bj.job_id); }}
+              >Stop &amp; Merge</button>
+              <button class="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors shrink-0"
+                onclick={(e) => { e.stopPropagation(); bisectStore.stopAndDiscard(bj.job_id); }}
+              >Stop &amp; Discard</button>
             {/if}
           </div>
         </div>
-
-        <!-- Bisect child tasks (collapsible region below the bisect row) -->
-        {#if !bisectCollapsed}
-          {#each bTasks as task (task.task_id)}
-            <div
-              class="w-full text-left pl-8 pr-3 py-2 text-sm flex items-center gap-2 cursor-pointer outline-none row-hover"
+        {#if !isBisectCollapsed(bj.job_id)}
+          {#each jobTasks as task (task.task_id)}
+            <div class="w-full text-left pl-8 pr-3 py-2 text-sm flex items-center gap-2 cursor-pointer outline-none row-hover"
               style:background-color={queueStore.selectedTaskId === task.task_id ? 'rgba(76, 141, 255, 0.06)' : undefined}
-              role="button"
-              tabindex="-1"
+              role="button" tabindex="-1"
               onclick={() => { queueStore.selectedTaskId = task.task_id; selectTask(task); }}
               onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedTaskId = task.task_id; selectTask(task); }}}
             >
-              <div
-                class="w-2.5 h-2.5 rounded-full shrink-0"
-                class:pulse-ring={task.status === 'executing'}
-                class:status-glow={task.status === 'executing'}
-                style:background-color={getStatusColor(task.status)}
-              ></div>
+              <div class="w-2.5 h-2.5 rounded-full shrink-0" class:pulse-ring={task.status === 'executing'} class:status-glow={task.status === 'executing'}
+                style:background-color={getStatusColor(task.status)}></div>
               <span class="flex-1 truncate font-mono text-xs">{task.node_name}</span>
               <span class="text-content-secondary/40 text-xs shrink-0 text-right whitespace-nowrap">{task.node_type}</span>
               <span class="text-xs font-mono w-14 text-right shrink-0 tabular-nums">
-                {#if task.status === 'success' && task.metrics}
-                  <span style:color={cosineColor(task.metrics.cosine_similarity)}>{formatCosine(task.metrics.cosine_similarity)}</span>
-                {/if}
+                {#if task.status === 'success' && task.metrics}<span style:color={cosineColor(task.metrics.cosine_similarity)}>{formatCosine(task.metrics.cosine_similarity)}</span>{/if}
               </span>
               <span class="text-xs font-mono w-16 text-right shrink-0 tabular-nums">
-                {#if task.status === 'success' && task.metrics}
-                  <span style:color={mseColor(task.metrics.mse)}>{formatMse(task.metrics.mse)}</span>
-                {/if}
+                {#if task.status === 'success' && task.metrics}<span style:color={mseColor(task.metrics.mse)}>{formatMse(task.metrics.mse)}</span>{/if}
               </span>
               <div class="w-5 shrink-0"></div>
             </div>
           {/each}
         {/if}
-      {/if}
+      {/each}
+
+      <!-- Finished bisect jobs -->
+      {#each bisectStore.finishedJobs as bj (bj.job_id)}
+        {@const jobTasks = queueStore.bisectTasksForJob(bj.job_id)}
+        <div
+          class="w-full relative px-3 py-2 text-sm flex items-center gap-2 overflow-hidden cursor-pointer row-hover"
+          role="button" tabindex="-1"
+          onclick={(e) => handleBisectClick(e, bj)}
+          onkeydown={(e) => { if (e.key === 'Enter') handleBisectClick(e as unknown as MouseEvent, bj); }}
+        >
+          {#if bj.total_steps > 0}
+            <div class="absolute inset-y-0 left-0 transition-all duration-500 ease-out"
+              style:background-color={bisectProgressColor(bj.status)}
+              style:width="100%"
+            ></div>
+          {/if}
+          <div class="relative flex items-center gap-2 w-full">
+            <button class="text-content-secondary/50 hover:text-content-secondary transition-colors"
+              onclick={(e) => { e.stopPropagation(); toggleBisectCollapsed(bj.job_id); }}
+            >
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"
+                class="transition-transform duration-150 {isBisectCollapsed(bj.job_id) ? '' : 'rotate-90'}"
+              ><path d="M3 1l5 4-5 4z" /></svg>
+            </button>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="shrink-0" style:color={bisectIconColor(bj.status)}>
+              <path d="M8 2v12M4 6l4-4 4 4" />
+            </svg>
+            <span class="flex-1 text-xs font-medium truncate" style:color={bisectTextColor(bj.status)}>
+              {#if bj.status === 'done' && bj.found_node}
+                Found: {bj.found_node}
+              {:else if bj.status === 'error'}
+                Bisect error{bj.error ? `: ${bj.error}` : ''}
+              {:else}
+                Bisection ({jobTasks.length})
+              {/if}
+            </span>
+            {#if bisectStore.busy}
+              <span class="text-[10px] px-2 py-0.5 rounded bg-gray-500/15 text-gray-400 shrink-0 animate-pulse">Working...</span>
+            {:else}
+              <button class="text-[10px] px-2 py-0.5 rounded bg-green-500/15 text-green-400 hover:bg-green-500/25 transition-colors shrink-0"
+                onclick={(e) => { e.stopPropagation(); bisectStore.merge(bj.job_id); }}
+              >Merge</button>
+              <button class="text-[10px] px-2 py-0.5 rounded bg-red-500/15 text-red-400 hover:bg-red-500/25 transition-colors shrink-0"
+                onclick={(e) => { e.stopPropagation(); bisectStore.discard(bj.job_id); }}
+              >Discard</button>
+            {/if}
+          </div>
+        </div>
+        {#if !isBisectCollapsed(bj.job_id)}
+          {#each jobTasks as task (task.task_id)}
+            <div class="w-full text-left pl-8 pr-3 py-2 text-sm flex items-center gap-2 cursor-pointer outline-none row-hover"
+              style:background-color={queueStore.selectedTaskId === task.task_id ? 'rgba(76, 141, 255, 0.06)' : undefined}
+              role="button" tabindex="-1"
+              onclick={() => { queueStore.selectedTaskId = task.task_id; selectTask(task); }}
+              onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedTaskId = task.task_id; selectTask(task); }}}
+            >
+              <div class="w-2.5 h-2.5 rounded-full shrink-0" class:pulse-ring={task.status === 'executing'} class:status-glow={task.status === 'executing'}
+                style:background-color={getStatusColor(task.status)}></div>
+              <span class="flex-1 truncate font-mono text-xs">{task.node_name}</span>
+              <span class="text-content-secondary/40 text-xs shrink-0 text-right whitespace-nowrap">{task.node_type}</span>
+              <span class="text-xs font-mono w-14 text-right shrink-0 tabular-nums">
+                {#if task.status === 'success' && task.metrics}<span style:color={cosineColor(task.metrics.cosine_similarity)}>{formatCosine(task.metrics.cosine_similarity)}</span>{/if}
+              </span>
+              <span class="text-xs font-mono w-16 text-right shrink-0 tabular-nums">
+                {#if task.status === 'success' && task.metrics}<span style:color={mseColor(task.metrics.mse)}>{formatMse(task.metrics.mse)}</span>{/if}
+              </span>
+              <div class="w-5 shrink-0"></div>
+            </div>
+          {/each}
+        {/if}
+      {/each}
     {/if}
   </div>
 

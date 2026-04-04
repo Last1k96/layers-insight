@@ -28,25 +28,36 @@ class QueueStore {
     const activeSubId = graphStore.activeSubSessionId;
     return this.tasks.filter(t => {
       if ((t.sub_session_id ?? null) !== activeSubId) return false;
-      if (t.batch_id === 'bisect') return false;
+      if (t.batch_id?.startsWith('bisect')) return false;
       return true;
     });
   }
 
-  /** Bisect child tasks for the current sub-session (all statuses). */
+  /** All bisect child tasks for the current sub-session (all statuses, all jobs). */
   get bisectTasks(): InferenceTask[] {
     const activeSubId = graphStore.activeSubSessionId;
     return this.tasks.filter(t => {
       if ((t.sub_session_id ?? null) !== activeSubId) return false;
-      if (t.batch_id !== 'bisect') return false;
+      if (!t.batch_id?.startsWith('bisect')) return false;
       return true;
     });
   }
 
-  /** Merge bisect tasks into the main list by clearing their batch_id. */
-  mergeBisectTasks(): void {
+  /** Bisect child tasks for a specific job. */
+  bisectTasksForJob(jobId: string): InferenceTask[] {
+    const batchId = `bisect:${jobId}`;
+    const activeSubId = graphStore.activeSubSessionId;
+    return this.tasks.filter(t => {
+      if ((t.sub_session_id ?? null) !== activeSubId) return false;
+      return t.batch_id === batchId;
+    });
+  }
+
+  /** Merge a specific bisect job's tasks into the main list by clearing their batch_id. */
+  mergeBisectTasks(jobId: string): void {
+    const batchId = `bisect:${jobId}`;
     this.tasks = this.tasks.map(t =>
-      t.batch_id === 'bisect' ? { ...t, batch_id: undefined } : t
+      t.batch_id === batchId ? { ...t, batch_id: undefined } : t
     );
   }
 

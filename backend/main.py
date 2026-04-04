@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI):
     async def on_task_notify(task):
         await ws_manager.send_task_status(task)
         # Notify bisect service of task completion so it can advance
-        if task.status.value in ("success", "failed") and bisect_service.is_active:
+        if task.status.value in ("success", "failed") and task.batch_id and task.batch_id.startswith("bisect:"):
             bisect_service.on_task_complete(task)
 
     async def on_infer(task):
