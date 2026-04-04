@@ -102,14 +102,14 @@
   <div class="flex items-center gap-2 px-3 py-1.5 text-[10px] text-content-secondary/50 uppercase tracking-wider shrink-0 bg-surface-base/50">
     <div class="w-2.5 shrink-0"></div>
     <button
-      class="flex-1 text-left flex items-center gap-0.5 hover:text-content-secondary transition-colors cursor-pointer"
+      class="flex-1 text-left flex items-center gap-0.5 hover:text-content-secondary transition-colors cursor-pointer whitespace-nowrap"
       class:text-content-secondary={queueStore.sortColumn === 'topo'}
       onclick={() => handleSort('topo')}
     >
       Node {sortArrow('topo')}
     </button>
     <button
-      class="w-16 text-right shrink-0 flex items-center justify-end gap-0.5 hover:text-content-secondary transition-colors cursor-pointer"
+      class="text-right shrink-0 flex items-center justify-end gap-0.5 hover:text-content-secondary transition-colors cursor-pointer whitespace-nowrap"
       class:text-content-secondary={queueStore.sortColumn === 'type'}
       onclick={() => handleSort('type')}
     >
@@ -171,7 +171,7 @@
           <span class="flex-1 truncate font-mono text-xs">{task.node_name}</span>
 
           <!-- Op type -->
-          <span class="text-content-secondary/40 text-xs shrink-0 w-16 text-right truncate">{task.node_type}</span>
+          <span class="text-content-secondary/40 text-xs shrink-0 text-right whitespace-nowrap">{task.node_type}</span>
 
           <!-- Cosine for completed -->
           <span class="text-xs font-mono w-14 text-right shrink-0 tabular-nums">
