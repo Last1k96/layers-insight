@@ -316,6 +316,17 @@ class BisectService:
             error_detail=task_data.get("error_detail"),
         )
 
+    def _persist_job(self) -> None:
+        """Save bisect job to session metadata so it survives backend restart."""
+        if self._job and self._session_service:
+            try:
+                self._session_service.save_bisect_job(
+                    self._job.session_id,
+                    self._job.model_dump(mode="json"),
+                )
+            except Exception:
+                pass  # Best effort — don't break bisect if persistence fails
+
     async def _broadcast_job_status(self) -> None:
         """Broadcast current job status via WebSocket."""
         if self._job and self._broadcast and self._job.session_id:
@@ -508,6 +519,7 @@ class BisectService:
             self._progress.range_end = found_name
 
             await self._broadcast_job_status()
+            self._persist_job()
 
         except asyncio.CancelledError:
             self._lo = lo
@@ -526,3 +538,4 @@ class BisectService:
             self._progress.status = BisectStatus.ERROR
             self._progress.error = str(e)
             await self._broadcast_job_status()
+            self._persist_job()

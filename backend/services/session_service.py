@@ -763,6 +763,24 @@ class SessionService:
 
         return {"nodes": nodes, "summary": summary}
 
+    def save_bisect_job(self, session_id: str, job_data: dict) -> None:
+        """Persist bisect job info to session metadata (survives backend restart)."""
+        meta = self._read_metadata(session_id)
+        meta["bisect_job"] = job_data
+        self._write_metadata(session_id, meta)
+
+    def load_bisect_job(self, session_id: str) -> Optional[dict]:
+        """Load persisted bisect job info from session metadata."""
+        meta = self._read_metadata(session_id)
+        return meta.get("bisect_job")
+
+    def clear_bisect_job(self, session_id: str) -> None:
+        """Remove persisted bisect job info from session metadata."""
+        meta = self._read_metadata(session_id)
+        if "bisect_job" in meta:
+            del meta["bisect_job"]
+            self._write_metadata(session_id, meta)
+
     def _write_metadata(self, session_id: str, metadata: dict) -> None:
         self._atomic_write(
             self._metadata_path(session_id),

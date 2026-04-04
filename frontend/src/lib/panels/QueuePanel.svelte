@@ -257,9 +257,9 @@
         >
           {#if bisectStore.job && bisectStore.job.total_steps > 0}
             <div
-              class="absolute inset-0 transition-all duration-500 ease-out"
+              class="absolute inset-y-0 left-0 transition-all duration-500 ease-out"
               style:background-color={bisectProgressColor(bisectStore.job.status)}
-              style:width="{Math.min(100, (bisectStore.job.step / bisectStore.job.total_steps) * 100)}%"
+              style:width={bisectStore.job.status === 'done' || bisectStore.job.status === 'error' ? '100%' : `${Math.min(100, (bisectStore.job.step / bisectStore.job.total_steps) * 100)}%`}
             ></div>
           {/if}
           <div class="relative flex items-center gap-2 w-full">
