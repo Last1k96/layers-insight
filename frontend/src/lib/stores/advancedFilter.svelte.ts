@@ -61,6 +61,7 @@ class AdvancedFilterStore {
   }
 
   addRule(): void {
+    if (this.rules.length >= 10) return;
     const rule: FilterRule = {
       id: crypto.randomUUID(),
       field: 'node_name',
