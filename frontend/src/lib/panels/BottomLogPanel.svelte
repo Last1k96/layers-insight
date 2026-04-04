@@ -107,7 +107,7 @@
 <!-- Toggle button -->
 <button
   class="fixed left-1/2 -translate-x-1/2 z-50 px-4 py-1.5 text-xs font-medium rounded-full
-    bg-[--bg-panel]/90 backdrop-blur-sm text-content-secondary hover:text-content-primary transition-all duration-150 active:scale-95"
+    bg-[--bg-panel]/90 backdrop-blur-sm text-content-secondary hover:text-content-primary transition-colors active:scale-95"
   style:bottom={logStore.visible ? `${height + 4}px` : '0.5rem'}
   style:box-shadow="var(--shadow-elevated)"
   onclick={() => logStore.toggle()}

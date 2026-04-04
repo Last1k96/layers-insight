@@ -1,6 +1,7 @@
 <script lang="ts">
   import { queueStore, type SortColumn } from '../stores/queue.svelte';
   import { graphStore } from '../stores/graph.svelte';
+  import { bisectStore } from '../stores/bisect.svelte';
   import { centerOnNode, refreshRenderer } from '../graph/renderer';
   import { getStatusColor } from '../graph/opColors';
   import { advancedFilterStore } from '../stores/advancedFilter.svelte';
@@ -58,7 +59,96 @@
       queueStore.cancelAll();
     }
   }
+
+  function handleBisectStop() {
+    bisectStore.stop();
+  }
+
+  function bisectProgressColor(status: string): string {
+    if (status === 'running') return 'rgba(59, 130, 246, 0.1)';
+    if (status === 'paused') return 'rgba(234, 179, 8, 0.1)';
+    if (status === 'done') return 'rgba(34, 197, 94, 0.1)';
+    if (status === 'error') return 'rgba(239, 68, 68, 0.1)';
+    return 'transparent';
+  }
+
+  function bisectIconColor(status: string): string {
+    if (status === 'running') return '#60a5fa';
+    if (status === 'paused') return '#facc15';
+    if (status === 'done') return '#4ade80';
+    if (status === 'error') return '#f87171';
+    return '#9ca3af';
+  }
+
+  function bisectTextColor(status: string): string {
+    if (status === 'running') return '#93c5fd';
+    if (status === 'paused') return '#fde047';
+    if (status === 'done') return '#86efac';
+    if (status === 'error') return '#fca5a5';
+    return '#d1d5db';
+  }
+
+  function handleBisectClick(e: MouseEvent) {
+    const bj = bisectStore.job;
+    if (!bj) return;
+
+    // Determine which node to target: found_node when done, else current_node
+    const nodeName = bj.status === 'done' ? bj.found_node : bj.current_node;
+    if (!nodeName) return;
+
+    const node = graphStore.graphData?.nodes.find(n => n.name === nodeName);
+    if (!node) return;
+
+    graphStore.selectNode(node.id);
+    // Ctrl+click (or Cmd on Mac) centers the view on that node
+    if (e.ctrlKey || e.metaKey) {
+      centerOnNode(node.id);
+    }
+    refreshRenderer();
+  }
 </script>
+
+{#snippet bisectRow(bj: import('../stores/types').BisectQueueItem)}
+  <div
+    class="w-full relative px-3 py-2 text-sm flex items-center gap-2 overflow-hidden cursor-pointer row-hover"
+    role="button"
+    tabindex="-1"
+    onclick={handleBisectClick}
+    onkeydown={(e) => { if (e.key === 'Enter') handleBisectClick(e as unknown as MouseEvent); }}
+  >
+    {#if bj.total_steps > 0}
+      <div
+        class="absolute inset-0 transition-all duration-500 ease-out"
+        style:background-color={bisectProgressColor(bj.status)}
+        style:width="{Math.min(100, (bj.step / bj.total_steps) * 100)}%"
+      ></div>
+    {/if}
+    <div class="relative flex items-center gap-2 w-full">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="shrink-0" style:color={bisectIconColor(bj.status)}>
+        <path d="M8 2v12M4 6l4-4 4 4" />
+      </svg>
+      <span class="flex-1 text-xs font-medium truncate" style:color={bisectTextColor(bj.status)}>
+        {#if bj.status === 'running'}
+          Bisecting... Step {bj.step}/{bj.total_steps}
+          {#if bj.current_node}
+            <span class="text-gray-500 font-mono ml-1">{bj.current_node}</span>
+          {/if}
+        {:else if bj.status === 'paused'}
+          Bisect paused at step {bj.step}/{bj.total_steps}
+        {:else if bj.status === 'done' && bj.found_node}
+          Found: {bj.found_node}
+        {:else if bj.status === 'error'}
+          Bisect error{bj.error ? `: ${bj.error}` : ''}
+        {/if}
+      </span>
+      <button
+        class="text-gray-600 hover:text-red-400 text-xs px-1 shrink-0 transition-colors relative"
+        title="Stop bisect"
+        onclick={(e) => { e.stopPropagation(); handleBisectStop(); }}
+      >&#x2715;</button>
+    </div>
+  </div>
+{/snippet}
 
 <div class="flex flex-col h-full" role="listbox" tabindex="-1">
   <!-- Header controls -->
@@ -134,7 +224,7 @@
 
   <!-- Task list -->
   <div class="flex-1 overflow-y-auto">
-    {#if queueStore.filteredTasks.length === 0}
+    {#if queueStore.filteredTasks.length === 0 && !bisectStore.job}
       <div class="flex flex-col items-center justify-center py-12 px-4">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-content-secondary/20 mb-3">
           <circle cx="12" cy="12" r="10" />
@@ -147,9 +237,14 @@
         {#if i > 0 && (task.status === 'executing' || task.status === 'waiting') && (queueStore.filteredTasks[i - 1].status === 'success' || queueStore.filteredTasks[i - 1].status === 'failed')}
           <div class="flex items-center gap-2 px-3 py-1">
             <div class="flex-1 h-px bg-content-secondary/10"></div>
-            <span class="text-[10px] text-content-secondary/30 uppercase tracking-wider shrink-0">Pending</span>
+            <span class="text-[10px] text-content-secondary/30 uppercase tracking-wider shrink-0">Queue</span>
             <div class="flex-1 h-px bg-content-secondary/10"></div>
           </div>
+          <!-- Bisect row: right below the Queue divider -->
+          {#if bisectStore.job && bisectStore.job.status !== 'stopped'}
+            {@const bj = bisectStore.job}
+            {@render bisectRow(bj)}
+          {/if}
         {/if}
         <div
           class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 cursor-pointer outline-none row-hover"
@@ -197,6 +292,18 @@
           </button>
         </div>
       {/each}
+
+      <!-- Bisect row fallback: when the Queue divider didn't render (no done+pending mix) -->
+      {#if bisectStore.job && bisectStore.job.status !== 'stopped'}
+        {@const hasDivider = queueStore.filteredTasks.some((t, i) =>
+          i > 0 && (t.status === 'executing' || t.status === 'waiting') &&
+          (queueStore.filteredTasks[i - 1].status === 'success' || queueStore.filteredTasks[i - 1].status === 'failed')
+        )}
+        {#if !hasDivider}
+          {@const bj = bisectStore.job}
+          {@render bisectRow(bj)}
+        {/if}
+      {/if}
     {/if}
   </div>
 

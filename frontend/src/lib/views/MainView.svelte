@@ -165,7 +165,7 @@
         class="px-3 py-1.5 text-xs font-medium transition-colors hover:text-gray-100 {bisectStore.isRunning ? 'text-blue-400' : 'text-gray-300'}"
         onclick={() => showBisectPanel = !showBisectPanel}
       >
-        {bisectStore.isRunning ? `Bisect (${bisectStore.step}/${bisectStore.totalSteps})` : 'Bisect'}
+        Bisect{bisectStore.isActive ? ' \u25CF' : ''}
       </button>
     </div>
   {/if}

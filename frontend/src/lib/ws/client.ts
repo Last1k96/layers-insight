@@ -100,19 +100,43 @@ function handleMessage(msg: any): void {
   if (msg.type === 'task_status') {
     const tsMsg = msg as TaskStatusMessage;
 
-    // Update queue store
-    queueStore.updateTask(tsMsg.task_id, {
-      status: tsMsg.status,
-      stage: tsMsg.stage,
-      error_detail: tsMsg.error_detail,
-      metrics: tsMsg.metrics,
-      main_result: tsMsg.main_result,
-      ref_result: tsMsg.ref_result,
-      per_output_metrics: tsMsg.per_output_metrics,
-      per_output_main_results: tsMsg.per_output_main_results,
-      per_output_ref_results: tsMsg.per_output_ref_results,
-      sub_session_id: tsMsg.sub_session_id,
-    });
+    // If this task isn't in the store yet (e.g. bisect child task created
+    // on the backend), add it; otherwise update in place.
+    const existing = queueStore.tasks.find(t => t.task_id === tsMsg.task_id);
+    if (!existing) {
+      queueStore.addTask({
+        task_id: tsMsg.task_id,
+        session_id: msg.session_id ?? '',
+        node_id: tsMsg.node_id,
+        node_name: tsMsg.node_name,
+        node_type: msg.node_type ?? '',
+        status: tsMsg.status,
+        stage: tsMsg.stage,
+        error_detail: tsMsg.error_detail,
+        metrics: tsMsg.metrics,
+        main_result: tsMsg.main_result,
+        ref_result: tsMsg.ref_result,
+        per_output_metrics: tsMsg.per_output_metrics,
+        per_output_main_results: tsMsg.per_output_main_results,
+        per_output_ref_results: tsMsg.per_output_ref_results,
+        batch_id: tsMsg.batch_id,
+        sub_session_id: tsMsg.sub_session_id,
+      });
+    } else {
+      queueStore.updateTask(tsMsg.task_id, {
+        status: tsMsg.status,
+        stage: tsMsg.stage,
+        error_detail: tsMsg.error_detail,
+        metrics: tsMsg.metrics,
+        main_result: tsMsg.main_result,
+        ref_result: tsMsg.ref_result,
+        per_output_metrics: tsMsg.per_output_metrics,
+        per_output_main_results: tsMsg.per_output_main_results,
+        per_output_ref_results: tsMsg.per_output_ref_results,
+        batch_id: tsMsg.batch_id,
+        sub_session_id: tsMsg.sub_session_id,
+      });
+    }
 
     // Update graph node status
     const nodeStatus: NodeStatus = {
@@ -160,7 +184,7 @@ function handleMessage(msg: any): void {
     });
   }
 
-  if (msg.type === 'bisect_progress') {
+  if (msg.type === 'bisect_job_status') {
     bisectStore.handleWsMessage(msg);
     // When bisection completes, auto-select the found node
     if (msg.status === 'done' && msg.found_node) {

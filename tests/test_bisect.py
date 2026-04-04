@@ -46,6 +46,7 @@ def _make_task(task_id: str, node_name: str, status: TaskStatus,
         node_name=node_name,
         node_type="Convolution",
         status=status,
+        batch_id="bisect",
     )
     if status == TaskStatus.SUCCESS:
         t.metrics = AccuracyMetrics(cosine_similarity=cos, mse=0.0, max_abs_diff=0.0)
@@ -111,13 +112,14 @@ async def test_bisect_finds_accuracy_drop():
     queue = FakeQueue()
 
     # Start bisection
-    progress = await svc.start(
+    job = await svc.start(
         request=req,
         graph_data=graph,
         queue_service=queue,
+        session_service=None,
         broadcast=fake_broadcast,
     )
-    assert progress.status == BisectStatus.RUNNING
+    assert job.status == BisectStatus.RUNNING
 
     # Simulate inference results: op_0..op_4 pass, op_5+ fail
     while svc.is_running:
@@ -132,8 +134,8 @@ async def test_bisect_finds_accuracy_drop():
             svc.on_task_complete(result)
             await asyncio.sleep(0.01)
 
-    assert svc.progress.status == BisectStatus.DONE
-    assert svc.progress.found_node == "op_5"
+    assert svc.job.status == BisectStatus.DONE
+    assert svc.job.found_node == "op_5"
 
 
 @pytest.mark.asyncio
@@ -168,10 +170,11 @@ async def test_bisect_finds_compilation_failure():
         pass
 
     queue = FakeQueue()
-    progress = await svc.start(
+    job = await svc.start(
         request=req,
         graph_data=graph,
         queue_service=queue,
+        session_service=None,
         broadcast=fake_broadcast,
     )
 
@@ -188,8 +191,8 @@ async def test_bisect_finds_compilation_failure():
             svc.on_task_complete(result)
             await asyncio.sleep(0.01)
 
-    assert svc.progress.status == BisectStatus.DONE
-    assert svc.progress.found_node == "op_3"
+    assert svc.job.status == BisectStatus.DONE
+    assert svc.job.found_node == "op_3"
 
 
 @pytest.mark.asyncio
@@ -214,11 +217,62 @@ async def test_bisect_stop():
 
     await svc.start(
         request=req, graph_data=graph,
-        queue_service=FakeQueue(), broadcast=noop_broadcast,
+        queue_service=FakeQueue(), session_service=None,
+        broadcast=noop_broadcast,
     )
 
-    progress = await svc.stop()
-    assert progress.status == BisectStatus.STOPPED
+    job = await svc.stop()
+    assert job.status == BisectStatus.STOPPED
+
+
+@pytest.mark.asyncio
+async def test_bisect_pause_resume():
+    """Pausing preserves state, resuming continues."""
+    svc = BisectService()
+    graph = _make_graph(10)
+    req = BisectRequest(session_id="s1", threshold=0.999)
+
+    created_tasks: list[InferenceTask] = []
+
+    class FakeQueue:
+        def create_task(self, session_id, node_id, node_name, node_type):
+            return InferenceTask(
+                task_id=f"t_{node_name}",
+                session_id=session_id,
+                node_id=node_id,
+                node_name=node_name,
+                node_type=node_type,
+                status=TaskStatus.WAITING,
+            )
+
+        async def enqueue(self, task):
+            created_tasks.append(task)
+            return task
+
+    async def noop_broadcast(sid, msg):
+        pass
+
+    await svc.start(
+        request=req, graph_data=graph,
+        queue_service=FakeQueue(), session_service=None,
+        broadcast=noop_broadcast,
+    )
+
+    # Let it enqueue the first task
+    await asyncio.sleep(0.05)
+    assert len(created_tasks) >= 1
+
+    # Pause
+    job = await svc.pause()
+    assert job.status == BisectStatus.PAUSED
+    assert svc._lo >= 0  # State preserved
+
+    # Resume
+    job = await svc.resume()
+    assert job.status == BisectStatus.RUNNING
+
+    # Stop to clean up
+    await svc.stop()
 
 
 @pytest.mark.asyncio
@@ -232,7 +286,8 @@ async def test_bisect_too_few_nodes():
     with pytest.raises(ValueError, match="at least 2 nodes"):
         await svc.start(
             request=req, graph_data=graph,
-            queue_service=None, broadcast=None,
+            queue_service=None, session_service=None,
+            broadcast=None,
         )
 
 
@@ -261,8 +316,6 @@ async def test_bisect_start_no_graph(async_client, test_app, test_session):
 
 @pytest.mark.asyncio
 async def test_bisect_stop_when_idle(async_client, test_app):
-    """POST /api/inference/bisect/stop is safe when nothing is running."""
+    """POST /api/inference/bisect/stop returns 404 when nothing is running."""
     resp = await async_client.post("/api/inference/bisect/stop")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["status"] == "idle"
+    assert resp.status_code == 404

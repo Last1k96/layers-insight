@@ -21,6 +21,7 @@ class BisectMetric(str, Enum):
 class BisectStatus(str, Enum):
     IDLE = "idle"
     RUNNING = "running"
+    PAUSED = "paused"
     DONE = "done"
     STOPPED = "stopped"
     ERROR = "error"
@@ -62,3 +63,19 @@ class BisectProgress(BaseModel):
     steps_history: list[BisectStepInfo] = []
     found_node: Optional[str] = None
     error: Optional[str] = None
+
+
+class BisectJobInfo(BaseModel):
+    """Bisect job info for queue display and WS broadcasts."""
+    job_id: str
+    session_id: str
+    status: BisectStatus = BisectStatus.RUNNING
+    search_for: BisectSearchFor = BisectSearchFor.ACCURACY_DROP
+    metric: BisectMetric = BisectMetric.COSINE_SIMILARITY
+    threshold: float = 0.999
+    step: int = 0
+    total_steps: int = 0
+    current_node: Optional[str] = None
+    found_node: Optional[str] = None
+    error: Optional[str] = None
+    sub_session_id: Optional[str] = None

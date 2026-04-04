@@ -27,7 +27,7 @@
 
     function onMouseMove(e: MouseEvent) {
       const dx = side === 'left' ? e.clientX - startX : startX - e.clientX;
-      width = Math.max(200, Math.min(600, startWidth + dx));
+      width = Math.max(200, Math.min(1200, startWidth + dx));
     }
 
     function onMouseUp() {

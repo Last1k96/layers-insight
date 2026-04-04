@@ -19,10 +19,16 @@ class QueueStore {
   /** Queue pause state */
   paused = $state(false);
 
-  /** Tasks visible for the current active sub-session. */
+  /** Tasks visible for the current active sub-session.
+   *  Hides bisect child tasks that are still in-flight (waiting/executing). */
   get visibleTasks(): InferenceTask[] {
     const activeSubId = graphStore.activeSubSessionId;
-    return this.tasks.filter(t => (t.sub_session_id ?? null) === activeSubId);
+    return this.tasks.filter(t => {
+      if ((t.sub_session_id ?? null) !== activeSubId) return false;
+      // Hide bisect child tasks that are in-flight
+      if (t.batch_id === 'bisect' && (t.status === 'waiting' || t.status === 'executing')) return false;
+      return true;
+    });
   }
 
   get selectedIndex(): number {

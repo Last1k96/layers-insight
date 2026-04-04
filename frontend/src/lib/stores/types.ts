@@ -156,6 +156,24 @@ export interface InferenceTask {
   per_output_metrics?: AccuracyMetrics[];
   per_output_main_results?: DeviceResult[];
   per_output_ref_results?: DeviceResult[];
+  batch_id?: string;
+  sub_session_id?: string | null;
+}
+
+export type BisectJobStatus = 'running' | 'paused' | 'done' | 'stopped' | 'error' | 'idle';
+
+export interface BisectQueueItem {
+  job_id: string;
+  session_id: string;
+  status: BisectJobStatus;
+  search_for: string;
+  metric: string;
+  threshold: number;
+  step: number;
+  total_steps: number;
+  current_node?: string;
+  found_node?: string;
+  error?: string;
   sub_session_id?: string | null;
 }
 
@@ -173,6 +191,7 @@ export interface TaskStatusMessage {
   per_output_metrics?: AccuracyMetrics[];
   per_output_main_results?: DeviceResult[];
   per_output_ref_results?: DeviceResult[];
+  batch_id?: string;
   sub_session_id?: string;
 }
 

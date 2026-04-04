@@ -1,53 +1,29 @@
-export type BisectStatus = 'idle' | 'running' | 'done' | 'stopped' | 'error';
+import type { BisectQueueItem, BisectJobStatus } from './types';
+
 export type BisectSearchFor = 'accuracy_drop' | 'compilation_failure';
 export type BisectMetric = 'cosine_similarity' | 'mse' | 'max_abs_diff';
 
-export interface BisectStepInfo {
-  node_name: string;
-  node_id: string;
-  task_id?: string;
-  metric_value?: number;
-  passed?: boolean;
-  error?: string;
-}
-
-export interface BisectProgress {
-  status: BisectStatus;
-  session_id?: string;
-  search_for?: BisectSearchFor;
-  metric?: BisectMetric;
-  threshold?: number;
-  range_start?: string;
-  range_end?: string;
-  current_node?: string;
-  step: number;
-  total_steps: number;
-  steps_history: BisectStepInfo[];
-  found_node?: string;
-  error?: string;
-}
-
 class BisectStore {
-  status = $state<BisectStatus>('idle');
+  // Config state (for popup)
   searchFor = $state<BisectSearchFor>('accuracy_drop');
   metric = $state<BisectMetric>('cosine_similarity');
   threshold = $state(0.999);
-  rangeStart = $state<string | null>(null);
-  rangeEnd = $state<string | null>(null);
-  currentNode = $state<string | null>(null);
-  step = $state(0);
-  totalSteps = $state(0);
-  stepsHistory = $state<BisectStepInfo[]>([]);
-  foundNode = $state<string | null>(null);
-  error = $state<string | null>(null);
   panelOpen = $state(false);
+  error = $state<string | null>(null);
+
+  // Active job (rendered in queue panel)
+  job = $state<BisectQueueItem | null>(null);
+
+  get isActive(): boolean {
+    return this.job !== null && (this.job.status === 'running' || this.job.status === 'paused');
+  }
 
   get isRunning(): boolean {
-    return this.status === 'running';
+    return this.job !== null && this.job.status === 'running';
   }
 
   get isDone(): boolean {
-    return this.status === 'done';
+    return this.job !== null && this.job.status === 'done';
   }
 
   async start(sessionId: string, subSessionId?: string | null): Promise<boolean> {
@@ -58,8 +34,6 @@ class BisectStore {
         threshold: this.threshold,
         search_for: this.searchFor,
       };
-      if (this.rangeStart) body.start_node = this.rangeStart;
-      if (this.rangeEnd) body.end_node = this.rangeEnd;
       if (subSessionId) body.sub_session_id = subSessionId;
 
       const res = await fetch('/api/inference/bisect', {
@@ -72,8 +46,9 @@ class BisectStore {
         this.error = err.detail || 'Failed to start bisection';
         return false;
       }
-      const data: BisectProgress = await res.json();
-      this._applyProgress(data);
+      const data: BisectQueueItem = await res.json();
+      this.job = data;
+      this.error = null;
       return true;
     } catch (e: any) {
       this.error = e.message;
@@ -85,60 +60,53 @@ class BisectStore {
     try {
       const res = await fetch('/api/inference/bisect/stop', { method: 'POST' });
       if (res.ok) {
-        const data: BisectProgress = await res.json();
-        this._applyProgress(data);
+        this.job = null;
       }
     } catch (e) {
       console.error('Bisect stop failed:', e);
     }
   }
 
-  async fetchStatus(): Promise<void> {
-    try {
-      const res = await fetch('/api/inference/bisect/status');
-      if (res.ok) {
-        const data: BisectProgress = await res.json();
-        this._applyProgress(data);
+  handleWsMessage(msg: any): void {
+    if (msg.type !== 'bisect_job_status') return;
+
+    if (!this.job && msg.job_id) {
+      // Job was started (e.g. on another tab) — create it
+      this.job = {
+        job_id: msg.job_id,
+        session_id: msg.session_id || '',
+        status: msg.status || 'running',
+        search_for: msg.search_for || 'accuracy_drop',
+        metric: msg.metric || 'cosine_similarity',
+        threshold: msg.threshold ?? 0.999,
+        step: msg.step ?? 0,
+        total_steps: msg.total_steps ?? 0,
+        current_node: msg.current_node,
+        found_node: msg.found_node,
+        error: msg.error,
+        sub_session_id: msg.sub_session_id,
+      };
+      return;
+    }
+
+    if (this.job) {
+      if (msg.status) this.job.status = msg.status as BisectJobStatus;
+      if (msg.step !== undefined) this.job.step = msg.step;
+      if (msg.total_steps !== undefined) this.job.total_steps = msg.total_steps;
+      if (msg.current_node !== undefined) this.job.current_node = msg.current_node;
+      if (msg.found_node) this.job.found_node = msg.found_node;
+      if (msg.error) this.job.error = msg.error;
+
+      // Clear job on terminal states that indicate removal
+      if (msg.status === 'stopped') {
+        this.job = null;
       }
-    } catch (e) {
-      console.error('Bisect status fetch failed:', e);
     }
   }
 
-  handleWsMessage(msg: any): void {
-    if (msg.type !== 'bisect_progress') return;
-    this.status = msg.status || this.status;
-    if (msg.range_start) this.rangeStart = msg.range_start;
-    if (msg.range_end) this.rangeEnd = msg.range_end;
-    if (msg.current_node) this.currentNode = msg.current_node;
-    if (msg.step !== undefined) this.step = msg.step;
-    if (msg.total_steps !== undefined) this.totalSteps = msg.total_steps;
-    if (msg.found_node) this.foundNode = msg.found_node;
-    if (msg.error) this.error = msg.error;
-  }
-
   reset(): void {
-    this.status = 'idle';
-    this.rangeStart = null;
-    this.rangeEnd = null;
-    this.currentNode = null;
-    this.step = 0;
-    this.totalSteps = 0;
-    this.stepsHistory = [];
-    this.foundNode = null;
+    this.job = null;
     this.error = null;
-  }
-
-  private _applyProgress(data: BisectProgress): void {
-    this.status = data.status;
-    this.rangeStart = data.range_start ?? null;
-    this.rangeEnd = data.range_end ?? null;
-    this.currentNode = data.current_node ?? null;
-    this.step = data.step;
-    this.totalSteps = data.total_steps;
-    this.stepsHistory = data.steps_history || [];
-    this.foundNode = data.found_node ?? null;
-    this.error = data.error ?? null;
   }
 }
 
