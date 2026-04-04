@@ -69,6 +69,12 @@ async def pause_queue(request: Request) -> dict:
         kill_fn = lambda tid: inference_svc.kill_current(tid)
 
     requeued_id = await queue_svc.pause(kill_callback=kill_fn)
+
+    # Also pause bisect if running
+    bisect_svc = request.app.state.bisect_service
+    if bisect_svc and bisect_svc.is_running:
+        await bisect_svc.pause()
+
     return {"paused": True, "requeued_task_id": requeued_id}
 
 
@@ -77,6 +83,12 @@ async def resume_queue(request: Request) -> dict:
     """Resume the queue worker."""
     queue_svc = request.app.state.queue_service
     await queue_svc.resume()
+
+    # Also resume bisect if paused
+    bisect_svc = request.app.state.bisect_service
+    if bisect_svc and bisect_svc.is_paused:
+        await bisect_svc.resume()
+
     return {"paused": False}
 
 

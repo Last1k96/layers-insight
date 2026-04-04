@@ -2,7 +2,6 @@
   import { bisectStore } from '../stores/bisect.svelte';
   import { graphStore } from '../stores/graph.svelte';
   import { sessionStore } from '../stores/session.svelte';
-  import { centerOnNode } from '../graph/renderer';
 
   let {
     onclose,
@@ -49,29 +48,9 @@
     bisectStore.error = null;
     const ok = await bisectStore.start(session.id, graphStore.activeSubSessionId);
     starting = false;
-  }
-
-  async function stopBisect() {
-    await bisectStore.stop();
-  }
-
-  function goToFoundNode() {
-    if (!bisectStore.foundNode) return;
-    const node = graphStore.graphData?.nodes.find(n => n.name === bisectStore.foundNode);
-    if (node) {
-      graphStore.selectNode(node.id);
-      centerOnNode(node.id);
+    if (ok) {
+      onclose();
     }
-  }
-
-  function resetAndClose() {
-    bisectStore.reset();
-    onclose();
-  }
-
-  function formatMetricValue(val: number | undefined, metric: string): string {
-    if (val === undefined || val === null) return '-';
-    return val.toFixed(6);
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -92,9 +71,22 @@
       <button class="text-gray-400 hover:text-gray-200 text-xs" onclick={onclose}>Close</button>
     </div>
 
-    <!-- Config (only when not running) -->
-    {#if !bisectStore.isRunning}
-      <div class="p-4 space-y-3 border-b border-[--border-color]">
+    {#if bisectStore.isActive}
+      <!-- Bisect is already running — show message -->
+      <div class="p-4 space-y-3">
+        <div class="text-xs text-gray-400">
+          Bisect is active — see the queue panel for progress.
+        </div>
+        <button
+          class="w-full py-2 bg-[--bg-panel] border border-[--border-color] hover:bg-gray-700 rounded text-sm font-medium transition-colors"
+          onclick={onclose}
+        >
+          Close
+        </button>
+      </div>
+    {:else}
+      <!-- Config -->
+      <div class="p-4 space-y-3">
         <label class="block text-xs">
           <span class="text-gray-400">Search for:</span>
           <select
@@ -154,108 +146,6 @@
         {#if bisectStore.error}
           <div class="text-xs text-red-400 mt-1">{bisectStore.error}</div>
         {/if}
-      </div>
-    {/if}
-
-    <!-- Progress -->
-    {#if bisectStore.isRunning || bisectStore.isDone || bisectStore.status === 'stopped' || bisectStore.status === 'error'}
-      <div class="p-4 space-y-2 border-b border-[--border-color]">
-        <!-- Status badge -->
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-medium" class:text-blue-400={bisectStore.isRunning} class:text-green-400={bisectStore.isDone} class:text-yellow-400={bisectStore.status === 'stopped'} class:text-red-400={bisectStore.status === 'error'}>
-            {bisectStore.status === 'running' ? 'Running' : bisectStore.status === 'done' ? 'Complete' : bisectStore.status === 'stopped' ? 'Stopped' : 'Error'}
-          </span>
-          {#if bisectStore.totalSteps > 0}
-            <span class="text-xs text-gray-500">Step {bisectStore.step}/{bisectStore.totalSteps}</span>
-          {/if}
-        </div>
-
-        <!-- Progress bar -->
-        {#if bisectStore.totalSteps > 0}
-          <div class="w-full h-1.5 bg-gray-700 rounded-full overflow-hidden">
-            <div
-              class="h-full rounded-full transition-all duration-300"
-              class:bg-blue-500={bisectStore.isRunning}
-              class:bg-green-500={bisectStore.isDone}
-              class:bg-yellow-500={bisectStore.status === 'stopped'}
-              class:bg-red-500={bisectStore.status === 'error'}
-              style:width="{Math.min(100, (bisectStore.step / bisectStore.totalSteps) * 100)}%"
-            ></div>
-          </div>
-        {/if}
-
-        <!-- Range info -->
-        {#if bisectStore.rangeStart && bisectStore.rangeEnd}
-          <div class="text-xs text-gray-400">
-            Range: <span class="font-mono text-gray-300">{bisectStore.rangeStart}</span>
-            <span class="mx-1">--</span>
-            <span class="font-mono text-gray-300">{bisectStore.rangeEnd}</span>
-          </div>
-        {/if}
-
-        <!-- Current node -->
-        {#if bisectStore.currentNode && bisectStore.isRunning}
-          <div class="text-xs text-gray-400">
-            Testing: <span class="font-mono text-gray-200">{bisectStore.currentNode}</span>
-          </div>
-        {/if}
-
-        <!-- Result -->
-        {#if bisectStore.foundNode}
-          <div class="mt-2 p-2 bg-green-900/20 border border-green-800/30 rounded">
-            <div class="text-xs text-green-400 font-medium">Found:</div>
-            <button
-              class="text-sm font-mono text-green-300 hover:text-green-100 underline cursor-pointer mt-0.5"
-              onclick={goToFoundNode}
-            >
-              {bisectStore.foundNode}
-            </button>
-          </div>
-        {/if}
-
-        <!-- Error message -->
-        {#if bisectStore.error}
-          <div class="text-xs text-red-400">{bisectStore.error}</div>
-        {/if}
-
-        <!-- Actions -->
-        <div class="flex gap-2 mt-2">
-          {#if bisectStore.isRunning}
-            <button
-              class="flex-1 py-1.5 bg-red-600/80 hover:bg-red-600 rounded text-xs font-medium transition-colors"
-              onclick={stopBisect}
-            >
-              Stop
-            </button>
-          {:else}
-            <button
-              class="flex-1 py-1.5 bg-[--bg-panel] border border-[--border-color] hover:bg-gray-700 rounded text-xs font-medium transition-colors"
-              onclick={resetAndClose}
-            >
-              Close
-            </button>
-          {/if}
-        </div>
-      </div>
-    {/if}
-
-    <!-- Steps history -->
-    {#if bisectStore.stepsHistory.length > 0}
-      <div class="max-h-40 overflow-y-auto">
-        {#each bisectStore.stepsHistory as step, i (i)}
-          <div class="px-4 py-1.5 text-xs flex items-center justify-between border-b border-[--border-color]">
-            <span class="font-mono text-gray-300 truncate flex-1">{step.node_name}</span>
-            <span class="ml-2 shrink-0" class:text-green-400={step.passed} class:text-red-400={!step.passed}>
-              {#if step.metric_value !== undefined && step.metric_value !== null}
-                {formatMetricValue(step.metric_value, bisectStore.metric)}
-              {:else if step.passed}
-                OK
-              {:else}
-                FAIL
-              {/if}
-            </span>
-          </div>
-        {/each}
       </div>
     {/if}
   </div>

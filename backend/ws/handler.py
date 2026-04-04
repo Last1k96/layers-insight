@@ -68,6 +68,7 @@ class ConnectionManager:
             "metrics": task.metrics.model_dump() if task.metrics else None,
             "main_result": task.main_result.model_dump() if task.main_result else None,
             "ref_result": task.ref_result.model_dump() if task.ref_result else None,
+            "batch_id": task.batch_id,
             "sub_session_id": task.sub_session_id,
             "per_output_metrics": [m.model_dump() for m in task.per_output_metrics] if task.per_output_metrics else None,
             "per_output_main_results": [r.model_dump() for r in task.per_output_main_results] if task.per_output_main_results else None,

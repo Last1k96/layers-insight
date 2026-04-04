@@ -101,7 +101,8 @@ function handleMessage(msg: any): void {
     const tsMsg = msg as TaskStatusMessage;
 
     // Upsert queue store — WS messages may arrive before the HTTP enqueue
-    // response, so the task might not exist in the store yet.
+    // response, so the task might not exist in the store yet (e.g. bisect
+    // child task created on the backend).
     const taskData = {
       status: tsMsg.status,
       stage: tsMsg.stage,
@@ -112,6 +113,7 @@ function handleMessage(msg: any): void {
       per_output_metrics: tsMsg.per_output_metrics,
       per_output_main_results: tsMsg.per_output_main_results,
       per_output_ref_results: tsMsg.per_output_ref_results,
+      batch_id: tsMsg.batch_id,
       sub_session_id: tsMsg.sub_session_id,
     };
     if (queueStore.hasTask(tsMsg.task_id)) {
@@ -173,7 +175,7 @@ function handleMessage(msg: any): void {
     });
   }
 
-  if (msg.type === 'bisect_progress') {
+  if (msg.type === 'bisect_job_status') {
     bisectStore.handleWsMessage(msg);
     // When bisection completes, auto-select the found node
     if (msg.status === 'done' && msg.found_node) {
