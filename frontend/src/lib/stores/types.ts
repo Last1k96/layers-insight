@@ -253,7 +253,7 @@ export interface CompareResponse {
 // ── Advanced Filter Types ──
 
 export type FilterField = 'node_name' | 'node_type' | 'status' | 'cosine_similarity' | 'mse' | 'max_abs_diff';
-export type StringOperator = 'contains' | 'equals' | '!=' | 'starts with';
+export type StringOperator = 'contains' | 'equals' | '!=';
 export type NumberOperator = '>' | '<' | '=' | '!=' | '>=' | '<=';
 export type EnumOperator = '=' | '!=';
 export type FilterOperator = StringOperator | NumberOperator | EnumOperator;
@@ -276,8 +276,8 @@ export interface FilterFieldMeta {
 }
 
 export const FILTER_FIELD_META: Record<FilterField, FilterFieldMeta> = {
-  node_name:         { type: 'string', operators: ['contains', 'equals', '!=', 'starts with'], label: 'Node Name' },
-  node_type:         { type: 'string', operators: ['contains', 'equals', '!=', 'starts with'], label: 'Node Type' },
+  node_name:         { type: 'string', operators: ['contains', 'equals', '!='], label: 'Node Name' },
+  node_type:         { type: 'string', operators: ['contains', 'equals', '!='], label: 'Node Type' },
   status:            { type: 'enum',   operators: ['=', '!='], label: 'Status', enumValues: ['waiting', 'executing', 'success', 'failed'] },
   cosine_similarity: { type: 'number', operators: ['>', '<', '=', '!=', '>=', '<='], label: 'Cosine Sim', step: 0.001 },
   mse:               { type: 'number', operators: ['>', '<', '=', '!=', '>=', '<='], label: 'MSE', step: 0.01 },

@@ -61,26 +61,19 @@
 
   function operatorLabel(op: FilterOperator): string {
     switch (op) {
-      case 'contains': return 'contains';
+      case 'contains': return '~=';
       case 'equals': return '=';
       case '!=': return '!=';
-      case 'starts with': return 'starts';
       default: return op;
     }
   }
 </script>
 
-<div class="flex items-center gap-1 py-0.5">
-  <!-- Drag handle -->
-  <button
-    class="cursor-grab text-gray-600 hover:text-gray-400 px-0.5 select-none shrink-0 text-xs"
-    onmousedown={onDragStart}
-    title="Drag to reorder"
-  >&#x2801;&#x2802;</button>
-
+<!-- Card-style rule row: darker recessed background, inset controls -->
+<div class="flex items-center gap-1.5 px-2 py-1.5 bg-[--bg-menu] rounded border border-[--border-color]">
   <!-- Field selector -->
   <select
-    class="px-1 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none min-w-0"
+    class="px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs text-[--text-primary] focus:border-blue-500 focus:outline-none min-w-0"
     value={rule.field}
     onchange={handleFieldChange}
   >
@@ -91,7 +84,7 @@
 
   <!-- Operator selector -->
   <select
-    class="px-1 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none shrink-0"
+    class="px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs text-[--text-primary] focus:border-blue-500 focus:outline-none shrink-0"
     value={rule.operator}
     onchange={handleOperatorChange}
   >
@@ -103,11 +96,11 @@
   <!-- Value input -->
   {#if meta.type === 'enum'}
     <select
-      class="flex-1 px-1 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none min-w-0"
+      class="flex-1 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs text-[--text-primary] focus:border-blue-500 focus:outline-none min-w-0"
       value={rule.value}
       onchange={handleEnumChange}
     >
-      <option value="">—</option>
+      <option value="">--</option>
       {#each meta.enumValues ?? [] as v (v)}
         <option value={v}>{v}</option>
       {/each}
@@ -116,7 +109,7 @@
     <input
       type="text"
       inputmode="decimal"
-      class="flex-1 px-1 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none min-w-0 font-mono"
+      class="flex-1 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs text-[--text-primary] focus:border-blue-500 focus:outline-none min-w-0 font-mono"
       value={rule.value}
       placeholder="0"
       oninput={handleValueInput}
@@ -126,17 +119,34 @@
   {:else}
     <input
       type="text"
-      class="flex-1 px-1 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none min-w-0"
+      class="flex-1 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs text-[--text-primary] focus:border-blue-500 focus:outline-none min-w-0"
       value={rule.value}
       placeholder="value"
       oninput={handleValueInput}
     />
   {/if}
 
+  <!-- Drag handle -->
+  <button
+    class="cursor-grab text-gray-600 hover:text-gray-400 select-none shrink-0 leading-none px-0.5"
+    onmousedown={onDragStart}
+    title="Drag to reorder"
+  >
+    <svg width="8" height="14" viewBox="0 0 8 14" fill="currentColor">
+      <circle cx="2" cy="2" r="1.2"/><circle cx="6" cy="2" r="1.2"/>
+      <circle cx="2" cy="7" r="1.2"/><circle cx="6" cy="7" r="1.2"/>
+      <circle cx="2" cy="12" r="1.2"/><circle cx="6" cy="12" r="1.2"/>
+    </svg>
+  </button>
+
   <!-- Delete button -->
   <button
-    class="text-gray-500 hover:text-red-400 text-xs px-0.5 shrink-0 transition-colors"
+    class="text-gray-600 hover:text-red-400 shrink-0 transition-colors leading-none"
     title="Remove rule"
     onclick={onDelete}
-  >&#x2715;</button>
+  >
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="4" y1="4" x2="12" y2="12" /><line x1="12" y1="4" x2="4" y2="12" />
+    </svg>
+  </button>
 </div>

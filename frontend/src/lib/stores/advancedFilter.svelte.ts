@@ -163,7 +163,6 @@ class AdvancedFilterStore {
         case 'contains': return sv.includes(rv);
         case 'equals': return sv === rv;
         case '!=': return sv !== rv;
-        case 'starts with': return sv.startsWith(rv);
         default: return true;
       }
     }
