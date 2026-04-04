@@ -251,3 +251,37 @@ export interface CompareResponse {
   nodes: CompareNodeResult[];
   summary: CompareSummary;
 }
+
+// ── Advanced Filter Types ──
+
+export type FilterField = 'node_name' | 'node_type' | 'status' | 'cosine_similarity' | 'mse' | 'max_abs_diff';
+export type StringOperator = 'contains' | 'equals' | '!=' | 'starts with';
+export type NumberOperator = '>' | '<' | '=' | '!=' | '>=' | '<=';
+export type EnumOperator = '=' | '!=';
+export type FilterOperator = StringOperator | NumberOperator | EnumOperator;
+export type FilterConnector = 'AND' | 'OR';
+export type FilterFieldType = 'string' | 'number' | 'enum';
+
+export interface FilterRule {
+  id: string;
+  field: FilterField;
+  operator: FilterOperator;
+  value: string;
+}
+
+export interface FilterFieldMeta {
+  type: FilterFieldType;
+  operators: FilterOperator[];
+  label: string;
+  step?: number;
+  enumValues?: string[];
+}
+
+export const FILTER_FIELD_META: Record<FilterField, FilterFieldMeta> = {
+  node_name:         { type: 'string', operators: ['contains', 'equals', '!=', 'starts with'], label: 'Node Name' },
+  node_type:         { type: 'string', operators: ['contains', 'equals', '!=', 'starts with'], label: 'Node Type' },
+  status:            { type: 'enum',   operators: ['=', '!='], label: 'Status', enumValues: ['waiting', 'executing', 'success', 'failed'] },
+  cosine_similarity: { type: 'number', operators: ['>', '<', '=', '!=', '>=', '<='], label: 'Cosine Sim', step: 0.001 },
+  mse:               { type: 'number', operators: ['>', '<', '=', '!=', '>=', '<='], label: 'MSE', step: 0.01 },
+  max_abs_diff:      { type: 'number', operators: ['>', '<', '=', '!=', '>=', '<='], label: 'Max Abs Diff', step: 0.01 },
+};
