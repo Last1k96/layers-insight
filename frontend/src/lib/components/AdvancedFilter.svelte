@@ -121,11 +121,11 @@
 
 <div class="flex flex-col">
   <!-- Header -->
-  <div class="flex items-center gap-1 mb-1.5">
-    <span class="text-[10px] text-gray-500 uppercase tracking-wider">Advanced Filter</span>
+  <div class="flex items-center gap-1 mb-2">
+    <span class="text-[10px] text-content-secondary/40 uppercase tracking-wider">Advanced Filter</span>
     <div class="flex-1"></div>
     <button
-      class="px-1.5 py-0.5 text-xs rounded transition-colors text-gray-400 hover:text-gray-200 hover:bg-[--bg-menu]"
+      class="px-1.5 py-1 rounded-md transition-all duration-100 text-content-secondary/40 hover:text-content-secondary hover:bg-surface-elevated active:scale-95 shrink-0"
       title="Switch to simple filter"
       onclick={ontoggle}
     >
@@ -141,7 +141,7 @@
       <div class="flex">
         <div class="{CONN_COL_W} shrink-0"></div>
         <button
-          class="flex-1 min-w-0 py-2 text-xs rounded border border-dashed border-[--border-color] text-gray-500 hover:text-blue-400 hover:border-blue-500/40 transition-colors"
+          class="flex-1 min-w-0 py-2 text-xs rounded-lg border border-dashed border-content-secondary/10 text-content-secondary/30 hover:text-accent hover:border-accent/30 transition-colors"
           onclick={() => advancedFilterStore.addRule()}
         >+ Add Rule</button>
       </div>
@@ -155,7 +155,7 @@
             style="top: {top}px; transform: translateY(-50%); width: 2.25rem;"
           >
             <button
-              class="px-1.5 text-[10px] font-bold rounded border transition-colors flex items-center justify-center {conn === 'AND' ? 'text-blue-400 border-blue-500/40 bg-blue-900/20 hover:bg-blue-900/40' : 'text-amber-400 border-amber-500/40 bg-amber-900/20 hover:bg-amber-900/40'}"
+              class="px-1.5 text-[10px] font-bold rounded-md transition-all duration-100 flex items-center justify-center active:scale-95 {conn === 'AND' ? 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20' : 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20'}"
               style="height: {measuredRowHeight * 0.75}px;"
               onclick={() => advancedFilterStore.toggleConnector(i)}
               title="Click to toggle AND/OR"
@@ -189,7 +189,7 @@
         <div class="flex mt-1.5">
           <div class="{CONN_COL_W} shrink-0"></div>
           <button
-            class="flex-1 min-w-0 py-2 text-xs rounded border border-dashed border-[--border-color] transition-colors {advancedFilterStore.rules.length >= 10 ? 'text-gray-600 cursor-not-allowed opacity-50' : 'text-gray-500 hover:text-blue-400 hover:border-blue-500/40'}"
+            class="flex-1 min-w-0 py-2 text-xs rounded-lg border border-dashed transition-colors {advancedFilterStore.rules.length >= 10 ? 'text-content-secondary/20 border-content-secondary/5 cursor-not-allowed' : 'text-content-secondary/30 border-content-secondary/10 hover:text-accent hover:border-accent/30'}"
             disabled={advancedFilterStore.rules.length >= 10}
             onclick={() => advancedFilterStore.addRule()}
           >+ Add Rule{advancedFilterStore.rules.length >= 10 ? ' (max 10)' : ''}</button>

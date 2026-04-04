@@ -235,12 +235,11 @@
     top: 8px;
     z-index: 20;
     background: var(--bg-panel);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+    border-radius: 12px;
+    box-shadow: var(--shadow-panel);
     min-width: 180px;
     max-width: 260px;
-    backdrop-filter: blur(12px);
+    backdrop-filter: blur(24px);
     overflow: hidden;
   }
 
@@ -248,13 +247,11 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 7px 10px;
-    border-bottom: 1px solid var(--border-color);
+    padding: 8px 10px;
     color: var(--text-secondary);
     width: 100%;
     border: none;
-    border-bottom: 1px solid var(--border-color);
-    background: none;
+    background: var(--bg-panel);
     cursor: pointer;
     transition: background 0.1s;
   }
@@ -283,8 +280,9 @@
     font-size: 10px;
     background: var(--bg-menu);
     color: var(--text-secondary);
-    padding: 1px 6px;
-    border-radius: 8px;
+    opacity: 0.6;
+    padding: 1px 7px;
+    border-radius: 99px;
     line-height: 1.4;
   }
 
@@ -334,12 +332,14 @@
     bottom: -10px;
     width: 1px;
     background: var(--border-color);
+    opacity: 0.4;
   }
 
   .tree-connector {
     width: 8px;
     height: 1px;
     background: var(--border-color);
+    opacity: 0.4;
     flex-shrink: 0;
   }
 
@@ -377,9 +377,9 @@
 
   .cut-type-tag {
     font-size: 9px;
-    padding: 0 4px;
-    border-radius: 3px;
-    line-height: 1.5;
+    padding: 1px 5px;
+    border-radius: 99px;
+    line-height: 1.4;
     flex-shrink: 0;
     opacity: 0.7;
   }
@@ -398,12 +398,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     border: none;
     background: none;
     color: var(--text-secondary);
-    border-radius: 3px;
+    border-radius: 6px;
     cursor: pointer;
     opacity: 0;
     transition: opacity 0.1s, background 0.1s, color 0.1s;

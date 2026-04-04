@@ -161,40 +161,44 @@
 
 <div class="p-3 overflow-y-auto h-full text-sm">
   {#if !selectedNode}
-    <div class="text-gray-500 text-center py-8">
-      Select a node to view details
+    <div class="flex flex-col items-center justify-center py-16 px-4">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-content-secondary/15 mb-3">
+        <rect x="3" y="3" width="18" height="18" rx="3" />
+        <path d="M9 12h6M12 9v6" stroke-linecap="round" />
+      </svg>
+      <span class="text-content-secondary/30 text-xs">Select a node to view details</span>
     </div>
   {:else}
     <!-- Node Info -->
     <div class="mb-4">
-      <div class="font-mono font-medium text-gray-200 break-all">{selectedNode.name}</div>
-      <div class="text-gray-400 mt-1">{selectedNode.type}</div>
+      <div class="font-mono font-medium text-[13px] text-content-primary break-all leading-snug">{selectedNode.name}</div>
+      <div class="text-content-secondary/50 text-xs mt-1">{selectedNode.type}</div>
       {#if (selectedNode.inputs && selectedNode.inputs.length > 0) || selectedNode.shape}
-        <div class="mt-1.5 grid grid-cols-[auto_1fr] gap-x-1.5 gap-y-0.5 text-xs items-baseline">
+        <div class="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs items-baseline">
           {#if selectedNode.inputs}
             {#each selectedNode.inputs as inp}
               {@const inpPropagated = graphStore.graphData?.propagated_shapes?.[inp.name] ?? null}
               {@const inpOrigShape = inp.shape}
-              <span class="text-gray-600 shrink-0">{inp.is_const ? 'const' : 'input'}</span>
+              <span class="text-content-secondary/30 shrink-0">{inp.is_const ? 'const' : 'input'}</span>
               <span>
                 {#if inpPropagated && inpOrigShape}
-                  <span class="font-mono text-gray-400">[{#each inpPropagated as dim, idx}{#if idx > 0}, {/if}{#if inpOrigShape[idx] !== undefined && typeof inpOrigShape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
+                  <span class="font-mono text-content-secondary/60">[{#each inpPropagated as dim, idx}{#if idx > 0}, {/if}{#if inpOrigShape[idx] !== undefined && typeof inpOrigShape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
                 {:else if inpOrigShape}
-                  <span class="font-mono text-gray-400">[{#each inpOrigShape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
+                  <span class="font-mono text-content-secondary/60">[{#each inpOrigShape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
                 {/if}
-                {#if inp.element_type}<span class="text-gray-600 ml-1">{inp.element_type}</span>{/if}
+                {#if inp.element_type}<span class="text-content-secondary/30 ml-1">{inp.element_type}</span>{/if}
               </span>
             {/each}
           {/if}
           {#if selectedNode.shape}
-            <span class="text-gray-600 shrink-0">output</span>
+            <span class="text-content-secondary/30 shrink-0">output</span>
             <span>
               {#if propagatedShape}
-                <span class="font-mono text-gray-400">[{#each propagatedShape as dim, idx}{#if idx > 0}, {/if}{#if selectedNode.shape[idx] !== undefined && typeof selectedNode.shape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
+                <span class="font-mono text-content-secondary/60">[{#each propagatedShape as dim, idx}{#if idx > 0}, {/if}{#if selectedNode.shape[idx] !== undefined && typeof selectedNode.shape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
               {:else}
-                <span class="font-mono text-gray-400">[{#each selectedNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
+                <span class="font-mono text-content-secondary/60">[{#each selectedNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
               {/if}
-              {#if selectedNode.element_type}<span class="text-gray-600 ml-1">{selectedNode.element_type}</span>{/if}
+              {#if selectedNode.element_type}<span class="text-content-secondary/30 ml-1">{selectedNode.element_type}</span>{/if}
             </span>
           {/if}
         </div>
@@ -204,7 +208,7 @@
     {#if !nodeStatus}
       <div class="space-y-2">
         <button
-          class="w-full py-1.5 bg-accent hover:bg-accent-hover rounded text-xs transition-colors"
+          class="w-full py-2 bg-accent hover:bg-accent-hover rounded-lg text-xs font-medium transition-all duration-100 active:scale-[0.98]"
           onclick={() => {
             const session = sessionStore.currentSession;
             if (session && selectedNode) {
@@ -215,20 +219,20 @@
           Infer
         </button>
         <button
-          class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+          class="w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
           onclick={onshowbatchqueue}
         >
           Batch Queue
         </button>
         <div class="flex gap-2">
           <button
-            class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+            class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
             onclick={() => handleCut('input_random')}
           >
             Make Parameter
           </button>
           <button
-            class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+            class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
             onclick={() => handleCut('output')}
           >
             Make Output
@@ -237,56 +241,56 @@
       </div>
 
     {:else if nodeStatus.status === 'waiting'}
-      <div class="flex items-center gap-2 text-amber-400">
-        <div class="w-2 h-2 rounded-full bg-amber-400"></div>
-        Waiting in queue
+      <div class="flex items-center gap-2.5 text-amber-400">
+        <div class="w-2.5 h-2.5 rounded-full bg-amber-400"></div>
+        <span class="text-xs">Waiting in queue</span>
       </div>
       <button
-        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors text-red-400"
+        class="mt-3 w-full py-2 rounded-lg text-xs transition-all duration-100 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 active:scale-[0.98]"
         onclick={handleDelete}
       >
         Delete
       </button>
 
     {:else if nodeStatus.status === 'executing'}
-      <div class="flex items-center gap-2 text-blue-400">
-        <div class="w-2 h-2 rounded-full bg-blue-400 pulse-ring"></div>
-        Executing
+      <div class="flex items-center gap-2.5 text-blue-400">
+        <div class="w-2.5 h-2.5 rounded-full bg-blue-400 pulse-ring status-glow"></div>
+        <span class="text-xs">Executing</span>
       </div>
       {#if nodeStatus.stage}
-        <div class="text-gray-400 text-xs mt-1">{nodeStatus.stage}</div>
+        <div class="text-content-secondary/40 text-xs mt-1">{nodeStatus.stage}</div>
       {/if}
       <button
-        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors text-red-400"
+        class="mt-3 w-full py-2 rounded-lg text-xs transition-all duration-100 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 active:scale-[0.98]"
         onclick={handleDelete}
       >
         Delete
       </button>
 
     {:else if nodeStatus.status === 'success'}
-      <div class="flex items-center gap-2 text-green-400 mb-3">
-        <div class="w-2 h-2 rounded-full bg-green-400"></div>
-        Success
+      <div class="flex items-center gap-2.5 text-green-400 mb-4">
+        <div class="w-2.5 h-2.5 rounded-full bg-green-400"></div>
+        <span class="text-xs font-medium">Success</span>
       </div>
 
       {#if outputCount <= 1}
-        <!-- Single output: original layout (no visual change) -->
+        <!-- Single output -->
         {#if nodeStatus.metrics}
           <div class="space-y-2">
-            <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Accuracy</h4>
+            <h4 class="text-[10px] font-medium text-content-secondary/40 uppercase tracking-wider">Accuracy</h4>
             <table class="w-full text-xs">
               <tbody>
-                <tr class="border-b border-[--border-color]/50">
-                  <td class="py-1 text-gray-400">MSE</td>
-                  <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.mse)}</td>
-                </tr>
-                <tr class="border-b border-[--border-color]/50">
-                  <td class="py-1 text-gray-400">Max Abs Diff</td>
-                  <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
+                <tr>
+                  <td class="py-1.5 text-content-secondary/50">MSE</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums">{formatValue(nodeStatus.metrics.mse)}</td>
                 </tr>
                 <tr>
-                  <td class="py-1 text-gray-400">Cosine Sim</td>
-                  <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
+                  <td class="py-1.5 text-content-secondary/50">Max Abs Diff</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums">{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
+                </tr>
+                <tr>
+                  <td class="py-1.5 text-content-secondary/50">Cosine Sim</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
                 </tr>
               </tbody>
             </table>
@@ -297,8 +301,8 @@
         {#if nodeStatus.mainResult || nodeStatus.refResult}
           {@const main = nodeStatus.mainResult}
           {@const ref = nodeStatus.refResult}
-          <div class="mt-3">
-            <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Device Outputs</h4>
+          <div class="mt-4">
+            <h4 class="text-[10px] font-medium text-content-secondary/40 uppercase tracking-wider mb-2">Device Outputs</h4>
             <table class="w-full text-xs table-fixed">
               <colgroup>
                 <col class="w-[20%]" />
@@ -307,11 +311,11 @@
                 {#if main && ref}<col class="w-[26.6%]" />{/if}
               </colgroup>
               <thead>
-                <tr class="text-gray-500">
-                  <th class="py-1 text-left font-normal"></th>
-                  {#if main}<th class="py-1 text-right font-normal">{main.device}</th>{/if}
-                  {#if ref}<th class="py-1 text-right font-normal">{ref.device}</th>{/if}
-                  {#if main && ref}<th class="py-1 text-right font-normal">Diff</th>{/if}
+                <tr class="text-content-secondary/30">
+                  <th class="py-1.5 text-left font-normal"></th>
+                  {#if main}<th class="py-1.5 text-right font-normal">{main.device}</th>{/if}
+                  {#if ref}<th class="py-1.5 text-right font-normal">{ref.device}</th>{/if}
+                  {#if main && ref}<th class="py-1.5 text-right font-normal">Diff</th>{/if}
                 </tr>
               </thead>
               <tbody>
@@ -321,12 +325,12 @@
                   { label: 'Mean', key: 'mean_val' as const },
                   { label: 'Std', key: 'std_val' as const },
                 ] as row}
-                  <tr class="border-t border-[--border-color]/50">
-                    <td class="py-1 text-gray-400">{row.label}</td>
-                    {#if main}<td class="py-1 text-right font-mono truncate">{fmt4(main[row.key])}</td>{/if}
-                    {#if ref}<td class="py-1 text-right font-mono truncate">{fmt4(ref[row.key])}</td>{/if}
+                  <tr class="border-t border-content-secondary/5">
+                    <td class="py-1.5 text-content-secondary/50">{row.label}</td>
+                    {#if main}<td class="py-1.5 text-right font-mono truncate tabular-nums">{fmt4(main[row.key])}</td>{/if}
+                    {#if ref}<td class="py-1.5 text-right font-mono truncate tabular-nums">{fmt4(ref[row.key])}</td>{/if}
                     {#if main && ref}
-                      <td class="py-1 text-right font-mono text-yellow-400 truncate">{fmt4(diff(main[row.key], ref[row.key]))}</td>
+                      <td class="py-1.5 text-right font-mono text-yellow-400/80 truncate tabular-nums">{fmt4(diff(main[row.key], ref[row.key]))}</td>
                     {/if}
                   </tr>
                 {/each}
@@ -336,28 +340,28 @@
         {/if}
 
         <!-- Phase 2 actions -->
-        <div class="mt-3 space-y-2">
+        <div class="mt-4 space-y-2">
           <button
-            class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+            class="w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
             onclick={() => handleDeepAccuracy()}
           >
             Deep Accuracy View
           </button>
           <button
-            class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+            class="w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
             onclick={onshowbatchqueue}
           >
             Batch Queue
           </button>
           <div class="flex gap-2">
             <button
-              class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+              class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
               onclick={() => handleCut('input')}
             >
               Make Parameter
             </button>
             <button
-              class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+              class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
               onclick={() => handleCut('output')}
             >
               Make Output
@@ -368,21 +372,21 @@
       {:else}
         <!-- Multi-output: aggregate worst-case header -->
         {#if nodeStatus.metrics}
-          <div class="space-y-2 mb-3">
-            <h4 class="text-xs font-medium text-gray-400 uppercase tracking-wider">Worst-Case Accuracy ({outputCount} outputs)</h4>
+          <div class="space-y-2 mb-4">
+            <h4 class="text-[10px] font-medium text-content-secondary/40 uppercase tracking-wider">Worst-Case Accuracy ({outputCount} outputs)</h4>
             <table class="w-full text-xs">
               <tbody>
-                <tr class="border-b border-[--border-color]/50">
-                  <td class="py-1 text-gray-400">MSE</td>
-                  <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.mse)}</td>
-                </tr>
-                <tr class="border-b border-[--border-color]/50">
-                  <td class="py-1 text-gray-400">Max Abs Diff</td>
-                  <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
+                <tr>
+                  <td class="py-1.5 text-content-secondary/50">MSE</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums">{formatValue(nodeStatus.metrics.mse)}</td>
                 </tr>
                 <tr>
-                  <td class="py-1 text-gray-400">Cosine Sim</td>
-                  <td class="py-1 text-right font-mono">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
+                  <td class="py-1.5 text-content-secondary/50">Max Abs Diff</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums">{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
+                </tr>
+                <tr>
+                  <td class="py-1.5 text-content-secondary/50">Cosine Sim</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
                 </tr>
               </tbody>
             </table>
@@ -393,33 +397,33 @@
         {#each nodeStatus.perOutputMetrics! as outMetrics, outIdx}
           {@const outMain = nodeStatus.perOutputMainResults?.[outIdx]}
           {@const outRef = nodeStatus.perOutputRefResults?.[outIdx]}
-          <div class="border-t border-[--border-color]/50 pt-2 mt-2">
-            <h4 class="text-xs font-medium text-gray-300 mb-1">
+          <div class="border-t border-content-secondary/8 pt-3 mt-3">
+            <h4 class="text-xs font-medium text-content-primary/80 mb-1.5">
               Output {outIdx}
               {#if outMain?.dtype}
-                <span class="text-gray-500 font-normal ml-1">[{outMain.dtype}, {outMain.output_shapes?.[0]?.join('x') ?? '?'}]</span>
+                <span class="text-content-secondary/30 font-normal ml-1">[{outMain.dtype}, {outMain.output_shapes?.[0]?.join('x') ?? '?'}]</span>
               {/if}
             </h4>
 
-            <table class="w-full text-xs mb-1">
+            <table class="w-full text-xs mb-1.5">
               <tbody>
-                <tr class="border-b border-[--border-color]/30">
-                  <td class="py-0.5 text-gray-400">MSE</td>
-                  <td class="py-0.5 text-right font-mono">{formatValue(outMetrics.mse)}</td>
-                </tr>
-                <tr class="border-b border-[--border-color]/30">
-                  <td class="py-0.5 text-gray-400">Max Abs Diff</td>
-                  <td class="py-0.5 text-right font-mono">{formatValue(outMetrics.max_abs_diff)}</td>
+                <tr>
+                  <td class="py-1 text-content-secondary/50">MSE</td>
+                  <td class="py-1 text-right font-mono tabular-nums">{formatValue(outMetrics.mse)}</td>
                 </tr>
                 <tr>
-                  <td class="py-0.5 text-gray-400">Cosine Sim</td>
-                  <td class="py-0.5 text-right font-mono">{formatValue(outMetrics.cosine_similarity)}</td>
+                  <td class="py-1 text-content-secondary/50">Max Abs Diff</td>
+                  <td class="py-1 text-right font-mono tabular-nums">{formatValue(outMetrics.max_abs_diff)}</td>
+                </tr>
+                <tr>
+                  <td class="py-1 text-content-secondary/50">Cosine Sim</td>
+                  <td class="py-1 text-right font-mono tabular-nums">{formatValue(outMetrics.cosine_similarity)}</td>
                 </tr>
               </tbody>
             </table>
 
             {#if outMain || outRef}
-              <table class="w-full text-xs table-fixed mb-1">
+              <table class="w-full text-xs table-fixed mb-1.5">
                 <colgroup>
                   <col class="w-[20%]" />
                   <col class="w-[26.6%]" />
@@ -427,11 +431,11 @@
                   {#if outMain && outRef}<col class="w-[26.6%]" />{/if}
                 </colgroup>
                 <thead>
-                  <tr class="text-gray-500">
-                    <th class="py-0.5 text-left font-normal"></th>
-                    {#if outMain}<th class="py-0.5 text-right font-normal">{outMain.device}</th>{/if}
-                    {#if outRef}<th class="py-0.5 text-right font-normal">{outRef.device}</th>{/if}
-                    {#if outMain && outRef}<th class="py-0.5 text-right font-normal">Diff</th>{/if}
+                  <tr class="text-content-secondary/30">
+                    <th class="py-1 text-left font-normal"></th>
+                    {#if outMain}<th class="py-1 text-right font-normal">{outMain.device}</th>{/if}
+                    {#if outRef}<th class="py-1 text-right font-normal">{outRef.device}</th>{/if}
+                    {#if outMain && outRef}<th class="py-1 text-right font-normal">Diff</th>{/if}
                   </tr>
                 </thead>
                 <tbody>
@@ -441,12 +445,12 @@
                     { label: 'Mean', key: 'mean_val' as const },
                     { label: 'Std', key: 'std_val' as const },
                   ] as row}
-                    <tr class="border-t border-[--border-color]/30">
-                      <td class="py-0.5 text-gray-400">{row.label}</td>
-                      {#if outMain}<td class="py-0.5 text-right font-mono truncate">{fmt4(outMain[row.key])}</td>{/if}
-                      {#if outRef}<td class="py-0.5 text-right font-mono truncate">{fmt4(outRef[row.key])}</td>{/if}
+                    <tr class="border-t border-content-secondary/5">
+                      <td class="py-1 text-content-secondary/50">{row.label}</td>
+                      {#if outMain}<td class="py-1 text-right font-mono truncate tabular-nums">{fmt4(outMain[row.key])}</td>{/if}
+                      {#if outRef}<td class="py-1 text-right font-mono truncate tabular-nums">{fmt4(outRef[row.key])}</td>{/if}
                       {#if outMain && outRef}
-                        <td class="py-0.5 text-right font-mono text-yellow-400 truncate">{fmt4(diff(outMain[row.key], outRef[row.key]))}</td>
+                        <td class="py-1 text-right font-mono text-yellow-400/80 truncate tabular-nums">{fmt4(diff(outMain[row.key], outRef[row.key]))}</td>
                       {/if}
                     </tr>
                   {/each}
@@ -455,7 +459,7 @@
             {/if}
 
             <button
-              class="w-full py-1 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+              class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
               onclick={() => handleDeepAccuracy(outIdx)}
             >
               Deep Accuracy View
@@ -464,22 +468,22 @@
         {/each}
 
         <!-- Shared actions below all outputs -->
-        <div class="mt-3 space-y-2">
+        <div class="mt-4 space-y-2">
           <button
-            class="w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+            class="w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
             onclick={onshowbatchqueue}
           >
             Batch Queue
           </button>
           <div class="flex gap-2">
             <button
-              class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+              class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
               onclick={() => handleCut('input')}
             >
               Make Parameter
             </button>
             <button
-              class="flex-1 py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors"
+              class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
               onclick={() => handleCut('output')}
             >
               Make Output
@@ -490,7 +494,7 @@
 
       <!-- Export reproducer -->
       <button
-        class="mt-2 w-full py-1.5 bg-surface-elevated hover:bg-edge rounded text-xs transition-colors flex items-center justify-center gap-1.5"
+        class="mt-2 w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 flex items-center justify-center gap-1.5 active:scale-[0.98]"
         onclick={handleExport}
         disabled={exporting}
       >
@@ -508,25 +512,25 @@
         {/if}
       </button>
       <button
-        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors text-red-400"
+        class="mt-2 w-full py-2 rounded-lg text-xs transition-all duration-100 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 active:scale-[0.98]"
         onclick={handleDelete}
       >
         Delete
       </button>
 
     {:else if nodeStatus.status === 'failed'}
-      <div class="flex items-center gap-2 text-red-400 mb-3">
-        <div class="w-2 h-2 rounded-full bg-red-400"></div>
-        Failed
+      <div class="flex items-center gap-2.5 text-red-400 mb-4">
+        <div class="w-2.5 h-2.5 rounded-full bg-red-400"></div>
+        <span class="text-xs font-medium">Failed</span>
       </div>
       {#if nodeStatus.stage}
-        <div class="text-gray-400 text-xs mb-2">Stage: {nodeStatus.stage}</div>
+        <div class="text-content-secondary/40 text-xs mb-2">Stage: {nodeStatus.stage}</div>
       {/if}
       {#if nodeStatus.errorDetail}
-        <pre class="bg-[--bg-panel] rounded p-2 text-xs text-red-300 overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{nodeStatus.errorDetail}</pre>
+        <pre class="bg-surface-base rounded-lg p-3 text-xs text-red-300/80 overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{nodeStatus.errorDetail}</pre>
       {/if}
       <button
-        class="mt-3 w-full py-1.5 bg-[--bg-menu] hover:bg-[--bg-primary] rounded text-xs transition-colors text-red-400"
+        class="mt-3 w-full py-2 rounded-lg text-xs transition-all duration-100 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 active:scale-[0.98]"
         onclick={handleDelete}
       >
         Delete
@@ -536,14 +540,14 @@
     <!-- Attributes -->
     {#if selectedNode.attributes && Object.keys(selectedNode.attributes).length > 0}
       <details class="mt-4">
-        <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+        <summary class="text-xs text-content-secondary/40 cursor-pointer hover:text-content-secondary/60 transition-colors">
           Attributes ({Object.keys(selectedNode.attributes).length})
         </summary>
-        <div class="mt-1 bg-[--bg-panel] rounded p-2 text-xs font-mono max-h-32 overflow-y-auto">
+        <div class="mt-1.5 bg-surface-base rounded-lg p-2.5 text-xs font-mono max-h-32 overflow-y-auto">
           {#each Object.entries(selectedNode.attributes) as [key, value]}
-            <div class="flex justify-between gap-2">
-              <span class="text-gray-500">{key}</span>
-              <span class="text-gray-300 truncate">{String(value)}</span>
+            <div class="flex justify-between gap-2 py-0.5">
+              <span class="text-content-secondary/40">{key}</span>
+              <span class="text-content-secondary/70 truncate">{String(value)}</span>
             </div>
           {/each}
         </div>
@@ -553,18 +557,18 @@
     <!-- Inputs -->
     {#if selectedNode.inputs && selectedNode.inputs.length > 0}
       <details class="mt-4" open>
-        <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+        <summary class="text-xs text-content-secondary/40 cursor-pointer hover:text-content-secondary/60 transition-colors">
           Inputs ({selectedNode.inputs.length})
         </summary>
-        <div class="mt-1 space-y-1">
+        <div class="mt-1.5 space-y-1">
           {#each selectedNode.inputs as inp, idx}
             {@const sourceNode = graphStore.graphData?.nodes.find(n => n.name === inp.name)}
-            <div class="bg-[--bg-panel] rounded p-2 text-xs">
+            <div class="bg-surface-base rounded-lg p-2.5 text-xs">
               <div class="flex items-center gap-1.5">
-                <span class="text-gray-600 font-mono w-4 shrink-0">{idx}</span>
+                <span class="text-content-secondary/25 font-mono w-4 shrink-0">{idx}</span>
                 {#if !inp.is_const}
                   <button
-                    class="text-blue-400 hover:text-blue-300 font-mono truncate transition-colors text-left"
+                    class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
                     title={inp.name}
                     onmouseenter={() => {
                       if (sourceNode) setHoveredNode(sourceNode.id);
@@ -579,49 +583,49 @@
                     }}
                   >{inp.name}</button>
                 {:else}
-                  <span class="text-gray-300 font-mono truncate" title={inp.name}>{inp.name}</span>
+                  <span class="text-content-secondary/70 font-mono truncate" title={inp.name}>{inp.name}</span>
                 {/if}
               </div>
               {#if sourceNode}
-                <div class="text-gray-500 ml-5 mt-0.5">{sourceNode.type}</div>
+                <div class="text-content-secondary/40 ml-5 mt-0.5">{sourceNode.type}</div>
               {:else if inp.is_const}
-                <div class="ml-5 mt-0.5"><span class="px-1 py-0.5 bg-amber-900/40 text-amber-400 rounded text-[10px] leading-none">const</span></div>
+                <div class="ml-5 mt-0.5"><span class="px-1.5 py-0.5 bg-amber-500/10 text-amber-400/70 rounded-full text-[10px] leading-none">const</span></div>
               {/if}
               {#if inp.shape}
-                <div class="text-gray-500 ml-5 mt-0.5">
-                  [{#each inp.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}] {#if inp.element_type}<span class="text-gray-600">{inp.element_type}</span>{/if}
+                <div class="text-content-secondary/40 ml-5 mt-0.5">
+                  [{#each inp.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}] {#if inp.element_type}<span class="text-content-secondary/25">{inp.element_type}</span>{/if}
                 </div>
               {/if}
               {#if inp.is_const && inp.const_node_name}
                 <button
-                  class="ml-5 mt-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+                  class="ml-5 mt-1 text-[10px] text-accent hover:text-accent-hover transition-colors"
                   onclick={() => toggleConstData(inp.const_node_name!)}
                 >
                   {constDataExpanded.has(inp.const_node_name) ? 'Hide data' : 'View data'}
                 </button>
                 {#if constDataExpanded.has(inp.const_node_name)}
                   {#if constDataLoading.has(inp.const_node_name)}
-                    <div class="ml-5 mt-1 text-gray-500 text-[10px]">Loading...</div>
+                    <div class="ml-5 mt-1 text-content-secondary/30 text-[10px]">Loading...</div>
                   {:else if constDataCache.has(inp.const_node_name)}
                     {@const cd = constDataCache.get(inp.const_node_name)!}
                     <div class="ml-5 mt-1 space-y-1">
                       <div class="grid grid-cols-2 gap-x-3 text-[10px]">
-                        <span class="text-gray-600">dtype</span>
-                        <span class="text-gray-400 font-mono text-right">{cd.dtype}</span>
-                        <span class="text-gray-600">min</span>
-                        <span class="text-gray-400 font-mono text-right">{formatFloat(cd.stats.min)}</span>
-                        <span class="text-gray-600">max</span>
-                        <span class="text-gray-400 font-mono text-right">{formatFloat(cd.stats.max)}</span>
-                        <span class="text-gray-600">mean</span>
-                        <span class="text-gray-400 font-mono text-right">{formatFloat(cd.stats.mean)}</span>
-                        <span class="text-gray-600">std</span>
-                        <span class="text-gray-400 font-mono text-right">{formatFloat(cd.stats.std)}</span>
+                        <span class="text-content-secondary/30">dtype</span>
+                        <span class="text-content-secondary/60 font-mono text-right">{cd.dtype}</span>
+                        <span class="text-content-secondary/30">min</span>
+                        <span class="text-content-secondary/60 font-mono text-right">{formatFloat(cd.stats.min)}</span>
+                        <span class="text-content-secondary/30">max</span>
+                        <span class="text-content-secondary/60 font-mono text-right">{formatFloat(cd.stats.max)}</span>
+                        <span class="text-content-secondary/30">mean</span>
+                        <span class="text-content-secondary/60 font-mono text-right">{formatFloat(cd.stats.mean)}</span>
+                        <span class="text-content-secondary/30">std</span>
+                        <span class="text-content-secondary/60 font-mono text-right">{formatFloat(cd.stats.std)}</span>
                       </div>
                       <details>
-                        <summary class="text-[10px] text-gray-600 cursor-pointer hover:text-gray-500">
+                        <summary class="text-[10px] text-content-secondary/30 cursor-pointer hover:text-content-secondary/50 transition-colors">
                           Values ({cd.total_elements}{cd.truncated ? ', truncated' : ''})
                         </summary>
-                        <pre class="mt-1 bg-[--bg-panel] rounded p-1.5 text-[9px] text-gray-400 font-mono overflow-x-auto max-h-40 whitespace-pre-wrap leading-tight">{cd.data.map(v => formatFloat(v)).join(', ')}</pre>
+                        <pre class="mt-1 bg-surface-base rounded-lg p-2 text-[9px] text-content-secondary/50 font-mono overflow-x-auto max-h-40 whitespace-pre-wrap leading-tight">{cd.data.map(v => formatFloat(v)).join(', ')}</pre>
                       </details>
                     </div>
                   {/if}
@@ -636,16 +640,16 @@
     <!-- Outputs -->
     {#if outputs.length > 0}
       <details class="mt-4" open>
-        <summary class="text-xs text-gray-500 cursor-pointer hover:text-gray-400">
+        <summary class="text-xs text-content-secondary/40 cursor-pointer hover:text-content-secondary/60 transition-colors">
           Outputs ({outputs.length})
         </summary>
-        <div class="mt-1 space-y-1">
+        <div class="mt-1.5 space-y-1">
           {#each outputs as out}
-            <div class="bg-[--bg-panel] rounded p-2 text-xs">
+            <div class="bg-surface-base rounded-lg p-2.5 text-xs">
               <div class="flex items-center gap-1.5">
-                <span class="text-gray-600 font-mono w-4 shrink-0">{out.source_port}</span>
+                <span class="text-content-secondary/25 font-mono w-4 shrink-0">{out.source_port}</span>
                 <button
-                  class="text-blue-400 hover:text-blue-300 font-mono truncate transition-colors text-left"
+                  class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
                   title={out.targetNode?.name ?? out.targetId}
                   onmouseenter={() => setHoveredNode(out.targetId)}
                   onmouseleave={() => setHoveredNode(null)}
@@ -659,10 +663,10 @@
                 </button>
               </div>
               {#if out.targetNode}
-                <div class="text-gray-500 ml-5 mt-0.5">{out.targetNode.type}</div>
+                <div class="text-content-secondary/40 ml-5 mt-0.5">{out.targetNode.type}</div>
                 {#if out.targetNode.shape}
-                  <div class="text-gray-500 ml-5 mt-0.5">
-                    [{#each out.targetNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}] {#if out.targetNode.element_type}<span class="text-gray-600">{out.targetNode.element_type}</span>{/if}
+                  <div class="text-content-secondary/40 ml-5 mt-0.5">
+                    [{#each out.targetNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}] {#if out.targetNode.element_type}<span class="text-content-secondary/25">{out.targetNode.element_type}</span>{/if}
                   </div>
                 {/if}
               {/if}
@@ -673,4 +677,3 @@
     {/if}
   {/if}
 </div>
-

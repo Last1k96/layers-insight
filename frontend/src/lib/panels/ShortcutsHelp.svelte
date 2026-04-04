@@ -76,12 +76,11 @@
 <style>
   .shortcuts-modal {
     background: var(--bg-panel);
-    border: 1px solid var(--border-color);
-    border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    border-radius: 16px;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
     min-width: 320px;
     max-width: 420px;
-    backdrop-filter: blur(16px);
+    backdrop-filter: blur(24px);
     overflow: hidden;
   }
 
@@ -90,12 +89,13 @@
     align-items: center;
     justify-content: space-between;
     padding: 14px 16px;
-    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-panel);
   }
 
   .modal-header h3 {
-    font-size: 14px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
     color: var(--text-primary);
     margin: 0;
   }
@@ -104,31 +104,33 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
     border: none;
     background: none;
     color: var(--text-secondary);
-    border-radius: 4px;
+    opacity: 0.4;
+    border-radius: 8px;
     cursor: pointer;
-    transition: background 0.1s, color 0.1s;
+    transition: all 0.1s;
     padding: 0;
   }
 
   .close-btn:hover {
     background: var(--bg-menu);
     color: var(--text-primary);
+    opacity: 1;
   }
 
   .modal-body {
-    padding: 10px 16px 14px;
+    padding: 10px 16px 16px;
   }
 
   .shortcut-row {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 6px 0;
+    padding: 7px 0;
   }
 
   .shortcut-key {
@@ -136,12 +138,11 @@
     align-items: center;
     justify-content: center;
     min-width: 28px;
-    padding: 2px 8px;
+    padding: 3px 8px;
     font-size: 11px;
-    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+    font-family: var(--font-mono);
     background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 6px;
     color: var(--text-primary);
     white-space: nowrap;
   }
@@ -149,5 +150,6 @@
   .shortcut-desc {
     font-size: 12px;
     color: var(--text-secondary);
+    opacity: 0.6;
   }
 </style>

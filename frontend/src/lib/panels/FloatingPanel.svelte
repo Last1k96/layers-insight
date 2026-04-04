@@ -56,24 +56,25 @@
 </script>
 
 <div
-  class="absolute top-2 bottom-2 flex flex-col bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-lg shadow-xl z-10"
+  class="absolute top-2 bottom-2 flex flex-col bg-[--bg-panel]/95 backdrop-blur-xl rounded-xl z-10 overflow-hidden"
   class:transition-all={!resizing}
   class:left-2={side === 'left'}
   class:right-2={side === 'right'}
   style:width={collapsed ? '40px' : `${width}px`}
+  style:box-shadow="var(--shadow-panel)"
 >
   <!-- Header -->
   <div
-    class="flex items-center justify-between px-3 py-2 border-b border-[--border-color] cursor-pointer select-none shrink-0"
+    class="flex items-center justify-between px-3 py-2.5 cursor-pointer select-none shrink-0 bg-[--bg-panel]"
     role="button"
     tabindex="0"
     onclick={toggleCollapse}
     onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleCollapse(); }}}
   >
     {#if !collapsed}
-      <span class="text-sm font-medium text-content-primary">{title}</span>
+      <span class="text-[13px] font-medium tracking-tight text-content-primary">{title}</span>
     {/if}
-    <span class="text-content-secondary text-xs">{collapsed ? (side === 'left' ? '>' : '<') : (side === 'left' ? '<' : '>')}</span>
+    <span class="text-content-secondary/60 text-xs">{collapsed ? (side === 'left' ? '>' : '<') : (side === 'left' ? '<' : '>')}</span>
   </div>
 
   <!-- Content -->
@@ -85,7 +86,7 @@
     <!-- Resize handle -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div
-      class="absolute top-0 bottom-0 w-1 cursor-col-resize hover:bg-blue-500/50 transition-colors"
+      class="absolute top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-accent/30 transition-colors"
       class:right-0={side === 'left'}
       class:left-0={side === 'right'}
       role="separator"

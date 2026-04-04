@@ -69,11 +69,11 @@
   }
 </script>
 
-<!-- Card-style rule row: darker recessed background, inset controls -->
-<div class="flex items-center gap-1.5 px-2 py-1.5 bg-[--bg-menu] rounded border border-[--border-color]">
+<!-- Card-style rule row -->
+<div class="flex items-center gap-1.5 px-2.5 py-2 bg-surface-elevated rounded-lg">
   <!-- Field selector -->
   <select
-    class="px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs text-[--text-primary] focus:border-blue-500 focus:outline-none min-w-0"
+    class="px-1.5 py-1 bg-[--bg-input] rounded-md text-xs text-[--text-primary] focus:outline-none focus:ring-2 focus:ring-accent/30 min-w-0 transition-shadow"
     value={rule.field}
     onchange={handleFieldChange}
   >
@@ -84,7 +84,7 @@
 
   <!-- Operator selector -->
   <select
-    class="px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs text-[--text-primary] focus:border-blue-500 focus:outline-none shrink-0"
+    class="px-1.5 py-1 bg-[--bg-input] rounded-md text-xs text-[--text-primary] focus:outline-none focus:ring-2 focus:ring-accent/30 shrink-0 transition-shadow"
     value={rule.operator}
     onchange={handleOperatorChange}
   >
@@ -96,7 +96,7 @@
   <!-- Value input -->
   {#if meta.type === 'enum'}
     <select
-      class="flex-1 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs text-[--text-primary] focus:border-blue-500 focus:outline-none min-w-0"
+      class="flex-1 px-1.5 py-1 bg-[--bg-input] rounded-md text-xs text-[--text-primary] focus:outline-none focus:ring-2 focus:ring-accent/30 min-w-0 transition-shadow"
       value={rule.value}
       onchange={handleEnumChange}
     >
@@ -109,7 +109,7 @@
     <input
       type="text"
       inputmode="decimal"
-      class="flex-1 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs text-[--text-primary] focus:border-blue-500 focus:outline-none min-w-0 font-mono"
+      class="flex-1 px-1.5 py-1 bg-[--bg-input] rounded-md text-xs text-[--text-primary] focus:outline-none focus:ring-2 focus:ring-accent/30 min-w-0 font-mono tabular-nums transition-shadow"
       value={rule.value}
       placeholder="0"
       oninput={handleValueInput}
@@ -119,7 +119,7 @@
   {:else}
     <input
       type="text"
-      class="flex-1 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs text-[--text-primary] focus:border-blue-500 focus:outline-none min-w-0"
+      class="flex-1 px-1.5 py-1 bg-[--bg-input] rounded-md text-xs text-[--text-primary] focus:outline-none focus:ring-2 focus:ring-accent/30 min-w-0 transition-shadow"
       value={rule.value}
       placeholder="value"
       oninput={handleValueInput}
@@ -128,7 +128,7 @@
 
   <!-- Drag handle -->
   <button
-    class="cursor-grab text-gray-600 hover:text-gray-400 select-none shrink-0 leading-none px-0.5"
+    class="cursor-grab text-content-secondary/20 hover:text-content-secondary/50 select-none shrink-0 leading-none px-0.5 transition-colors"
     onmousedown={onDragStart}
     title="Drag to reorder"
   >
@@ -141,7 +141,7 @@
 
   <!-- Delete button -->
   <button
-    class="text-gray-600 hover:text-red-400 shrink-0 transition-colors leading-none"
+    class="text-content-secondary/20 hover:text-red-400 shrink-0 transition-colors leading-none"
     title="Remove rule"
     onclick={onDelete}
   >

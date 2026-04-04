@@ -96,16 +96,20 @@
 
 <div class="flex-1 flex items-start justify-center p-8 pt-[15vh] bg-[--bg-primary]">
   <div class="max-w-2xl w-full">
-    <h1 class="text-3xl font-bold mb-2">Layers Insight</h1>
-    <p class="text-content-secondary mb-8">Neural Network Graph Debugger</p>
+    <h1 class="text-3xl font-bold mb-2 tracking-tight">Layers Insight</h1>
+    <p class="text-content-secondary/50 mb-8">Neural Network Graph Debugger</p>
 
     {#if sessionStore.loading}
       <div class="text-content-secondary">Loading sessions...</div>
     {:else if sessionStore.sessions.length === 0}
-      <div class="py-12">
-        <p class="text-content-secondary mb-4 text-center">No sessions found</p>
+      <div class="py-16 flex flex-col items-center">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-content-secondary/15 mb-4">
+          <rect x="3" y="3" width="18" height="18" rx="3" />
+          <path d="M9 12h6M12 9v6" stroke-linecap="round" />
+        </svg>
+        <p class="text-content-secondary/40 mb-6 text-sm">No sessions found</p>
         <button
-          class="w-full py-3 border border-dashed border-edge hover:border-content-secondary/50 rounded-lg text-content-secondary hover:text-content-primary transition-colors"
+          class="w-full max-w-xs py-3 border border-dashed border-content-secondary/10 hover:border-content-secondary/25 rounded-xl text-content-secondary/50 hover:text-content-primary transition-all duration-150"
           onclick={onnewsession}
         >
           + New Session
@@ -116,7 +120,8 @@
         {#each sessionStore.sessions as session, i (session.id)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <div
-            class="group w-full text-left p-4 bg-surface-panel hover:bg-surface-elevated rounded-lg border transition-colors cursor-pointer {i === selectedIndex ? 'border-accent bg-surface-elevated' : 'border-edge hover:border-content-secondary/30'} {compareMode && compareSelection.includes(session.id) ? 'ring-2 ring-accent' : ''}"
+            class="group w-full text-left p-4 bg-surface-panel hover:bg-surface-elevated rounded-xl transition-all duration-150 cursor-pointer {i === selectedIndex ? 'bg-surface-elevated ring-1 ring-accent/50' : 'hover:ring-1 hover:ring-content-secondary/10'} {compareMode && compareSelection.includes(session.id) ? 'ring-2 ring-accent' : ''}"
+            style:box-shadow={i === selectedIndex ? 'var(--shadow-elevated)' : 'none'}
             role="button"
             tabindex="0"
             onclick={() => compareMode ? toggleCompareSelect(new MouseEvent('click'), session.id) : onsessionselected(session.id)}
@@ -207,14 +212,14 @@
 
       <div class="flex gap-2">
         <button
-          class="flex-1 py-3 border border-dashed border-edge hover:border-content-secondary/50 rounded-lg text-content-secondary hover:text-content-primary transition-colors"
+          class="flex-1 py-3 border border-dashed border-content-secondary/10 hover:border-content-secondary/25 rounded-xl text-content-secondary/50 hover:text-content-primary transition-all duration-150"
           onclick={onnewsession}
         >
           + New Session
         </button>
         {#if sessionStore.sessions.length >= 2}
           <button
-            class="py-3 px-4 border rounded-lg transition-colors {compareMode ? 'border-accent text-accent bg-accent/10' : 'border-edge text-content-secondary hover:border-content-secondary/50 hover:text-content-primary'}"
+            class="py-3 px-4 rounded-xl transition-all duration-150 {compareMode ? 'text-accent bg-accent/10' : 'text-content-secondary/50 hover:text-content-primary hover:bg-surface-elevated'}"
             onclick={toggleCompareMode}
           >
             {compareMode ? 'Cancel' : 'Compare'}
@@ -223,7 +228,7 @@
       </div>
       {#if compareMode && compareSelection.length === 2}
         <button
-          class="w-full py-3 mt-2 bg-accent hover:bg-accent-hover rounded-lg font-medium transition-colors"
+          class="w-full py-3 mt-2 bg-accent hover:bg-accent-hover rounded-xl font-medium transition-all duration-150 active:scale-[0.99]"
           onclick={startCompare}
         >
           Compare Selected Sessions
@@ -236,7 +241,7 @@
     {/if}
 
     {#if sessionStore.error}
-      <div class="mt-4 p-3 bg-red-900/50 border border-red-700 rounded text-red-300 text-sm">
+      <div class="mt-4 p-3 bg-red-500/10 rounded-lg text-red-300/80 text-sm">
         {sessionStore.error}
       </div>
     {/if}

@@ -10,32 +10,86 @@
   --border-color: #2F3347;
   --text-primary: #E1E4ED;
   --text-secondary: #9BA1B5;
+
+  --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
+
+  --shadow-panel: 0 4px 24px rgba(0, 0, 0, 0.25), 0 1px 4px rgba(0, 0, 0, 0.15);
+  --shadow-modal: 0 8px 40px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+  --shadow-elevated: 0 2px 12px rgba(0, 0, 0, 0.2);
 }
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace;
+  font-family: var(--font-sans);
   background: var(--bg-primary);
   color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Monospace override */
+code, pre, .font-mono, [class*="font-mono"] {
+  font-family: var(--font-mono) !important;
 }
 
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 5px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-panel);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: #3A3F56;
-  border-radius: 3px;
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4A5070;
 }
 
 /* Pulsing animation for executing status */
 @keyframes pulse-ring {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  50% { opacity: 0.4; }
 }
 .pulse-ring {
   animation: pulse-ring 1.5s ease-in-out infinite;
+}
+
+/* Glow effect for active status dots */
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 4px 1px currentColor; }
+  50% { box-shadow: 0 0 8px 3px currentColor; }
+}
+.status-glow {
+  animation: glow-pulse 2s ease-in-out infinite;
+}
+
+/* Better focus rings globally */
+*:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-primary), 0 0 0 4px #4C8DFF;
+}
+
+/* Button base reset for consistent styling */
+button {
+  font-family: inherit;
+}
+
+/* Subtle row hover for lists */
+.row-hover {
+  transition: background-color 0.1s ease, transform 0.1s ease;
+}
+.row-hover:hover {
+  background-color: rgba(76, 141, 255, 0.04);
+}
+
+/* Interactive element hover lift */
+.hover-lift {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-elevated);
 }
