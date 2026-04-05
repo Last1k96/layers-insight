@@ -18,10 +18,12 @@ import type { TextPipelineState } from './textPipeline';
 import { createTextAtlas, measureText } from './textAtlas';
 import type { TextAtlasData } from './textAtlas';
 import { SpatialGrid } from './hitTest';
+import { EdgeHitIndex } from './edgeHitTest';
 
 export class WebGPURenderer {
   readonly canvas: HTMLCanvasElement;
   readonly hitGrid = new SpatialGrid();
+  readonly edgeHitIndex = new EdgeHitIndex();
 
   private device: GPUDevice;
   private context: GPUCanvasContext;
@@ -43,6 +45,8 @@ export class WebGPURenderer {
   private nodeSizeFn: ((id: string) => { width: number; height: number }) | null = null;
   private _accuracyViewActive = false;
   private _lastEdgeMode: 'default' | 'search' | 'accuracy' = 'default';
+  private _lastHoveredEdge: number | null = null;
+  private _lastSelectedEdge: number | null = null;
 
   // Store last camera params so we can re-apply on resize
   private lastCameraTx = 0;
@@ -142,6 +146,9 @@ export class WebGPURenderer {
       height: nodeSize(n.id).height,
     })));
 
+    // Build edge hit index for proximity queries
+    this.edgeHitIndex.build(graphData.edges, graphData.nodes, nodeSize);
+
     // Build edge geometry (8 floats per vertex: centerX, centerY, normalX, normalY, r, g, b, a)
     const edgeVerts = buildEdgeGeometry(graphData.edges, graphData.nodes, nodeSize);
     this.edgesPipeline = updateEdgeVertices(
@@ -182,6 +189,8 @@ export class WebGPURenderer {
     zoomRatio: number,
     nodeOverrides?: Map<string, { name: string; type: string; color: string }>,
     accuracyViewActive = false,
+    hoveredEdgeIndex: number | null = null,
+    selectedEdgeIndex: number | null = null,
   ): void {
     if (!this.graphData) return;
     this.currentZoom = zoomRatio;
@@ -190,12 +199,27 @@ export class WebGPURenderer {
     if (accuracyViewActive !== this._accuracyViewActive) {
       this._accuracyViewActive = accuracyViewActive;
       this.rebuildEdges(accuracyViewActive, nodeStatusMap);
+      // Force edge highlight re-eval after accuracy toggle
+      this._lastHoveredEdge = -1;
+      this._lastSelectedEdge = -1;
     }
+
+    // Track which edge is highlighted (hovered or selected)
+    const highlightEdge = selectedEdgeIndex ?? hoveredEdgeIndex;
+    const prevHighlight = this._lastSelectedEdge ?? this._lastHoveredEdge;
 
 
     const nodes = this.graphData.nodes;
+    const edges = this.graphData.edges;
     const searchActive = searchVisible && searchResults && searchResults.length > 0;
     const searchSet = searchActive ? new Set(searchResults!.map(r => r.id)) : null;
+
+    // Edge-connected node highlighting
+    const edgeEndpoints = new Set<string>();
+    if (selectedEdgeIndex !== null && selectedEdgeIndex < edges.length) {
+      edgeEndpoints.add(edges[selectedEdgeIndex].source);
+      edgeEndpoints.add(edges[selectedEdgeIndex].target);
+    }
 
     // Build node instances
     const nodeData = new Float32Array(nodes.length * NODE_FLOATS);
@@ -207,6 +231,7 @@ export class WebGPURenderer {
       const isGrayed = grayedNodes.has(node.id);
       const isSelected = selectedNodeId === node.id;
       const isHovered = hoveredNodeId === node.id;
+      const isEdgeEndpoint = edgeEndpoints.has(node.id);
       const nodeStatus = nodeStatusMap.get(node.id);
 
       // Widen node if override label needs more space
@@ -274,6 +299,15 @@ export class WebGPURenderer {
         strokeWidth = 3;
       }
 
+      // Edge-connected node highlighting
+      if (isEdgeEndpoint && !isSelected && !isHovered) {
+        fill.r = fill.r + (1.0 - fill.r) * 0.25;
+        fill.g = fill.g + (1.0 - fill.g) * 0.25;
+        fill.b = fill.b + (1.0 - fill.b) * 0.25;
+        strokeR = 0.298; strokeG = 0.553; strokeB = 1.0; // #4C8DFF
+        strokeWidth = 3;
+      }
+
       // Opacity: grayed nodes semi-transparent, search dims non-matches
       let opacity = 1;
       if (isGrayed) {
@@ -305,18 +339,37 @@ export class WebGPURenderer {
       nodeData, nodes.length,
     );
 
-    // Rebuild edges for search dimming (skip if accuracy view handles it)
+    // Rebuild edges for search dimming / edge highlighting (skip if accuracy view handles it)
+    const edgeHighlightChanged = highlightEdge !== prevHighlight;
     if (!accuracyViewActive) {
-      if (searchActive) {
+      const needsRebuild = searchActive
+        || this._lastEdgeMode !== 'default'
+        || edgeHighlightChanged
+        || (highlightEdge !== null);
+
+      if (needsRebuild) {
+        const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 }; // #4C8DFF
         const dim = { r: 0.184, g: 0.200, b: 0.255, a: 0.3 };
-        const edgeVerts = buildEdgeGeometry(this.graphData.edges, this.graphData.nodes, this.nodeSizeFn!, () => ({ start: dim, end: dim }));
-        this.edgesPipeline = updateEdgeVertices(this.edgesPipeline, this.device, this.cameraBuffer, edgeVerts, edgeVerts.length / 8);
-      } else if (this._lastEdgeMode !== 'default') {
-        const edgeVerts = buildEdgeGeometry(this.graphData.edges, this.graphData.nodes, this.nodeSizeFn!);
+        const edgeVerts = buildEdgeGeometry(this.graphData.edges, this.graphData.nodes, this.nodeSizeFn!, (edge, idx) => {
+          if (idx === highlightEdge) return { start: hl, end: hl };
+          if (searchActive) return { start: dim, end: dim };
+          return undefined as any; // use default
+        });
         this.edgesPipeline = updateEdgeVertices(this.edgesPipeline, this.device, this.cameraBuffer, edgeVerts, edgeVerts.length / 8);
       }
-      this._lastEdgeMode = searchActive ? 'search' : 'default';
+      this._lastEdgeMode = (searchActive || highlightEdge !== null) ? 'search' : 'default';
+    } else if (edgeHighlightChanged && highlightEdge !== null) {
+      // In accuracy view, rebuild base edges with the highlighted edge visible
+      const dimColor = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b, a: 0.15 };
+      const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 };
+      const baseVerts = buildEdgeGeometry(this.graphData.edges, this.graphData.nodes, this.nodeSizeFn!, (_edge, idx) => {
+        if (idx === highlightEdge) return { start: hl, end: hl };
+        return { start: dimColor, end: dimColor };
+      });
+      this.edgesPipeline = updateEdgeVertices(this.edgesPipeline, this.device, this.cameraBuffer, baseVerts, baseVerts.length / 8);
     }
+    this._lastHoveredEdge = hoveredEdgeIndex;
+    this._lastSelectedEdge = selectedEdgeIndex;
 
     // Build text glyph instances (skip if zoomed out)
     // In accuracy view, pass the set of inferred node IDs so non-inferred text is hidden
