@@ -1,18 +1,12 @@
 """Graph extraction and layout service."""
 from __future__ import annotations
 
-import json
 import re
-import subprocess
-import sys
-from pathlib import Path
 from typing import Any, Optional
 
 from backend.schemas.graph import GraphData, GraphEdge, GraphNode, NodeInput
+from backend.utils.dag_layout import compute_dag_layout
 from backend.utils.op_categories import get_op_category, get_op_color
-
-# Path to ELK layout script
-ELK_SCRIPT = Path(__file__).parent.parent / "utils" / "elk_layout.js"
 
 # Node sizing constants (must match frontend svgRenderer.ts)
 NODE_HEIGHT = 32
@@ -188,36 +182,20 @@ def extract_graph(model: Any) -> GraphData:
 
 
 async def compute_layout(graph_data: GraphData) -> dict:
-    """Compute layout using ELK via Node.js subprocess.
+    """Compute layered DAG layout in pure Python.
 
     Returns dict with 'nodes' mapping node_id to {x, y} and
     'edges' mapping edge index to {waypoints: [{x,y}]}.
-    Falls back to topological layer assignment if ELK fails.
     """
-    import asyncio
-
-    elk_input = {
-        "nodes": [{"id": n.id, "width": n.width or 100, "height": n.height or NODE_HEIGHT} for n in graph_data.nodes],
-        "edges": [{"source": e.source, "target": e.target} for e in graph_data.edges],
-    }
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "node", "--stack-size=65536", str(ELK_SCRIPT),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate(json.dumps(elk_input).encode())
-
-        if proc.returncode == 0:
-            return json.loads(stdout.decode())
-        else:
-            raise RuntimeError(f"ELK layout failed (rc={proc.returncode}): {stderr.decode()}")
-    except RuntimeError:
-        raise
-    except Exception as e:
-        raise RuntimeError(f"ELK layout error: {e}") from e
+    layout_nodes = [
+        {"id": n.id, "width": n.width or 100, "height": n.height or NODE_HEIGHT}
+        for n in graph_data.nodes
+    ]
+    layout_edges = [
+        {"source": e.source, "target": e.target, "source_port": e.source_port}
+        for e in graph_data.edges
+    ]
+    return compute_dag_layout(layout_nodes, layout_edges)
 
 
 def apply_layout(graph_data: GraphData, layout_result: dict) -> GraphData:
