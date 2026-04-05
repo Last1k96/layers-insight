@@ -1,7 +1,7 @@
 // Shared tensor visualization utilities — Canvas 2D, no chart libraries.
 // All tensor data is Float32Array.
 
-export type ColormapName = 'viridis' | 'coolwarm' | 'magma' | 'blueGreenRed';
+export type ColormapName = 'viridis' | 'coolwarm' | 'magma' | 'blueGreenRed' | 'inferno' | 'RdBu' | 'gray' | 'turbo' | 'cividis';
 
 // ---------------------------------------------------------------------------
 // Colormap LUTs — 256 entries x 3 channels (RGB), stored as Uint8Array(768).
@@ -94,11 +94,84 @@ const blueGreenRedStops: [number, number, number][] = [
 	[255, 0, 0],
 ];
 
+const infernoStops: [number, number, number][] = [
+	[0, 0, 4],
+	[12, 7, 45],
+	[40, 11, 84],
+	[72, 12, 104],
+	[101, 18, 108],
+	[132, 26, 104],
+	[163, 41, 87],
+	[192, 62, 63],
+	[217, 89, 37],
+	[236, 121, 12],
+	[246, 158, 3],
+	[249, 196, 22],
+	[242, 234, 74],
+	[252, 255, 164],
+];
+
+const RdBuStops: [number, number, number][] = [
+	[103, 0, 31],
+	[178, 24, 43],
+	[214, 96, 77],
+	[244, 165, 130],
+	[253, 219, 199],
+	[247, 247, 247],
+	[209, 229, 240],
+	[146, 197, 222],
+	[67, 147, 195],
+	[33, 102, 172],
+	[5, 48, 97],
+];
+
+const grayStops: [number, number, number][] = [
+	[0, 0, 0],
+	[255, 255, 255],
+];
+
+const turboStops: [number, number, number][] = [
+	[48, 18, 59],
+	[70, 68, 172],
+	[62, 125, 236],
+	[29, 179, 247],
+	[26, 222, 195],
+	[79, 244, 119],
+	[159, 246, 44],
+	[212, 226, 25],
+	[246, 189, 18],
+	[253, 141, 14],
+	[240, 89, 12],
+	[210, 40, 12],
+	[165, 8, 10],
+	[122, 4, 3],
+];
+
+const cividisStops: [number, number, number][] = [
+	[0, 32, 77],
+	[25, 51, 92],
+	[52, 69, 100],
+	[76, 87, 106],
+	[100, 104, 111],
+	[123, 121, 113],
+	[147, 138, 107],
+	[171, 157, 93],
+	[195, 177, 73],
+	[218, 197, 47],
+	[234, 221, 39],
+	[253, 253, 56],
+];
+
 export const COLORMAPS: Record<ColormapName, Uint8Array> = {
 	viridis: buildLUT(viridisStops),
 	coolwarm: buildLUT(coolwarmStops),
 	magma: buildLUT(magmaStops),
 	blueGreenRed: buildLUT(blueGreenRedStops),
+	inferno: buildLUT(infernoStops),
+	RdBu: buildLUT(RdBuStops),
+	gray: buildLUT(grayStops),
+	turbo: buildLUT(turboStops),
+	cividis: buildLUT(cividisStops),
 };
 
 // ---------------------------------------------------------------------------
@@ -370,6 +443,181 @@ export function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 	if (denom === 0) return 0;
 	return dot / denom;
 }
+
+// ---------------------------------------------------------------------------
+// Colorbar drawing
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Normalization modes
+// ---------------------------------------------------------------------------
+
+export type NormMode = 'linear' | 'log' | 'symlog' | 'percentile' | 'centered' | 'histEq' | 'gamma';
+
+export interface NormOptions {
+	mode: NormMode;
+	/** Gamma exponent for 'gamma' mode (default 0.5) */
+	gamma?: number;
+	/** Percentile bounds for 'percentile' mode [lo, hi] (default [5, 95]) */
+	percentiles?: [number, number];
+	/** Linear threshold for 'symlog' mode (default 1e-3) */
+	linthresh?: number;
+}
+
+/** Normalize a Float32Array to [0,1] using the specified mode. Returns a new array. */
+export function normalizeData(data: Float32Array, opts: NormOptions): Float32Array {
+	const out = new Float32Array(data.length);
+	if (data.length === 0) return out;
+
+	const { mode } = opts;
+
+	if (mode === 'linear') {
+		let lo = data[0], hi = data[0];
+		for (let i = 1; i < data.length; i++) {
+			if (data[i] < lo) lo = data[i];
+			if (data[i] > hi) hi = data[i];
+		}
+		const span = hi - lo || 1;
+		for (let i = 0; i < data.length; i++) out[i] = (data[i] - lo) / span;
+	} else if (mode === 'log') {
+		let lo = data[0], hi = data[0];
+		for (let i = 1; i < data.length; i++) {
+			if (data[i] < lo) lo = data[i];
+			if (data[i] > hi) hi = data[i];
+		}
+		const logMax = Math.log(hi - lo + 1) || 1;
+		for (let i = 0; i < data.length; i++) out[i] = Math.log(data[i] - lo + 1) / logMax;
+	} else if (mode === 'symlog') {
+		const lt = opts.linthresh ?? 1e-3;
+		// Symmetric log: linear in [-lt, lt], log outside
+		let maxAbs = 0;
+		for (let i = 0; i < data.length; i++) {
+			const a = Math.abs(data[i]);
+			if (a > maxAbs) maxAbs = a;
+		}
+		const logScale = maxAbs > lt ? Math.log10(maxAbs / lt) + 1 : 1;
+		for (let i = 0; i < data.length; i++) {
+			const v = data[i];
+			const a = Math.abs(v);
+			let mapped: number;
+			if (a <= lt) {
+				mapped = v / lt; // [-1, 1]
+			} else {
+				mapped = Math.sign(v) * (Math.log10(a / lt) + 1);
+			}
+			out[i] = (mapped / logScale + 1) / 2; // map to [0,1]
+		}
+	} else if (mode === 'percentile') {
+		const [pLo, pHi] = opts.percentiles ?? [5, 95];
+		const sorted = Float32Array.from(data).sort();
+		const lo = sorted[Math.floor(sorted.length * pLo / 100)];
+		const hi = sorted[Math.ceil(sorted.length * pHi / 100) - 1];
+		const span = hi - lo || 1;
+		for (let i = 0; i < data.length; i++) {
+			out[i] = Math.max(0, Math.min(1, (data[i] - lo) / span));
+		}
+	} else if (mode === 'centered') {
+		// Center at 0, symmetric range
+		let maxAbs = 0;
+		for (let i = 0; i < data.length; i++) {
+			const a = Math.abs(data[i]);
+			if (a > maxAbs) maxAbs = a;
+		}
+		const span = maxAbs || 1;
+		for (let i = 0; i < data.length; i++) out[i] = (data[i] / span + 1) / 2;
+	} else if (mode === 'histEq') {
+		// Histogram equalization
+		const bins = 256;
+		let lo = data[0], hi = data[0];
+		for (let i = 1; i < data.length; i++) {
+			if (data[i] < lo) lo = data[i];
+			if (data[i] > hi) hi = data[i];
+		}
+		const span = hi - lo || 1;
+		const hist = new Uint32Array(bins);
+		for (let i = 0; i < data.length; i++) {
+			const idx = Math.min(bins - 1, Math.max(0, Math.floor((data[i] - lo) / span * (bins - 1))));
+			hist[idx]++;
+		}
+		// CDF
+		const cdf = new Float32Array(bins);
+		cdf[0] = hist[0];
+		for (let i = 1; i < bins; i++) cdf[i] = cdf[i - 1] + hist[i];
+		const cdfMin = cdf.find(v => v > 0) ?? 0;
+		const cdfRange = data.length - cdfMin || 1;
+		for (let i = 0; i < data.length; i++) {
+			const idx = Math.min(bins - 1, Math.max(0, Math.floor((data[i] - lo) / span * (bins - 1))));
+			out[i] = (cdf[idx] - cdfMin) / cdfRange;
+		}
+	} else if (mode === 'gamma') {
+		const g = opts.gamma ?? 0.5;
+		let lo = data[0], hi = data[0];
+		for (let i = 1; i < data.length; i++) {
+			if (data[i] < lo) lo = data[i];
+			if (data[i] > hi) hi = data[i];
+		}
+		const span = hi - lo || 1;
+		for (let i = 0; i < data.length; i++) {
+			const t = (data[i] - lo) / span;
+			out[i] = Math.pow(Math.max(0, Math.min(1, t)), g);
+		}
+	}
+
+	return out;
+}
+
+// ---------------------------------------------------------------------------
+// Normalized value → ImageData (uses pre-normalized [0,1] data)
+// ---------------------------------------------------------------------------
+
+/** Convert pre-normalized [0,1] Float32Array to ImageData. */
+export function normalizedToImageData(
+	data: Float32Array,
+	w: number,
+	h: number,
+	colormap: ColormapName,
+): ImageData {
+	const lut = COLORMAPS[colormap];
+	const img = new ImageData(w, h);
+	const pixels = img.data;
+	for (let i = 0; i < data.length; i++) {
+		const idx = Math.max(0, Math.min(255, Math.round(data[i] * 255)));
+		const lutBase = idx * 3;
+		const pxBase = i * 4;
+		pixels[pxBase] = lut[lutBase];
+		pixels[pxBase + 1] = lut[lutBase + 1];
+		pixels[pxBase + 2] = lut[lutBase + 2];
+		pixels[pxBase + 3] = 255;
+	}
+	return img;
+}
+
+// ---------------------------------------------------------------------------
+// Percentile computation
+// ---------------------------------------------------------------------------
+
+/** Compute a percentile value from a Float32Array. p in [0, 100]. */
+export function percentile(data: Float32Array, p: number): number {
+	const sorted = Float32Array.from(data).sort();
+	const idx = Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * p / 100)));
+	return sorted[idx];
+}
+
+// ---------------------------------------------------------------------------
+// All colormap options for UI selects
+// ---------------------------------------------------------------------------
+
+export const ALL_COLORMAP_OPTIONS: { value: ColormapName; label: string }[] = [
+	{ value: 'blueGreenRed', label: 'Blue-Green-Red' },
+	{ value: 'viridis', label: 'Viridis' },
+	{ value: 'coolwarm', label: 'Coolwarm' },
+	{ value: 'magma', label: 'Magma' },
+	{ value: 'inferno', label: 'Inferno' },
+	{ value: 'RdBu', label: 'Red-Blue (diverging)' },
+	{ value: 'gray', label: 'Grayscale' },
+	{ value: 'turbo', label: 'Turbo' },
+	{ value: 'cividis', label: 'Cividis (colorblind)' },
+];
 
 // ---------------------------------------------------------------------------
 // Colorbar drawing
