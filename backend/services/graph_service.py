@@ -203,7 +203,7 @@ async def compute_layout(graph_data: GraphData) -> dict:
 
     try:
         proc = await asyncio.create_subprocess_exec(
-            "node", str(ELK_SCRIPT),
+            "node", "--stack-size=65536", str(ELK_SCRIPT),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
