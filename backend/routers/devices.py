@@ -262,6 +262,23 @@ async def path_suggest(
     return PathSuggestResult(suggestions=suggestions)
 
 
+class PathCheckResult(BaseModel):
+    exists: bool
+    is_file: bool = False
+    is_dir: bool = False
+
+
+@router.get("/check-path", response_model=PathCheckResult)
+async def check_path(
+    path: str = Query(..., description="Path to check"),
+) -> PathCheckResult:
+    """Check whether a file or directory exists at the given path."""
+    p = Path(path).expanduser()
+    if not p.exists():
+        return PathCheckResult(exists=False)
+    return PathCheckResult(exists=True, is_file=p.is_file(), is_dir=p.is_dir())
+
+
 class ModelInputInfo(BaseModel):
     name: str
     shape: list[int | str]

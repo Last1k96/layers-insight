@@ -116,15 +116,16 @@ class SessionService:
                 if inp.source == "file" and inp.path:
                     # User-provided file: copy into session inputs dir
                     src = Path(inp.path)
-                    if src.exists():
-                        dst = inputs_dir / src.name
-                        shutil.copy2(str(src), str(dst))
-                        # Store as session-relative path
-                        updated_inputs.append(inp.model_copy(update={
-                            "path": f"inputs/{src.name}",
-                        }))
-                    else:
-                        updated_inputs.append(inp)
+                    if not src.exists():
+                        raise FileNotFoundError(
+                            f"Input file not found for '{inp.name}': {inp.path}"
+                        )
+                    dst = inputs_dir / src.name
+                    shutil.copy2(str(src), str(dst))
+                    # Store as session-relative path
+                    updated_inputs.append(inp.model_copy(update={
+                        "path": f"inputs/{src.name}",
+                    }))
                 elif inp.shape:
                     # Random source with known shape: generate and save
                     # Resolve dynamic dims if present

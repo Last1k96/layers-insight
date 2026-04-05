@@ -140,18 +140,32 @@ class ConfigStore {
     return { valid: false, devices: ['CPU'], error: 'Request failed' };
   }
 
-  async fetchModelInputs(modelPath: string, ovPath?: string): Promise<ModelInputInfo[]> {
+  async fetchModelInputs(modelPath: string, ovPath?: string): Promise<{ inputs: ModelInputInfo[]; error?: string }> {
     try {
       const params = new URLSearchParams({ model_path: modelPath });
       if (ovPath) params.set('ov_path', ovPath);
       const res = await fetch(`/api/model-inputs?${params}`);
       if (res.ok) {
-        return await res.json();
+        return { inputs: await res.json() };
+      }
+      try {
+        const body = await res.json();
+        return { inputs: [], error: body.detail || `Server error (${res.status})` };
+      } catch {
+        return { inputs: [], error: `Server error (${res.status})` };
       }
     } catch (e) {
       console.error('Failed to fetch model inputs:', e);
+      return { inputs: [], error: 'Could not connect to server' };
     }
-    return [];
+  }
+
+  async checkPath(path: string): Promise<{ exists: boolean; is_file: boolean }> {
+    try {
+      const res = await fetch(`/api/check-path?path=${encodeURIComponent(path)}`);
+      if (res.ok) return await res.json();
+    } catch {}
+    return { exists: false, is_file: false };
   }
 
   async fetchDeviceConfig(deviceName: string): Promise<DeviceProperty[]> {
