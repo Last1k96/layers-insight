@@ -92,6 +92,7 @@
 
 	function redraw() {
 		if (!canvas || !offscreenImage || !sliceData) return;
+		const t0 = performance.now();
 		const ctx = canvas.getContext('2d');
 		if (!ctx) return;
 		const dw = canvas.clientWidth, dh = canvas.clientHeight;

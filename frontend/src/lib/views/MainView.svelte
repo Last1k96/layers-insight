@@ -30,6 +30,29 @@
   let showBatchQueue = $state(false);
   let showBisectPanel = $state(false);
   let batchQueueInitialMode = $state<'all' | 'by-type' | 'uninferred' | 'from-selection'>('all');
+  let loadingPct = $state(0);
+
+  // Animate progress bar — smooth interpolation during layout phase
+  $effect(() => {
+    const stage = graphStore.loadingStage;
+    const basePct: Record<string, number> = { loading_model: 2, extracting: 4, layout: 5, shapes: 95 };
+    const base = basePct[stage] ?? 0;
+
+    if (stage === 'layout' && graphStore.layoutStartedAt > 0) {
+      // Animate from 5% → 93% over the estimated duration (ease-out curve)
+      const est = graphStore.layoutEstimateMs;
+      const start = graphStore.layoutStartedAt;
+      const interval = setInterval(() => {
+        const elapsed = performance.now() - start;
+        const t = Math.min(elapsed / est, 1);
+        const eased = 1 - (1 - t) ** 2;
+        loadingPct = 5 + eased * 88;
+      }, 100);
+      return () => clearInterval(interval);
+    } else {
+      loadingPct = base;
+    }
+  });
 
   function restoreSessionTasks(): void {
     const session = sessionStore.currentSession;
@@ -61,11 +84,11 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     const session = sessionStore.currentSession;
     if (session) {
+      await connect(session.id);
       graphStore.fetchGraph(session.id);
-      connect(session.id);
       restoreSessionTasks();
 
       // Restore bisect state if a bisection was active before page refresh
@@ -207,7 +230,12 @@
 
   {#if graphStore.loading}
     <div class="absolute inset-0 flex items-center justify-center bg-surface-base/80 z-20">
-      <div class="text-content-secondary">Loading graph...</div>
+      <div class="flex flex-col items-center gap-3">
+        <div class="w-48 h-1.5 bg-white/10 rounded-full overflow-hidden">
+          <div class="h-full bg-blue-500 rounded-full transition-all duration-300" style="width: {loadingPct}%"></div>
+        </div>
+        <div class="text-content-secondary text-sm">{graphStore.loadingDetail || 'Connecting…'}</div>
+      </div>
     </div>
   {/if}
 </div>
