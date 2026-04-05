@@ -289,6 +289,58 @@ class TestFanOutSpreading:
             assert src_x < sx < src_x + 200
 
 
+class TestTransformerFanOut:
+    def test_high_fanout_corridors_avoid_nodes(self):
+        """Transformer mask fan-out: 1 source → 12 targets across many layers.
+
+        Simulates Where_2 → 12 ScaledDotProductAttention pattern.
+        Corridor waypoints must not overlap with any real node.
+        """
+        # Build: where → chain of 12 "layers", each with 3 ops,
+        # each ending at an SDPA-like target.
+        # where connects to every SDPA via long-range edges.
+        nodes = [_node("where")]
+        edges = []
+        prev_layer_out = "where"
+        sdpa_names = []
+        all_intermediate = []
+        for t in range(12):
+            # 3 intermediate ops per "transformer layer"
+            layer_nodes = []
+            prev = prev_layer_out
+            for step in range(3):
+                nid = f"L{t}_op{step}"
+                nodes.append(_node(nid))
+                edges.append(_edge(prev, nid))
+                prev = nid
+                layer_nodes.append(nid)
+            all_intermediate.extend(layer_nodes)
+
+            sdpa = f"sdpa_{t}"
+            nodes.append(_node(sdpa, width=200))
+            edges.append(_edge(prev, sdpa))
+            # Long-range fan-out edge: where → sdpa
+            edges.append(_edge("where", sdpa))
+            sdpa_names.append(sdpa)
+            prev_layer_out = sdpa
+
+        result = compute_dag_layout(nodes, edges)
+        pos = result["nodes"]
+
+        # Verify corridor waypoints don't overlap real intermediate nodes
+        for eidx, e in enumerate(edges):
+            if e["source"] != "where":
+                continue
+            ek = f"e{eidx}"
+            wps = result["edges"][ek]["waypoints"]
+            for wp in wps[1:-1]:  # skip start/end
+                for nid in all_intermediate:
+                    n_left = pos[nid]["x"]
+                    n_right = pos[nid]["x"] + 120
+                    assert wp["x"] <= n_left - 5 or wp["x"] >= n_right + 5, \
+                        f"corridor wp x={wp['x']:.0f} overlaps {nid} [{n_left:.0f}, {n_right:.0f}]"
+
+
 class TestPerformance:
     def test_500_nodes_under_1s(self):
         """Layout of 500 nodes should complete in under 1 second."""
