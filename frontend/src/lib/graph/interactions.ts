@@ -2,7 +2,7 @@
  * Graph interactions — click, hover, keyboard navigation.
  * Uses WebGPU hit testing for node detection.
  */
-import { getGraph, getGPURenderer, getCamera, centerOnNode, refreshRenderer, setHoveredNode } from './renderer';
+import { getGraph, getGPURenderer, getCamera, centerOnNode, refreshRenderer, setHoveredNode, setHoveredEdge, getHoveredEdge } from './renderer';
 import { graphStore } from '../stores/graph.svelte';
 import { queueStore } from '../stores/queue.svelte';
 import { sessionStore } from '../stores/session.svelte';
@@ -23,6 +23,8 @@ export function setupInteractions(): void {
   // Click/dblclick timer to distinguish single from double click
   let clickTimer: ReturnType<typeof setTimeout> | null = null;
 
+  const EDGE_HIT_RADIUS_PX = 8;
+
   function hitTestNode(e: MouseEvent): string | null {
     const rect = canvas.getBoundingClientRect();
     const gp = camera!.viewportToGraph(e.clientX - rect.left, e.clientY - rect.top);
@@ -30,29 +32,42 @@ export function setupInteractions(): void {
     return (nodeId && graph!.hasNode(nodeId)) ? nodeId : null;
   }
 
-  // Single click: select node, show info. Ctrl+click also centers.
+  function hitTestEdge(e: MouseEvent): { edgeIndex: number; dist: number } | null {
+    const rect = canvas.getBoundingClientRect();
+    const gp = camera!.viewportToGraph(e.clientX - rect.left, e.clientY - rect.top);
+    const radius = EDGE_HIT_RADIUS_PX / camera!.ratio;
+    return gpu!.edgeHitIndex.query(gp.x, gp.y, radius);
+  }
+
+  // Single click: select node or edge. Ctrl+click also centers.
   function handleClick(e: MouseEvent) {
     if (camera!.didDrag) return;
 
     const nodeId = hitTestNode(e);
 
-    if (!nodeId) {
-      // Clicked on empty space — deselect immediately (no timer needed)
+    if (nodeId) {
+      // Delay single-click action so dblclick can cancel it
+      const ctrlKey = e.ctrlKey;
       if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-      graphStore.selectNode(null);
-      refreshRenderer();
+      clickTimer = setTimeout(() => {
+        clickTimer = null;
+        graphStore.selectNode(nodeId);
+        if (ctrlKey) centerOnNode(nodeId);
+        refreshRenderer();
+      }, 250);
       return;
     }
 
-    // Delay single-click action so dblclick can cancel it
-    const ctrlKey = e.ctrlKey;
+    // No node hit — check edge
     if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-    clickTimer = setTimeout(() => {
-      clickTimer = null;
-      graphStore.selectNode(nodeId);
-      if (ctrlKey) centerOnNode(nodeId);
-      refreshRenderer();
-    }, 250);
+    const edgeHit = hitTestEdge(e);
+    if (edgeHit) {
+      graphStore.selectEdge(edgeHit.edgeIndex);
+    } else {
+      graphStore.selectNode(null);
+      graphStore.selectEdge(null);
+    }
+    refreshRenderer();
   }
 
   // Double click: select node + enqueue inference. Shift+dblclick re-enqueues.
@@ -95,8 +110,20 @@ export function setupInteractions(): void {
       const rect = canvas.getBoundingClientRect();
       const gp = camera!.viewportToGraph(e.clientX - rect.left, e.clientY - rect.top);
       const hitId = gpu!.hitGrid.query(gp.x, gp.y);
-      setHoveredNode(hitId);
-      canvas.style.cursor = hitId ? 'pointer' : '';
+
+      if (hitId) {
+        setHoveredNode(hitId);
+        setHoveredEdge(null);
+        canvas.style.cursor = 'pointer';
+      } else {
+        setHoveredNode(null);
+        // Edge hover with hysteresis: use larger radius to dehover
+        const currentEdge = getHoveredEdge();
+        const radius = EDGE_HIT_RADIUS_PX / camera!.ratio;
+        const edgeHit = gpu!.edgeHitIndex.query(gp.x, gp.y, currentEdge !== null ? radius * 1.3 : radius);
+        setHoveredEdge(edgeHit?.edgeIndex ?? null);
+        canvas.style.cursor = edgeHit ? 'pointer' : '';
+      }
     });
   }
 

@@ -38,6 +38,10 @@ class GraphStore {
   subSessionVersion = $state(0);
   /** True while Alt is held — switches to accuracy flow visualization. */
   accuracyViewActive = $state(false);
+  /** Currently selected edge (index into graphData.edges[]). */
+  selectedEdgeIndex = $state<number | null>(null);
+  /** Bumped on camera changes so GhostNodes can recompute positions reactively. */
+  cameraVersion = $state(0);
 
   /** Returns the nodeStatusMap for the active sub-session. */
   get nodeStatusMap(): Map<string, NodeStatus> {
@@ -71,7 +75,16 @@ class GraphStore {
 
   selectNode(nodeId: string | null): void {
     this.selectedNodeId = nodeId;
+    if (nodeId !== null) this.selectedEdgeIndex = null;
     queueStore.selectByNodeId(nodeId);
+  }
+
+  selectEdge(index: number | null): void {
+    this.selectedEdgeIndex = index;
+    if (index !== null) {
+      this.selectedNodeId = null;
+      queueStore.selectByNodeId(null);
+    }
   }
 
   updateNodeStatus(nodeId: string, status: NodeStatus, subSessionId?: string | null): void {

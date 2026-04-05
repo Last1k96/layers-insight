@@ -12,6 +12,7 @@ let panZoom: PanZoom | null = null;
 let gpuRenderer: WebGPURenderer | null = null;
 let refreshScheduled = false;
 let hoveredNodeId: string | null = null;
+let hoveredEdgeIndex: number | null = null;
 let currentGraphData: GraphData | null = null;
 
 /** Node dimensions cache (id -> {width, height}) */
@@ -42,6 +43,17 @@ export function setHoveredNode(nodeId: string | null): void {
 
 export function getHoveredNode(): string | null {
   return hoveredNodeId;
+}
+
+export function setHoveredEdge(index: number | null): void {
+  if (hoveredEdgeIndex !== index) {
+    hoveredEdgeIndex = index;
+    scheduleRefresh();
+  }
+}
+
+export function getHoveredEdge(): number | null {
+  return hoveredEdgeIndex;
 }
 
 export async function initRenderer(container: HTMLElement, graphData: GraphData): Promise<void> {
@@ -99,6 +111,7 @@ export async function initRenderer(container: HTMLElement, graphData: GraphData)
   // Register camera listener BEFORE fitToView so the setState triggers updateCamera
   panZoom.on('updated', () => {
     renderer.updateCamera(panZoom!.translateX, panZoom!.translateY, panZoom!.ratio);
+    graphStore.cameraVersion++;
     scheduleRefresh();
   });
 
@@ -152,6 +165,7 @@ export function destroyRenderer(): void {
   graphModel = null;
   currentGraphData = null;
   hoveredNodeId = null;
+  hoveredEdgeIndex = null;
   nodeSizes.clear();
 }
 
@@ -223,6 +237,8 @@ function doRefresh(): void {
     panZoom.ratio,
     graphStore.nodeOverrides,
     graphStore.accuracyViewActive,
+    hoveredEdgeIndex,
+    graphStore.selectedEdgeIndex,
   );
 }
 

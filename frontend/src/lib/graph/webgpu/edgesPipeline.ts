@@ -182,7 +182,7 @@ export function buildEdgeGeometry(
   edges: GraphEdge[],
   nodes: GraphNode[],
   nodeSize: (id: string) => { width: number; height: number },
-  edgeColorFn?: (edge: GraphEdge) => EdgeColor,
+  edgeColorFn?: (edge: GraphEdge, index: number) => EdgeColor | undefined,
 ): Float32Array {
   const nodeMap = new Map<string, GraphNode>();
   for (const n of nodes) nodeMap.set(n.id, n);
@@ -243,11 +243,11 @@ export function buildEdgeGeometry(
     pushVertex(p0x, p0y, -n0x, -n0y);
   }
 
-  for (const edge of edges) {
+  for (let ei = 0; ei < edges.length; ei++) {
+    const edge = edges[ei];
     // Resolve color gradient for this edge
-    const color = edgeColorFn
-      ? edgeColorFn(edge)
-      : { start: defaultRGBA, end: defaultRGBA };
+    const color = (edgeColorFn ? edgeColorFn(edge, ei) : undefined)
+      ?? { start: defaultRGBA, end: defaultRGBA };
 
     const points = evaluateEdgeCurve(edge, nodeMap, nodeSize);
     if (points.length < 2) continue;
@@ -486,7 +486,7 @@ export function buildPathGeometry(
   return buf.subarray(0, offset);
 }
 
-function evaluateEdgeCurve(
+export function evaluateEdgeCurve(
   edge: GraphEdge,
   nodeMap: Map<string, GraphNode>,
   nodeSize: (id: string) => { width: number; height: number },

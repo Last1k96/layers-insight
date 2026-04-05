@@ -1,5 +1,6 @@
 <script lang="ts">
   import GraphCanvas from '../graph/GraphCanvas.svelte';
+  import GhostNodes from '../graph/GhostNodes.svelte';
   import Minimap from '../graph/Minimap.svelte';
   import GraphSearch from '../graph/GraphSearch.svelte';
   import AccuracyToggle from '../graph/AccuracyToggle.svelte';
@@ -134,6 +135,11 @@
           showBatchQueue = false;
           return;
         }
+        if (graphStore.selectedEdgeIndex !== null) {
+          graphStore.selectEdge(null);
+          refreshRenderer();
+          return;
+        }
         if (graphStore.selectedNodeId) {
           graphStore.selectNode(null);
           refreshRenderer();
@@ -177,6 +183,7 @@
 
   <!-- Graph fills entire background -->
   <GraphCanvas />
+  <GhostNodes />
 
   <!-- Top-center toolbar -->
   {#if graphStore.graphData}
