@@ -11,6 +11,7 @@ from collections import defaultdict, deque
 # Spacing constants (match Netron/ELK dagre config)
 NODE_SPACING = 20   # horizontal gap between nodes in same layer
 LAYER_SPACING = 20  # vertical gap between layers
+DUMMY_SPACING = 2   # horizontal gap between dummy nodes (tight bundling)
 
 
 def compute_dag_layout(
@@ -96,6 +97,9 @@ def compute_dag_layout(
     # Phase 4: Brandes-Köpf coordinate assignment (4 variants, median)
     x_of = _brandes_kopf(layers, num_layers, ext_nmap, ext_adj, ext_rev, pos)
 
+    # Phase 4b: Straighten long edges and route alongside subgraph boundaries
+    _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_layers, edges)
+
     # Phase 5: Y-coordinates
     layer_y: list[float] = [0.0] * num_layers
     layer_mid: list[float] = [0.0] * num_layers
@@ -110,29 +114,77 @@ def compute_dag_layout(
     positions = {nid: {"x": x_of[nid], "y": layer_y[layer_of[nid]]} for nid in node_ids}
 
     # Edge waypoints (using dummy positions for intermediate points)
+    # Source port counts (max source_port + 1 per node)
     port_counts: dict[str, int] = defaultdict(int)
     for e in edges:
         p = e.get("source_port", 0) + 1
         if p > port_counts[e["source"]]:
             port_counts[e["source"]] = p
 
+    # Target port counts (max target_port + 1 per node)
+    target_port_counts: dict[str, int] = defaultdict(int)
+    for e in edges:
+        p = e.get("target_port", 0) + 1
+        if p > target_port_counts[e["target"]]:
+            target_port_counts[e["target"]] = p
+
+    # Fan-out groups: edges sharing same (source, source_port),
+    # sorted by actual route direction so exit order matches (no crossing).
+    # For long edges, use the first dummy (corridor) position.
+    # For short edges, use the target center.
+    fan_groups: dict[tuple[str, int], list[int]] = defaultdict(list)
+    for i, e in enumerate(edges):
+        fan_groups[(e["source"], e.get("source_port", 0))].append(i)
+    for group in fan_groups.values():
+        if len(group) > 1:
+            def _route_x(ei, _chains=edge_chains, _xof=x_of, _edges=edges, _nmap=ext_nmap):
+                chain = _chains[ei]
+                if len(chain) > 2:
+                    return _xof[chain[1]]  # first dummy = corridor position
+                tid = _edges[ei]["target"]
+                return _xof.get(tid, 0) + _nmap.get(tid, {"width": 0})["width"] / 2
+            group.sort(key=_route_x)
+
     ewp: dict[str, dict] = {}
     for i, (e, chain) in enumerate(zip(edges, edge_chains)):
         sid, tid = e["source"], e["target"]
         sn, tn = ext_nmap[sid], ext_nmap[tid]
 
-        # Start point (bottom of source, port-spread)
+        # Start point (bottom of source, port-spread + fan-out)
         nports = port_counts.get(sid, 1)
+        sport = e.get("source_port", 0)
+        group_key = (sid, sport)
+        fan_list = fan_groups[group_key]
+        fan_count = len(fan_list)
+        fan_idx = fan_list.index(i)
+
         if nports > 1:
-            pt = e.get("source_port", 0)
+            # Multiple distinct output ports: divide node width among ports
             ps = sn["width"] / (nports + 1)
-            sx = x_of[sid] + ps * (pt + 1)
+            port_center = x_of[sid] + ps * (sport + 1)
+            if fan_count > 1:
+                # Sub-spread within this port's slice
+                half_slice = ps * 0.4
+                fan_step = (2 * half_slice) / (fan_count + 1)
+                sx = port_center - half_slice + fan_step * (fan_idx + 1)
+            else:
+                sx = port_center
+        elif fan_count > 1:
+            # Single port but multiple consumers: spread across node width
+            fs = sn["width"] / (fan_count + 1)
+            sx = x_of[sid] + fs * (fan_idx + 1)
         else:
             sx = x_of[sid] + sn["width"] / 2
         sy = layer_y[layer_of[sid]] + sn["height"]
 
-        # End point (top-center of target)
-        ex = x_of[tid] + tn["width"] / 2
+        # End point (top of target, target-port-spread)
+        ntports = target_port_counts.get(tid, 1)
+        if ntports > 1:
+            tpt = e.get("target_port", 0)
+            tps = tn["width"] / (ntports + 1)
+            ex = x_of[tid] + tps * (tpt + 1)
+        else:
+            ex = x_of[tid] + tn["width"] / 2
         ey = layer_y[layer_of[tid]]
 
         wps: list[dict[str, float]] = [{"x": sx, "y": sy}]
@@ -205,6 +257,157 @@ def _sort_by_barycenter(layer, neighbor_adj, pos):
             if nbs else pos.get(nid, 0)
         )
     layer.sort(key=lambda nid: bc[nid])
+
+
+# ---------------------------------------------------------------------------
+# Phase 4b: long-edge straightening & subgraph-boundary routing
+# ---------------------------------------------------------------------------
+
+EDGE_SPACING = 4  # px between parallel long-edge corridors
+
+
+def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_layers, edges):
+    """Post-process long-edge dummy positions for visual quality.
+
+    Strategy per chain:
+      1. Compute the ideal straight-line path (linear interpolation src→tgt).
+      2. If the straight line is clear of real nodes → use it (fan-out edges).
+      3. Otherwise → route alongside the subgraph boundary (skip-connections).
+
+    Parallel edges from the same source get consistent spacing.
+    Uses actual target-port arrival x (not node center) for smooth interpolation.
+    """
+    # Build real-node intervals per layer for overlap checking
+    layer_intervals: list[list[tuple[float, float]]] = [[] for _ in range(num_layers)]
+    for L in range(num_layers):
+        for nid in layers[L]:
+            w = ext_nmap[nid]["width"]
+            if w > 0:
+                layer_intervals[L].append((x_of[nid], x_of[nid] + w))
+        layer_intervals[L].sort()
+
+    # Pre-compute target port counts for accurate arrival positions
+    tgt_port_cnt: dict[str, int] = defaultdict(int)
+    for e in edges:
+        p = e.get("target_port", 0) + 1
+        if p > tgt_port_cnt[e["target"]]:
+            tgt_port_cnt[e["target"]] = p
+
+    # Group edge chains by source for parallel spacing
+    source_groups: dict[str, list[tuple[int, list[str]]]] = defaultdict(list)
+    for i, chain in enumerate(edge_chains):
+        if len(chain) > 2:
+            source_groups[chain[0]].append((i, chain))
+
+    for src, chains in source_groups.items():
+        # Sort by target x for deterministic parallel ordering
+        chains.sort(key=lambda ic: x_of[ic[1][-1]])
+        n_parallel = len(chains)
+
+        for rank, (idx, chain) in enumerate(chains):
+            dummies = chain[1:-1]
+            if not dummies:
+                continue
+
+            src_n, tgt_n = chain[0], chain[-1]
+            src_L, tgt_L = layer_of[src_n], layer_of[tgt_n]
+            span = tgt_L - src_L
+            if span == 0:
+                continue
+
+            src_cx = x_of[src_n] + ext_nmap[src_n]["width"] / 2
+            # Use actual target-port arrival x instead of node center
+            e = edges[idx]
+            ntports = tgt_port_cnt.get(tgt_n, 1)
+            if ntports > 1:
+                tpt = e.get("target_port", 0)
+                tgt_cx = x_of[tgt_n] + ext_nmap[tgt_n]["width"] / (ntports + 1) * (tpt + 1)
+            else:
+                tgt_cx = x_of[tgt_n] + ext_nmap[tgt_n]["width"] / 2
+            par_off = (rank - (n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
+
+            # Check whether the ideal straight line is clear of real nodes
+            straight_ok = True
+            for did in dummies:
+                dL = layer_of[did]
+                t = (dL - src_L) / span
+                ix = src_cx + t * (tgt_cx - src_cx) + par_off
+                for left, right in layer_intervals[dL]:
+                    if left - NODE_SPACING <= ix <= right + NODE_SPACING:
+                        straight_ok = False
+                        break
+                if not straight_ok:
+                    break
+
+            # Reject steep diagonals — a corridor looks better than a
+            # long line that cuts across the graph at a sharp angle.
+            if straight_ok and abs(src_cx - tgt_cx) > ext_nmap[src_n]["width"]:
+                straight_ok = False
+
+            if straight_ok:
+                # Ideal straight line — fan-out edges, ShapeOf, etc.
+                for did in dummies:
+                    dL = layer_of[did]
+                    t = (dL - src_L) / span
+                    x_of[did] = src_cx + t * (tgt_cx - src_cx) + par_off
+            else:
+                # Route alongside the subgraph boundary (skip-connections).
+                # Only consider nodes within the source-target x-range so
+                # distant outliers (e.g. a wide ShapeOf far to the right)
+                # don't push the corridor unreasonably far.
+                src_x = x_of[src_n]
+                tgt_x = x_of[tgt_n]
+                src_r = src_x + ext_nmap[src_n]["width"]
+                tgt_r = tgt_x + ext_nmap[tgt_n]["width"]
+                margin = NODE_SPACING * 5  # 100 px
+                range_lo = min(src_x, tgt_x) - margin
+                range_hi = max(src_r, tgt_r) + margin
+
+                # Collect filtered boundaries across intermediate layers
+                max_boundary = -float("inf")
+                min_boundary = float("inf")
+                for did in dummies:
+                    dL = layer_of[did]
+                    for left, right in layer_intervals[dL]:
+                        # Include only if the interval overlaps the relevance range
+                        if right >= range_lo and left <= range_hi:
+                            if right > max_boundary:
+                                max_boundary = right
+                            if left < min_boundary:
+                                min_boundary = left
+
+                left_corridor = (min_boundary - NODE_SPACING
+                                 if min_boundary < float("inf") else src_cx)
+                right_corridor = (max_boundary + NODE_SPACING
+                                  if max_boundary > -float("inf") else src_cx)
+
+                # Choose the side closer to both source and target
+                dist_left = abs(src_cx - left_corridor) + abs(tgt_cx - left_corridor)
+                dist_right = abs(src_cx - right_corridor) + abs(tgt_cx - right_corridor)
+                go_right = dist_right <= dist_left
+                corridor_x = right_corridor if go_right else left_corridor
+
+                # Ensure the final position (corridor_x + par_off) doesn't
+                # overlap ANY real node.  The outlier filter can leave the
+                # corridor on top of an excluded node, and par_off can push
+                # an otherwise-clear corridor into a nearby node.
+                for _ in range(20):
+                    clear = True
+                    actual_x = corridor_x + par_off
+                    for did in dummies:
+                        dL = layer_of[did]
+                        for left, right in layer_intervals[dL]:
+                            if left - NODE_SPACING < actual_x < right + NODE_SPACING:
+                                corridor_x = ((right + NODE_SPACING - par_off)
+                                              if go_right
+                                              else (left - NODE_SPACING - par_off))
+                                actual_x = corridor_x + par_off
+                                clear = False
+                    if clear:
+                        break
+
+                for did in dummies:
+                    x_of[did] = corridor_x + par_off
 
 
 # ---------------------------------------------------------------------------
@@ -377,7 +580,11 @@ def _horiz_compact(layers, num_layers, root, aln, nmap, all_nodes, *, reverse=Fa
                 u = root[p]
                 # Separation: use width[w] for reversed (right-to-left) packing
                 # to get correct gaps after negation; width[pred] for normal
-                sep = nmap[w]["width"] + NODE_SPACING if reverse else nmap[p]["width"] + NODE_SPACING
+                # Use tight spacing when both nodes are dummies (invisible routing points)
+                w_dummy = nmap[w]["width"] == 0 and nmap[w]["height"] == 0
+                p_dummy = nmap[p]["width"] == 0 and nmap[p]["height"] == 0
+                gap = DUMMY_SPACING if (w_dummy and p_dummy) else NODE_SPACING
+                sep = nmap[w]["width"] + gap if reverse else nmap[p]["width"] + gap
                 if sink[v] == v:
                     sink[v] = sink[u]
                 if sink[v] != sink[u]:
