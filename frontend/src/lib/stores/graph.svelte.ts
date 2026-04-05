@@ -24,6 +24,12 @@ class GraphStore {
   searchVisible = $state(false);
   searchIndex = $state(0);
   loading = $state(false);
+  loadingStage = $state('');
+  loadingDetail = $state('');
+  /** Estimated layout duration in ms (from node count heuristic). */
+  layoutEstimateMs = $state(0);
+  /** Timestamp when layout phase started. */
+  layoutStartedAt = $state(0);
   grayedNodes = $state<Set<string>>(new Set());
   activeSubSessionId = $state<string | null>(null);
   /** Display overrides for nodes (e.g. cut node shown as Parameter) */
@@ -58,6 +64,8 @@ class GraphStore {
       console.error('Failed to load graph:', e);
     } finally {
       this.loading = false;
+      this.loadingStage = '';
+      this.loadingDetail = '';
     }
   }
 

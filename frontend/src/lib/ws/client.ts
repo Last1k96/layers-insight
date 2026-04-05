@@ -21,10 +21,10 @@ export function setConnectionCallbacks(
   onReconnect = reconnectCb;
 }
 
-export function connect(sid: string): void {
+export function connect(sid: string): Promise<void> {
   sessionId = sid;
   reconnectAttempts = 0;
-  _connect();
+  return _connect();
 }
 
 export function disconnect(): void {
@@ -45,37 +45,41 @@ export function sendMessage(data: Record<string, unknown>): void {
   }
 }
 
-function _connect(): void {
-  if (!sessionId) return;
+function _connect(): Promise<void> {
+  if (!sessionId) return Promise.resolve();
 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.host;
   ws = new WebSocket(`${protocol}//${host}/ws/${sessionId}`);
 
-  ws.onopen = () => {
-    reconnectAttempts = 0;
-    if (onReconnect) onReconnect();
-  };
+  return new Promise<void>((resolve) => {
+    ws!.onopen = () => {
+      reconnectAttempts = 0;
+      if (onReconnect) onReconnect();
+      resolve();
+    };
 
-  ws.onmessage = (event) => {
-    try {
-      const msg = JSON.parse(event.data);
-      handleMessage(msg);
-    } catch (e) {
-      console.error('WS message parse error:', e);
-    }
-  };
+    ws!.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data);
+        handleMessage(msg);
+      } catch (e) {
+        console.error('WS message parse error:', e);
+      }
+    };
 
-  ws.onclose = () => {
-    if (sessionId) {
-      if (onDisconnect) onDisconnect();
-      _scheduleReconnect();
-    }
-  };
+    ws!.onclose = () => {
+      resolve(); // don't block caller if connection fails
+      if (sessionId) {
+        if (onDisconnect) onDisconnect();
+        _scheduleReconnect();
+      }
+    };
 
-  ws.onerror = () => {
-    // onclose will fire after this
-  };
+    ws!.onerror = () => {
+      // onclose will fire after this
+    };
+  });
 }
 
 function _scheduleReconnect(): void {
@@ -86,6 +90,20 @@ function _scheduleReconnect(): void {
 }
 
 function handleMessage(msg: any): void {
+  if (msg.type === 'graph_progress') {
+    graphStore.loadingStage = msg.stage || '';
+    graphStore.loadingDetail = msg.detail || '';
+    if (msg.stage === 'layout' && msg.node_count) {
+      const n = msg.node_count;
+      // Calibrated from 496 nodes / 32s => ~65ms/node
+      graphStore.layoutEstimateMs = 1000 + n * 65;
+      graphStore.layoutStartedAt = performance.now();
+    } else {
+      graphStore.layoutStartedAt = 0;
+    }
+    return;
+  }
+
   if (msg.type === 'sub_session_created') {
     // Cancel any waiting tasks from the previous context
     for (const t of queueStore.tasks) {
