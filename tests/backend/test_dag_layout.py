@@ -198,6 +198,97 @@ class TestStraightEdges:
         assert abs(p_center - children_mid) < 30
 
 
+class TestLongEdgeStraightening:
+    def test_parallel_long_edges_straight_and_spaced(self):
+        """Parallel long edges from same source should be straight and spaced apart."""
+        # src -> mid -> t0, src -> mid -> t1, src -> t0 (long), src -> t1 (long)
+        nodes = [_node("src"), _node("mid"), _node("t0"), _node("t1")]
+        edges = [
+            _edge("src", "mid"),
+            _edge("mid", "t0"),
+            _edge("mid", "t1"),
+            _edge("src", "t0"),  # long edge, span=2
+            _edge("src", "t1"),  # long edge, span=2
+        ]
+        result = compute_dag_layout(nodes, edges)
+        # e3 and e4 are long edges with intermediate waypoints
+        wp3 = result["edges"]["e3"]["waypoints"]
+        wp4 = result["edges"]["e4"]["waypoints"]
+        assert len(wp3) >= 3
+        assert len(wp4) >= 3
+        # Intermediate dummies should be distinguishable (not collapsed to same x)
+        mid3 = wp3[1]["x"]
+        mid4 = wp4[1]["x"]
+        assert mid3 != mid4
+
+    def test_single_long_edge_has_waypoints(self):
+        """A single long edge should have intermediate waypoints."""
+        nodes = [_node("a"), _node("b"), _node("c")]
+        edges = [_edge("a", "b"), _edge("b", "c"), _edge("a", "c")]
+        result = compute_dag_layout(nodes, edges)
+        wps = result["edges"]["e2"]["waypoints"]
+        assert len(wps) >= 3
+
+    def test_bypass_edge_hugs_boundary(self):
+        """A long edge bypassing a subgraph should route alongside, not through it."""
+        # Create a subgraph: a -> b -> c -> d, with a -> d bypassing b and c
+        nodes = [_node("a"), _node("b"), _node("c"), _node("d")]
+        edges = [_edge("a", "b"), _edge("b", "c"), _edge("c", "d"), _edge("a", "d")]
+        result = compute_dag_layout(nodes, edges)
+        # e3 (a->d) is the bypass edge spanning 3 layers
+        wp = result["edges"]["e3"]["waypoints"]
+        assert len(wp) >= 4  # start + 2 intermediate + end
+
+        # The intermediate waypoints should be outside the real nodes' x-range
+        # (i.e., not overlapping b or c)
+        pos = result["nodes"]
+        for midwp in wp[1:-1]:
+            for nid in ["b", "c"]:
+                n_left = pos[nid]["x"]
+                n_right = pos[nid]["x"] + 120
+                assert midwp["x"] <= n_left - 10 or midwp["x"] >= n_right + 10, \
+                    f"waypoint x={midwp['x']:.0f} overlaps node {nid} [{n_left:.0f}, {n_right:.0f}]"
+
+
+class TestTargetPortSpreading:
+    def test_target_ports_spread(self):
+        """Edges to different target ports should arrive at different X."""
+        nodes = [_node("a"), _node("b"), _node("c", width=200)]
+        edges = [
+            {"source": "a", "target": "c", "source_port": 0, "target_port": 0},
+            {"source": "b", "target": "c", "source_port": 0, "target_port": 1},
+        ]
+        result = compute_dag_layout(nodes, edges)
+        wp0_end = result["edges"]["e0"]["waypoints"][-1]["x"]
+        wp1_end = result["edges"]["e1"]["waypoints"][-1]["x"]
+        assert wp0_end != wp1_end
+
+    def test_single_target_port_centered(self):
+        """Single incoming edge should arrive at center."""
+        nodes = [_node("a"), _node("b", width=200)]
+        edges = [_edge("a", "b")]
+        result = compute_dag_layout(nodes, edges)
+        wps = result["edges"]["e0"]["waypoints"]
+        # End x should be at center of b
+        b_x = result["nodes"]["b"]["x"]
+        assert abs(wps[-1]["x"] - (b_x + 100)) < 1.0  # 200/2 = 100
+
+
+class TestFanOutSpreading:
+    def test_fan_out_same_port(self):
+        """Multiple edges from same source+port should start at different X."""
+        nodes = [_node("src", width=200), _node("t0"), _node("t1"), _node("t2")]
+        edges = [_edge("src", "t0"), _edge("src", "t1"), _edge("src", "t2")]
+        result = compute_dag_layout(nodes, edges)
+        starts = [result["edges"][f"e{i}"]["waypoints"][0]["x"] for i in range(3)]
+        # All three should be at different X positions
+        assert len(set(starts)) == 3
+        # They should be within the source node's width
+        src_x = result["nodes"]["src"]["x"]
+        for sx in starts:
+            assert src_x < sx < src_x + 200
+
+
 class TestPerformance:
     def test_500_nodes_under_1s(self):
         """Layout of 500 nodes should complete in under 1 second."""

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from typing import Any, Optional
 
 from backend.schemas.graph import GraphData, GraphEdge, GraphNode, NodeInput
@@ -13,12 +14,21 @@ NODE_HEIGHT = 32
 NODE_MIN_WIDTH = 100
 NODE_PADDING = 20
 CHAR_WIDTH = 7  # approximate average char width for 11px sans-serif
+PORT_MIN_SPACING = 12  # minimum pixels between adjacent port positions
 
 
-def _compute_node_size(op_type: str) -> tuple[float, float]:
-    """Compute node width/height from op type label, matching frontend text measurement."""
+def _compute_node_size(op_type: str, in_degree: int = 0, out_degree: int = 0) -> tuple[float, float]:
+    """Compute node width/height from op type label and edge degree.
+
+    Widens nodes that have many incoming or outgoing edges so that
+    port-spread edges have enough horizontal room.
+    """
     text_width = len(op_type) * CHAR_WIDTH
     width = max(NODE_MIN_WIDTH, text_width + NODE_PADDING * 2)
+    port_degree = max(in_degree, out_degree)
+    if port_degree > 1:
+        degree_width = PORT_MIN_SPACING * (port_degree + 1)
+        width = max(width, degree_width)
     return (width, NODE_HEIGHT)
 
 
@@ -178,6 +188,25 @@ def extract_graph(model: Any) -> GraphData:
             height=h,
         ))
 
+    # Post-process: widen nodes based on distinct port count (not total edges).
+    # A node with 12 edges all from port 0 has 1 output port — no widening.
+    # A node with 3 distinct input ports needs space for port spreading.
+    src_port_count: dict[str, int] = defaultdict(int)
+    tgt_port_count: dict[str, int] = defaultdict(int)
+    for e in edges:
+        sp = e.source_port + 1
+        if sp > src_port_count[e.source]:
+            src_port_count[e.source] = sp
+        tp = e.target_port + 1
+        if tp > tgt_port_count[e.target]:
+            tgt_port_count[e.target] = tp
+    for n in nodes:
+        new_w, _ = _compute_node_size(
+            n.type, tgt_port_count.get(n.id, 0), src_port_count.get(n.id, 0),
+        )
+        if new_w > n.width:
+            n.width = new_w
+
     return GraphData(nodes=nodes, edges=edges)
 
 
@@ -192,7 +221,7 @@ async def compute_layout(graph_data: GraphData) -> dict:
         for n in graph_data.nodes
     ]
     layout_edges = [
-        {"source": e.source, "target": e.target, "source_port": e.source_port}
+        {"source": e.source, "target": e.target, "source_port": e.source_port, "target_port": e.target_port}
         for e in graph_data.edges
     ]
     return compute_dag_layout(layout_nodes, layout_edges)
