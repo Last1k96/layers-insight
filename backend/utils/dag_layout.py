@@ -381,7 +381,7 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
 
                 edge_routes.append({
                     "mode": "corridor", "chain": chain, "dummies": dummies,
-                    "base": base, "go_right": go_right, "tgt_cx": tgt_cx,
+                    "base": base, "go_right": go_right, "tgt_cx": tgt_cx, "tgt_L": tgt_L,
                 })
 
         # --- Pass 2 & 3: compute shared base per side, assign by target order ---
@@ -422,8 +422,14 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                 if clear:
                     break
 
-            # Assign par_off by target x order (leftmost target → leftmost slot)
-            order = sorted(range(side_count), key=lambda k: side_routes[k]["tgt_cx"])
+            # Assign par_off by peel-off order: edges that leave the corridor
+            # earliest (closest target) get the innermost slot (closest to
+            # targets), so they're already gone when later edges peel off.
+            # For right-side corridors: earliest peel-off → leftmost slot.
+            # For left-side corridors: earliest peel-off → rightmost slot.
+            order = sorted(range(side_count), key=lambda k: side_routes[k]["tgt_L"])
+            if not go_right:
+                order = list(reversed(order))
             for rank_in_side, k in enumerate(order):
                 par_off = (rank_in_side - (side_count - 1) / 2) * EDGE_SPACING if side_count > 1 else 0
                 for did in side_routes[k]["dummies"]:
