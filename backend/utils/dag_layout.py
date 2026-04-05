@@ -263,7 +263,7 @@ def _sort_by_barycenter(layer, neighbor_adj, pos):
 # Phase 4b: long-edge straightening & subgraph-boundary routing
 # ---------------------------------------------------------------------------
 
-EDGE_SPACING = 4  # px between parallel long-edge corridors
+EDGE_SPACING = 8  # px between parallel long-edge corridors
 
 
 def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_layers, edges):
@@ -303,20 +303,23 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
         # Sort by target x for deterministic parallel ordering
         chains.sort(key=lambda ic: x_of[ic[1][-1]])
         n_parallel = len(chains)
+        src_cx = x_of[src] + ext_nmap[src]["width"] / 2
 
+        # --- Pass 1: compute per-edge routing (straight vs corridor) ---
+        edge_routes: list[dict] = []  # per-chain routing info
         for rank, (idx, chain) in enumerate(chains):
             dummies = chain[1:-1]
             if not dummies:
+                edge_routes.append({"mode": "skip"})
                 continue
 
             src_n, tgt_n = chain[0], chain[-1]
             src_L, tgt_L = layer_of[src_n], layer_of[tgt_n]
             span = tgt_L - src_L
             if span == 0:
+                edge_routes.append({"mode": "skip"})
                 continue
 
-            src_cx = x_of[src_n] + ext_nmap[src_n]["width"] / 2
-            # Use actual target-port arrival x instead of node center
             e = edges[idx]
             ntports = tgt_port_cnt.get(tgt_n, 1)
             if ntports > 1:
@@ -324,14 +327,13 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                 tgt_cx = x_of[tgt_n] + ext_nmap[tgt_n]["width"] / (ntports + 1) * (tpt + 1)
             else:
                 tgt_cx = x_of[tgt_n] + ext_nmap[tgt_n]["width"] / 2
-            par_off = (rank - (n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
 
-            # Check whether the ideal straight line is clear of real nodes
+            # Check whether the ideal straight line is clear
             straight_ok = True
             for did in dummies:
                 dL = layer_of[did]
                 t = (dL - src_L) / span
-                ix = src_cx + t * (tgt_cx - src_cx) + par_off
+                ix = src_cx + t * (tgt_cx - src_cx)
                 for left, right in layer_intervals[dL]:
                     if left - NODE_SPACING <= ix <= right + NODE_SPACING:
                         straight_ok = False
@@ -339,75 +341,103 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                 if not straight_ok:
                     break
 
-            # Reject steep diagonals — a corridor looks better than a
-            # long line that cuts across the graph at a sharp angle.
+            # Reject steep diagonals
             if straight_ok and abs(src_cx - tgt_cx) > ext_nmap[src_n]["width"]:
                 straight_ok = False
 
             if straight_ok:
-                # Ideal straight line — fan-out edges, ShapeOf, etc.
-                for did in dummies:
-                    dL = layer_of[did]
-                    t = (dL - src_L) / span
-                    x_of[did] = src_cx + t * (tgt_cx - src_cx) + par_off
+                edge_routes.append({
+                    "mode": "straight", "chain": chain, "dummies": dummies,
+                    "src_L": src_L, "tgt_L": tgt_L, "src_cx": src_cx,
+                    "tgt_cx": tgt_cx, "span": span,
+                })
             else:
-                # Route alongside the subgraph boundary (skip-connections).
-                # Only consider nodes within the source-target x-range so
-                # distant outliers (e.g. a wide ShapeOf far to the right)
-                # don't push the corridor unreasonably far.
+                # Compute corridor base for this edge
                 src_x = x_of[src_n]
                 tgt_x = x_of[tgt_n]
                 src_r = src_x + ext_nmap[src_n]["width"]
                 tgt_r = tgt_x + ext_nmap[tgt_n]["width"]
-                margin = NODE_SPACING * 5  # 100 px
+                margin = NODE_SPACING * 5
                 range_lo = min(src_x, tgt_x) - margin
                 range_hi = max(src_r, tgt_r) + margin
 
-                # Collect filtered boundaries across intermediate layers
                 max_boundary = -float("inf")
                 min_boundary = float("inf")
                 for did in dummies:
                     dL = layer_of[did]
                     for left, right in layer_intervals[dL]:
-                        # Include only if the interval overlaps the relevance range
                         if right >= range_lo and left <= range_hi:
                             if right > max_boundary:
                                 max_boundary = right
                             if left < min_boundary:
                                 min_boundary = left
 
-                left_corridor = (min_boundary - NODE_SPACING
-                                 if min_boundary < float("inf") else src_cx)
-                right_corridor = (max_boundary + NODE_SPACING
-                                  if max_boundary > -float("inf") else src_cx)
-
-                # Choose the side closer to both source and target
-                dist_left = abs(src_cx - left_corridor) + abs(tgt_cx - left_corridor)
-                dist_right = abs(src_cx - right_corridor) + abs(tgt_cx - right_corridor)
+                left_corr = min_boundary - NODE_SPACING if min_boundary < float("inf") else src_cx
+                right_corr = max_boundary + NODE_SPACING if max_boundary > -float("inf") else src_cx
+                dist_left = abs(src_cx - left_corr) + abs(tgt_cx - left_corr)
+                dist_right = abs(src_cx - right_corr) + abs(tgt_cx - right_corr)
                 go_right = dist_right <= dist_left
-                corridor_x = right_corridor if go_right else left_corridor
+                base = right_corr if go_right else left_corr
 
-                # Ensure the final position (corridor_x + par_off) doesn't
-                # overlap ANY real node.  The outlier filter can leave the
-                # corridor on top of an excluded node, and par_off can push
-                # an otherwise-clear corridor into a nearby node.
-                for _ in range(20):
-                    clear = True
-                    actual_x = corridor_x + par_off
-                    for did in dummies:
-                        dL = layer_of[did]
-                        for left, right in layer_intervals[dL]:
-                            if left - NODE_SPACING < actual_x < right + NODE_SPACING:
-                                corridor_x = ((right + NODE_SPACING - par_off)
-                                              if go_right
-                                              else (left - NODE_SPACING - par_off))
-                                actual_x = corridor_x + par_off
-                                clear = False
-                    if clear:
-                        break
+                edge_routes.append({
+                    "mode": "corridor", "chain": chain, "dummies": dummies,
+                    "base": base, "go_right": go_right, "tgt_cx": tgt_cx,
+                })
 
-                for did in dummies:
-                    x_of[did] = corridor_x + par_off
+        # --- Pass 2 & 3: compute shared base per side, assign by target order ---
+        # Group corridor edges by side, compute ONE shared base that clears
+        # ALL edges in the side, then assign par_off by target x order.
+        left_indices = [i for i, r in enumerate(edge_routes) if r.get("mode") == "corridor" and not r["go_right"]]
+        right_indices = [i for i, r in enumerate(edge_routes) if r.get("mode") == "corridor" and r["go_right"]]
+
+        for go_right, side_indices in ((False, left_indices), (True, right_indices)):
+            if not side_indices:
+                continue
+            side_routes = [edge_routes[i] for i in side_indices]
+            side_count = len(side_routes)
+            max_extent = (side_count - 1) / 2 * EDGE_SPACING if side_count > 1 else 0
+
+            # Initial base: median of per-edge bases
+            bases = sorted(r["base"] for r in side_routes)
+            base = bases[len(bases) // 2]
+
+            # Collect ALL dummies from all edges in this side group
+            all_dummies = []
+            for r in side_routes:
+                all_dummies.extend(r["dummies"])
+
+            # Resolve: ensure base ± max_extent clears all nodes at all layers
+            for _ in range(20):
+                clear = True
+                lo_x = base - max_extent
+                hi_x = base + max_extent
+                for did in all_dummies:
+                    dL = layer_of[did]
+                    for left, right in layer_intervals[dL]:
+                        if left - NODE_SPACING < hi_x and lo_x < right + NODE_SPACING:
+                            base = ((right + NODE_SPACING + max_extent)
+                                    if go_right
+                                    else (left - NODE_SPACING - max_extent))
+                            clear = False
+                if clear:
+                    break
+
+            # Assign par_off by target x order (leftmost target → leftmost slot)
+            order = sorted(range(side_count), key=lambda k: side_routes[k]["tgt_cx"])
+            for rank_in_side, k in enumerate(order):
+                par_off = (rank_in_side - (side_count - 1) / 2) * EDGE_SPACING if side_count > 1 else 0
+                for did in side_routes[k]["dummies"]:
+                    x_of[did] = base + par_off
+
+        # Apply straight-line edges
+        for rank, (idx, chain) in enumerate(chains):
+            route = edge_routes[rank]
+            if route["mode"] == "straight":
+                par_off = (rank - (n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
+                for did in route["dummies"]:
+                    dL = layer_of[did]
+                    t = (dL - route["src_L"]) / route["span"]
+                    x_of[did] = route["src_cx"] + t * (route["tgt_cx"] - route["src_cx"]) + par_off
 
 
 # ---------------------------------------------------------------------------
