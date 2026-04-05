@@ -361,26 +361,47 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                 tgt_x = x_of[tgt_n]
                 src_r = src_x + ext_nmap[src_n]["width"]
                 tgt_r = tgt_x + ext_nmap[tgt_n]["width"]
-                margin = NODE_SPACING * 5
-                range_lo = min(src_x, tgt_x) - margin
-                range_hi = max(src_r, tgt_r) + margin
 
                 max_boundary = -float("inf")
                 min_boundary = float("inf")
-                for did in dummies:
-                    dL = layer_of[did]
-                    for left, right in layer_intervals[dL]:
-                        if right >= range_lo and left <= range_hi:
+                if span > 10:
+                    # Long-range edges (e.g. transformer mask fan-out):
+                    # scan ALL nodes in intermediate layers so the corridor
+                    # routes fully outside the graph.
+                    for did in dummies:
+                        dL = layer_of[did]
+                        for left, right in layer_intervals[dL]:
                             if right > max_boundary:
                                 max_boundary = right
                             if left < min_boundary:
                                 min_boundary = left
+                else:
+                    # Short skip-connections: bounded scan around src/tgt
+                    margin = min(NODE_SPACING * 5, NODE_SPACING + span * 2)
+                    range_lo = min(src_x, tgt_x) - margin
+                    range_hi = max(src_r, tgt_r) + margin
+                    for did in dummies:
+                        dL = layer_of[did]
+                        for left, right in layer_intervals[dL]:
+                            if right >= range_lo and left <= range_hi:
+                                if right > max_boundary:
+                                    max_boundary = right
+                                if left < min_boundary:
+                                    min_boundary = left
 
                 left_corr = min_boundary - NODE_SPACING if min_boundary < float("inf") else src_cx
                 right_corr = max_boundary + NODE_SPACING if max_boundary > -float("inf") else src_cx
-                dist_left = abs(src_cx - left_corr) + abs(tgt_cx - left_corr)
-                dist_right = abs(src_cx - right_corr) + abs(tgt_cx - right_corr)
-                go_right = dist_right <= dist_left
+                # When the source is clearly outside the intermediate
+                # boundaries, use distance to pick the closer side.
+                # When the source is inside (local skip-connections),
+                # route toward the target so the exit curve doesn't
+                # cross back through the intermediates.
+                if src_cx > max_boundary or src_cx < min_boundary:
+                    dist_left = abs(src_cx - left_corr) + abs(tgt_cx - left_corr)
+                    dist_right = abs(src_cx - right_corr) + abs(tgt_cx - right_corr)
+                    go_right = dist_right <= dist_left
+                else:
+                    go_right = tgt_cx >= src_cx
                 base = right_corr if go_right else left_corr
 
                 edge_routes.append({
@@ -405,10 +426,16 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
             bases = sorted(r["base"] for r in side_routes)
             base = bases[len(bases) // 2]
 
-            # Collect ALL dummies from all edges in this side group
+            # Collect ALL dummies from all edges in this side group,
+            # plus a few layers near the source so the corridor entry
+            # curve doesn't cross nearby nodes (e.g. Multiply_78).
             all_dummies = []
             for r in side_routes:
                 all_dummies.extend(r["dummies"])
+
+            src_L = layer_of[src]
+            extra_layers = [L for L in range(max(0, src_L - 1), min(num_layers, src_L + 3))
+                            if layer_intervals[L]]
 
             # Resolve: ensure base ± max_extent clears all real nodes AND
             # previously-placed corridor obstacles at all layers.
@@ -424,6 +451,28 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                                     if go_right
                                     else (left - NODE_SPACING - max_extent))
                             clear = False
+                # Also check near the source.  The B-spline entry curve
+                # from the source exit to the first corridor waypoint
+                # swings through nearby nodes.  The B-spline first-segment
+                # endpoint is approximately (src_exit + 5*corridor) / 6,
+                # so compute the minimum corridor that clears each node.
+                src_right = x_of[src] + ext_nmap[src]["width"]
+                src_left = x_of[src]
+                for eL in extra_layers:
+                    for left, right in layer_intervals[eL]:
+                        if go_right:
+                            # bspline_x ≈ (src_right + 5*corr) / 6 must > right + pad
+                            min_corr = (6 * (right + NODE_SPACING) - src_right) / 5
+                            needed = min_corr + max_extent
+                            if base < needed:
+                                base = needed
+                                clear = False
+                        else:
+                            max_corr = (6 * (left - NODE_SPACING) - src_left) / 5
+                            needed = max_corr - max_extent
+                            if base > needed:
+                                base = needed
+                                clear = False
                 if clear:
                     break
 
