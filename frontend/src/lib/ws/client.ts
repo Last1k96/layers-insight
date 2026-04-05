@@ -95,8 +95,8 @@ function handleMessage(msg: any): void {
     graphStore.loadingDetail = msg.detail || '';
     if (msg.stage === 'layout' && msg.node_count) {
       const n = msg.node_count;
-      // Calibrated from 496 nodes / 32s => ~65ms/node
-      graphStore.layoutEstimateMs = 1000 + n * 65;
+      // Pure-Python layout: ~0.5ms/node + 200ms overhead
+      graphStore.layoutEstimateMs = 200 + n * 0.5;
       graphStore.layoutStartedAt = performance.now();
     } else {
       graphStore.layoutStartedAt = 0;
