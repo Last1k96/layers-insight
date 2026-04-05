@@ -1,5 +1,9 @@
 import type { SessionInfo, SessionDetail, SessionConfig, CloneRequest, CloneResponse, CompareResponse } from './types';
 
+async function extractError(res: Response): Promise<string> {
+  try { return (await res.json()).detail || res.statusText; } catch { return res.statusText; }
+}
+
 class SessionStore {
   sessions = $state<SessionInfo[]>([]);
   currentSession = $state<SessionDetail | null>(null);
@@ -11,7 +15,7 @@ class SessionStore {
     this.error = null;
     try {
       const res = await fetch('/api/sessions');
-      if (!res.ok) throw new Error(`Failed to fetch sessions: ${res.statusText}`);
+      if (!res.ok) throw new Error(await extractError(res));
       const data: SessionInfo[] = await res.json();
       data.sort((a, b) => b.created_at.localeCompare(a.created_at));
       this.sessions = data;
@@ -31,7 +35,7 @@ class SessionStore {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config),
       });
-      if (!res.ok) throw new Error(`Failed to create session: ${res.statusText}`);
+      if (!res.ok) throw new Error(await extractError(res));
       const info: SessionInfo = await res.json();
       this.sessions = [...this.sessions, info];
       return info;
@@ -48,7 +52,7 @@ class SessionStore {
     this.error = null;
     try {
       const res = await fetch(`/api/sessions/${sessionId}`);
-      if (!res.ok) throw new Error(`Failed to load session: ${res.statusText}`);
+      if (!res.ok) throw new Error(await extractError(res));
       this.currentSession = await res.json();
       localStorage.setItem('lastSessionId', sessionId);
     } catch (e: any) {
@@ -83,7 +87,7 @@ class SessionStore {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(overrides),
       });
-      if (!res.ok) throw new Error(`Failed to clone session: ${res.statusText}`);
+      if (!res.ok) throw new Error(await extractError(res));
       const data: CloneResponse = await res.json();
       this.sessions = [...this.sessions, data.session];
       return data;
@@ -102,7 +106,7 @@ class SessionStore {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ target_session_id: targetSessionId, node_names: nodeNames }),
       });
-      if (!res.ok) throw new Error(`Failed to enqueue nodes: ${res.statusText}`);
+      if (!res.ok) throw new Error(await extractError(res));
       return true;
     } catch (e: any) {
       this.error = e.message;
@@ -113,7 +117,7 @@ class SessionStore {
   async compareSessions(sessionA: string, sessionB: string): Promise<CompareResponse | null> {
     try {
       const res = await fetch(`/api/sessions/compare?session_a=${sessionA}&session_b=${sessionB}`);
-      if (!res.ok) throw new Error(`Failed to compare sessions: ${res.statusText}`);
+      if (!res.ok) throw new Error(await extractError(res));
       return await res.json();
     } catch (e: any) {
       this.error = e.message;

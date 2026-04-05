@@ -26,6 +26,15 @@
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
   }
 
+  function completionColor(success: number, total: number): string {
+    if (total === 0) return 'var(--edge)';
+    const pct = success / total;
+    if (pct >= 1) return '#34C77B';
+    if (pct >= 0.5) return '#4C8DFF';
+    if (pct > 0) return '#E8A849';
+    return 'var(--edge)';
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     const len = sessionStore.sessions.length;
     if (len === 0) return;
@@ -94,172 +103,729 @@
   });
 </script>
 
-<div class="flex-1 flex items-start justify-center p-8 pt-[15vh] bg-[--bg-primary]">
-  <div class="max-w-2xl w-full">
-    <h1 class="text-3xl font-bold mb-2 tracking-tight">Layers Insight</h1>
-    <p class="text-content-secondary/50 mb-8">Neural Network Graph Debugger</p>
+<div class="picker-root">
+  <div class="picker-inner">
+    <!-- Header -->
+    <header class="picker-header">
+      <h1 class="picker-title">Layers Insight</h1>
+      <p class="picker-tagline">Neural Network Graph Debugger</p>
+    </header>
 
     {#if sessionStore.loading}
-      <div class="text-content-secondary">Loading sessions...</div>
-    {:else if sessionStore.sessions.length === 0}
-      <div class="py-16 flex flex-col items-center">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-content-secondary/15 mb-4">
-          <rect x="3" y="3" width="18" height="18" rx="3" />
-          <path d="M9 12h6M12 9v6" stroke-linecap="round" />
+      <div class="loading-state">
+        <svg class="spin" width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <circle cx="8" cy="8" r="6" stroke="currentColor" stroke-width="1.5" stroke-dasharray="28" stroke-dashoffset="8" stroke-linecap="round" />
         </svg>
-        <p class="text-content-secondary/40 mb-6 text-sm">No sessions found</p>
-        <button
-          class="w-full max-w-xs py-3 border border-dashed border-content-secondary/10 hover:border-content-secondary/25 rounded-xl text-content-secondary/50 hover:text-content-primary transition-all duration-150"
-          onclick={onnewsession}
-        >
-          + New Session
+        <span>Loading sessions...</span>
+      </div>
+
+    {:else if sessionStore.sessions.length === 0}
+      <div class="empty-state">
+        <div class="empty-icon-wrap">
+          <div class="empty-pulse"></div>
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="2.5" />
+            <circle cx="4.5" cy="7" r="1.5" />
+            <circle cx="19.5" cy="7" r="1.5" />
+            <circle cx="4.5" cy="17" r="1.5" />
+            <circle cx="19.5" cy="17" r="1.5" />
+            <line x1="10" y1="10.5" x2="6" y2="8" />
+            <line x1="14" y1="10.5" x2="18" y2="8" />
+            <line x1="10" y1="13.5" x2="6" y2="16" />
+            <line x1="14" y1="13.5" x2="18" y2="16" />
+          </svg>
+        </div>
+        <p class="empty-title">No sessions yet</p>
+        <p class="empty-hint">Create a session to start debugging your model</p>
+        <button class="cta-btn" onclick={onnewsession}>
+          Start New Session
         </button>
       </div>
+
     {:else}
-      <div class="space-y-3 mb-6 max-h-[60vh] overflow-y-auto pr-1 scrollbar-thin">
+      <!-- Session list -->
+      <div class="session-list">
         {#each sessionStore.sessions as session, i (session.id)}
+          {@const total = session.task_count}
+          {@const success = session.success_count}
+          {@const completion = total > 0 ? success / total : 0}
+          {@const accent = completionColor(success, total)}
           <!-- svelte-ignore a11y_no_static_element_interactions -->
+          {@const isLast = session.id === sessionStore.lastSessionId}
           <div
-            class="group w-full text-left p-4 bg-surface-panel hover:bg-surface-elevated rounded-xl transition-all duration-150 cursor-pointer {i === selectedIndex ? 'bg-surface-elevated ring-1 ring-accent/50' : 'hover:ring-1 hover:ring-content-secondary/10'} {compareMode && compareSelection.includes(session.id) ? 'ring-2 ring-accent' : ''}"
-            style:box-shadow={i === selectedIndex ? 'var(--shadow-elevated)' : 'none'}
+            class="session-card"
+            class:is-selected={i === selectedIndex}
+            class:is-last={isLast}
+            class:is-compare-selected={compareMode && compareSelection.includes(session.id)}
+            style="animation-delay: {i * 50}ms; --accent-bar: {accent};"
             role="button"
             tabindex="0"
             onclick={() => compareMode ? toggleCompareSelect(new MouseEvent('click'), session.id) : onsessionselected(session.id)}
             onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); compareMode ? toggleCompareSelect(new MouseEvent('click'), session.id) : onsessionselected(session.id); }}}
           >
-            <div class="flex justify-between items-start">
-              <div class="flex items-start gap-3 min-w-0 flex-1">
+            <!-- Left accent bar -->
+            <div class="card-accent-bar"></div>
+
+            <div class="card-body">
+              <!-- Top row: name + task count -->
+              <div class="card-top-row">
                 {#if compareMode}
-                  <div class="mt-1 flex-shrink-0">
-                    <div class="w-4 h-4 border-2 rounded {compareSelection.includes(session.id) ? 'border-accent bg-accent' : 'border-content-secondary/50'} transition-colors flex items-center justify-center">
-                      {#if compareSelection.includes(session.id)}
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-3 h-3 text-white" viewBox="0 0 20 20" fill="currentColor">
-                          <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
-                        </svg>
-                      {/if}
-                    </div>
-                  </div>
-                {/if}
-                <div class="min-w-0">
-                  <div class="font-medium">{session.model_name}</div>
-                  <div class="text-sm text-content-secondary mt-1">
-                    {session.main_device} vs {session.ref_device}
-                  </div>
-                </div>
-              </div>
-              <div class="text-right flex-shrink-0 flex items-start gap-2">
-                <div>
-                  <div class="text-sm text-content-secondary">
-                    {session.success_count}/{session.task_count} tasks
-                  </div>
-                  {#if session.sub_sessions?.length > 0}
-                    <div class="text-xs text-content-secondary/60">
-                      {session.sub_sessions.length} sub-session{session.sub_sessions.length > 1 ? 's' : ''}
-                    </div>
-                  {/if}
-                  <div class="text-xs text-content-secondary/60 mt-1">
-                    {new Date(session.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-                    {#if session.folder_size > 0}
-                      <span class="ml-2">{formatSize(session.folder_size)}</span>
+                  <div class="compare-checkbox" class:checked={compareSelection.includes(session.id)}>
+                    {#if compareSelection.includes(session.id)}
+                      <svg width="10" height="10" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                      </svg>
                     {/if}
                   </div>
-                </div>
-                {#if !compareMode}
-                  {#if confirmingDelete === session.id}
-                    <div class="flex gap-1">
-                      <button
-                        class="px-2 py-1 text-xs bg-surface-elevated hover:bg-edge text-content-primary rounded transition-colors"
-                        onclick={cancelDelete}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        class="px-2 py-1 text-xs bg-red-600 hover:bg-red-700 text-white rounded transition-colors"
-                        onclick={(e) => handleDelete(e, session.id)}
-                      >
-                        Confirm
-                      </button>
-                    </div>
-                  {:else}
-                    <div class="flex gap-1">
-                      <button
-                        class="opacity-0 group-hover:opacity-100 p-1 text-content-secondary hover:text-accent transition-all"
-                        onclick={(e) => handleClone(e, session.id)}
-                        title="Clone session"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                          <path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H9a2 2 0 01-2-2V9z" />
-                          <path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h8a2 2 0 00-2-2H5z" />
-                        </svg>
-                      </button>
-                      <button
-                        class="opacity-0 group-hover:opacity-100 p-1 text-content-secondary hover:text-red-400 transition-all"
-                        onclick={(e) => handleDelete(e, session.id)}
-                        title="Delete session"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
-                          <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
-                        </svg>
-                      </button>
-                    </div>
+                {/if}
+                <span class="model-name">{session.model_name}</span>
+                {#if isLast}
+                  <span class="last-badge">recent</span>
+                {/if}
+                <span class="task-badge" style="color: {accent}">
+                  {success}<span class="task-sep">/</span>{total}
+                </span>
+              </div>
+
+              <!-- Middle row: devices + meta -->
+              <div class="card-meta-row">
+                <div class="device-group">
+                  <span class="device-pill main">{session.main_device}</span>
+                  <span class="vs-label">vs</span>
+                  <span class="device-pill ref">{session.ref_device}</span>
+                  {#if session.sub_sessions?.length > 0}
+                    <span class="sub-count">{session.sub_sessions.length} sub</span>
                   {/if}
+                </div>
+                <div class="card-date-size">
+                  {new Date(session.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  {#if session.folder_size > 0}
+                    <span class="size-dot">&middot;</span>
+                    {formatSize(session.folder_size)}
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Progress bar -->
+              {#if total > 0}
+                <div class="progress-track">
+                  <div class="progress-fill" style="width: {completion * 100}%; background: {accent};"></div>
+                </div>
+              {/if}
+            </div>
+
+            <!-- Hover actions -->
+            {#if !compareMode}
+              <div class="card-actions">
+                {#if confirmingDelete === session.id}
+                  <button class="act-btn act-cancel" onclick={cancelDelete}>Cancel</button>
+                  <button class="act-btn act-confirm" onclick={(e) => handleDelete(e, session.id)}>Delete</button>
+                {:else}
+                  <button
+                    class="act-btn act-icon"
+                    onclick={(e) => handleClone(e, session.id)}
+                    title="Clone session"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                      <path d="M7 9a2 2 0 012-2h6a2 2 0 012 2v6a2 2 0 01-2 2H9a2 2 0 01-2-2V9z" />
+                      <path d="M5 3a2 2 0 00-2 2v6a2 2 0 002 2V5h8a2 2 0 00-2-2H5z" />
+                    </svg>
+                  </button>
+                  <button
+                    class="act-btn act-icon act-delete"
+                    onclick={(e) => handleDelete(e, session.id)}
+                    title="Delete session"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor">
+                      <path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" />
+                    </svg>
+                  </button>
                 {/if}
               </div>
-            </div>
+            {/if}
           </div>
         {/each}
       </div>
 
-      <div class="flex gap-2">
-        <button
-          class="flex-1 py-3 border border-dashed border-content-secondary/10 hover:border-content-secondary/25 rounded-xl text-content-secondary/50 hover:text-content-primary transition-all duration-150"
-          onclick={onnewsession}
-        >
-          + New Session
+      <!-- Footer actions -->
+      <div class="picker-footer">
+        <button class="new-btn" onclick={onnewsession}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
+            <line x1="7" y1="2" x2="7" y2="12" />
+            <line x1="2" y1="7" x2="12" y2="7" />
+          </svg>
+          New Session
         </button>
         {#if sessionStore.sessions.length >= 2}
           <button
-            class="py-3 px-4 rounded-xl transition-all duration-150 {compareMode ? 'text-accent bg-accent/10' : 'text-content-secondary/50 hover:text-content-primary hover:bg-surface-elevated'}"
+            class="compare-toggle"
+            class:active={compareMode}
             onclick={toggleCompareMode}
           >
             {compareMode ? 'Cancel' : 'Compare'}
           </button>
         {/if}
       </div>
+
       {#if compareMode && compareSelection.length === 2}
-        <button
-          class="w-full py-3 mt-2 bg-accent hover:bg-accent-hover rounded-xl font-medium transition-all duration-150 active:scale-[0.99]"
-          onclick={startCompare}
-        >
+        <button class="compare-submit" onclick={startCompare}>
           Compare Selected Sessions
         </button>
       {:else if compareMode}
-        <div class="text-center text-sm text-content-secondary mt-2">
+        <div class="compare-hint">
           Select 2 sessions to compare ({compareSelection.length}/2)
         </div>
       {/if}
     {/if}
 
     {#if sessionStore.error}
-      <div class="mt-4 p-3 bg-red-500/10 rounded-lg text-red-300/80 text-sm">
-        {sessionStore.error}
+      <div class="error-bar">
+        <svg class="error-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M8 1.5L1.5 13.5h13L8 1.5z" stroke-linejoin="round" />
+          <line x1="8" y1="6.5" x2="8" y2="9.5" stroke-linecap="round" />
+          <circle cx="8" cy="11.25" r="0.5" fill="currentColor" stroke="none" />
+        </svg>
+        <span class="error-text">{sessionStore.error}</span>
       </div>
     {/if}
   </div>
 </div>
 
 <style>
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
+  /* ── Root & Background ── */
+  .picker-root {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 2rem;
+    padding-top: 14vh;
+    background: var(--bg-primary);
+    background-image:
+      radial-gradient(ellipse 60% 50% at 50% 0%, rgba(76, 141, 255, 0.04) 0%, transparent 100%),
+      radial-gradient(circle, rgba(76, 141, 255, 0.045) 1px, transparent 1px);
+    background-size: 100% 100%, 28px 28px;
+    min-height: 100%;
+    overflow-y: auto;
   }
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: transparent;
+
+  .picker-inner {
+    max-width: 40rem;
+    width: 100%;
   }
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: #3A3F56;
+
+  /* ── Header ── */
+  .picker-header {
+    margin-bottom: 2.5rem;
+    animation: fade-down 0.5s ease-out both;
+  }
+
+  .picker-title {
+    font-family: var(--font-display);
+    font-size: 2.75rem;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .picker-tagline {
+    margin: 0.5rem 0 0;
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    opacity: 0.4;
+  }
+
+  /* ── Loading ── */
+  .loading-state {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    justify-content: center;
+    padding: 4rem 0;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+  }
+
+  .spin {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ── Empty State ── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 4rem 0 2rem;
+    animation: fade-down 0.5s ease-out 0.15s both;
+  }
+
+  .empty-icon-wrap {
+    position: relative;
+    color: var(--text-secondary);
+    opacity: 0.2;
+    margin-bottom: 1.5rem;
+  }
+
+  .empty-pulse {
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    background: rgba(76, 141, 255, 0.15);
+    animation: node-breathe 3s ease-in-out infinite;
+  }
+
+  .empty-title {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    opacity: 0.6;
+  }
+
+  .empty-hint {
+    margin: 0.35rem 0 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    opacity: 0.35;
+  }
+
+  .cta-btn {
+    margin-top: 2rem;
+    padding: 0.75rem 2rem;
+    background: rgba(76, 141, 255, 0.12);
+    border: 1px solid rgba(76, 141, 255, 0.2);
+    border-radius: 0.75rem;
+    color: #4C8DFF;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .cta-btn:hover {
+    background: rgba(76, 141, 255, 0.18);
+    border-color: rgba(76, 141, 255, 0.35);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(76, 141, 255, 0.15);
+  }
+
+  /* ── Session List ── */
+  .session-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-right: 4px;
+    margin-bottom: 1rem;
+  }
+
+  .session-list::-webkit-scrollbar { width: 5px; }
+  .session-list::-webkit-scrollbar-track { background: transparent; }
+  .session-list::-webkit-scrollbar-thumb { background: #3A3F56; border-radius: 99px; }
+  .session-list::-webkit-scrollbar-thumb:hover { background: #4A5070; }
+
+  /* ── Session Card ── */
+  .session-card {
+    display: flex;
+    align-items: stretch;
+    background: var(--bg-panel);
+    border-radius: 0.75rem;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    animation: card-enter 0.35s ease-out both;
+  }
+
+  .session-card:hover {
+    transform: translateY(-1px);
+    background: var(--bg-menu);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(76, 141, 255, 0.06);
+  }
+
+  .session-card.is-selected {
+    background: var(--bg-menu);
+    box-shadow: 0 2px 16px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(76, 141, 255, 0.25);
+  }
+
+  .session-card.is-last {
+    background: rgba(76, 141, 255, 0.04);
+    box-shadow: 0 0 0 1px rgba(76, 141, 255, 0.15);
+  }
+
+  .session-card.is-last .card-accent-bar {
+    background: #4C8DFF;
+    opacity: 0.9;
+  }
+
+  .session-card.is-compare-selected {
+    box-shadow: 0 0 0 2px #4C8DFF;
+  }
+
+  /* ── Accent Bar ── */
+  .card-accent-bar {
+    width: 3px;
+    flex-shrink: 0;
+    background: var(--border-color);
+    border-radius: 3px 0 0 3px;
+    transition: width 0.2s ease, opacity 0.2s ease;
+    opacity: 0.6;
+  }
+
+  .session-card:hover .card-accent-bar {
+    width: 4px;
+    opacity: 1;
+  }
+
+  /* ── Card Body ── */
+  .card-body {
+    flex: 1;
+    min-width: 0;
+    padding: 0.875rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+  }
+
+  .card-top-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .model-name {
+    flex: 1;
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .last-badge {
+    flex-shrink: 0;
+    font-size: 0.6rem;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.1rem 0.4rem;
     border-radius: 3px;
+    background: rgba(76, 141, 255, 0.12);
+    color: rgba(76, 141, 255, 0.75);
   }
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: #4A5070;
+
+  .task-badge {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    font-weight: 500;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+  }
+
+  .task-sep {
+    opacity: 0.4;
+    margin: 0 0.05em;
+  }
+
+  .card-meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .device-group {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-shrink: 0;
+  }
+
+  .device-pill {
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 0.1rem 0.45rem;
+    border-radius: 4px;
+    letter-spacing: 0.02em;
+  }
+
+  .device-pill.main {
+    background: rgba(76, 141, 255, 0.1);
+    color: rgba(76, 141, 255, 0.8);
+  }
+
+  .device-pill.ref {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+  }
+
+  .vs-label {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    opacity: 0.35;
+    font-style: italic;
+  }
+
+  .sub-count {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    opacity: 0.45;
+    margin-left: 0.25rem;
+  }
+
+  .card-date-size {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    white-space: nowrap;
+  }
+
+  .size-dot {
+    margin: 0 0.25rem;
+    opacity: 0.4;
+  }
+
+  /* ── Progress Bar ── */
+  .progress-track {
+    height: 2px;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 1px;
+    overflow: hidden;
+    margin-top: 0.15rem;
+  }
+
+  .progress-fill {
+    height: 100%;
+    border-radius: 1px;
+    transition: width 0.4s ease;
+  }
+
+  /* ── Hover Actions ── */
+  .card-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding-right: 0.5rem;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .session-card:hover .card-actions {
+    opacity: 1;
+  }
+
+  .act-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    cursor: pointer;
+    transition: color 0.15s ease, background 0.15s ease;
+    border-radius: 0.375rem;
+  }
+
+  .act-icon {
+    padding: 0.35rem;
+    color: var(--text-secondary);
+  }
+
+  .act-icon:hover {
+    color: #4C8DFF;
+    background: rgba(76, 141, 255, 0.1);
+  }
+
+  .act-delete:hover {
+    color: #E54D4D;
+    background: rgba(229, 77, 77, 0.1);
+  }
+
+  .act-cancel, .act-confirm {
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .act-cancel {
+    color: var(--text-secondary);
+  }
+
+  .act-cancel:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .act-confirm {
+    color: #E54D4D;
+    background: rgba(229, 77, 77, 0.12);
+  }
+
+  .act-confirm:hover {
+    background: rgba(229, 77, 77, 0.2);
+  }
+
+  /* ── Compare Checkbox ── */
+  .compare-checkbox {
+    width: 1rem;
+    height: 1rem;
+    border: 2px solid var(--text-secondary);
+    border-radius: 0.25rem;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+    color: white;
+    opacity: 0.5;
+  }
+
+  .compare-checkbox.checked {
+    background: #4C8DFF;
+    border-color: #4C8DFF;
+    opacity: 1;
+  }
+
+  /* ── Footer Actions ── */
+  .picker-footer {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .new-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: rgba(76, 141, 255, 0.08);
+    border: 1px solid rgba(76, 141, 255, 0.15);
+    border-radius: 0.75rem;
+    color: rgba(76, 141, 255, 0.85);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.18s ease;
+  }
+
+  .new-btn:hover {
+    background: rgba(76, 141, 255, 0.14);
+    border-color: rgba(76, 141, 255, 0.3);
+    color: #4C8DFF;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(76, 141, 255, 0.1);
+  }
+
+  .compare-toggle {
+    padding: 0.75rem 1.25rem;
+    border-radius: 0.75rem;
+    border: none;
+    background: none;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .compare-toggle:hover {
+    opacity: 0.8;
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .compare-toggle.active {
+    color: #4C8DFF;
+    opacity: 1;
+    background: rgba(76, 141, 255, 0.08);
+  }
+
+  .compare-submit {
+    width: 100%;
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    background: #4C8DFF;
+    border: none;
+    border-radius: 0.75rem;
+    color: white;
+    font-weight: 500;
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.18s ease;
+  }
+
+  .compare-submit:hover {
+    background: #6BA1FF;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(76, 141, 255, 0.25);
+  }
+
+  .compare-submit:active {
+    transform: scale(0.99);
+  }
+
+  .compare-hint {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    margin-top: 0.5rem;
+  }
+
+  /* ── Error ── */
+  .error-bar {
+    margin-top: 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    background: rgba(229, 77, 77, 0.12);
+    border: 1px solid rgba(229, 77, 77, 0.35);
+    border-left: 3px solid #E54D4D;
+    border-radius: 0.75rem;
+    color: #F0A0A0;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    animation: error-slide-in 0.35s ease-out both;
+    box-shadow: 0 2px 12px rgba(229, 77, 77, 0.1), inset 0 0 20px rgba(229, 77, 77, 0.03);
+  }
+
+  .error-icon {
+    flex-shrink: 0;
+    color: #E54D4D;
+    margin-top: 1px;
+    animation: error-pulse 2s ease-in-out infinite;
+  }
+
+  .error-text {
+    flex: 1;
+    word-break: break-word;
+  }
+
+  @keyframes error-slide-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes error-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
   }
 </style>

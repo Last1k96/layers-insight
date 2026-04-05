@@ -34,13 +34,18 @@ async def create_session(config: SessionConfig, request: Request) -> SessionInfo
     svc = _get_session_service(request)
 
     model_path = Path(config.model_path)
+    if not model_path.exists():
+        raise HTTPException(status_code=400, detail=f"Model path not found: {model_path}")
     try:
         fmt = detect_model_format(model_path)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     if fmt == "ir":
-        return svc.create_session(config)
+        try:
+            return svc.create_session(config)
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
     # Non-IR: convert to temporary IR, then pass converted files to session service
     ov_core = request.app.state.ov_core
@@ -61,7 +66,10 @@ async def create_session(config: SessionConfig, request: Request) -> SessionInfo
             "model_path": str(converted_xml),
             "original_format": fmt,
         })
-        return svc.create_session(config, converted_dir=Path(tmp_dir))
+        try:
+            return svc.create_session(config, converted_dir=Path(tmp_dir))
+        except FileNotFoundError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 

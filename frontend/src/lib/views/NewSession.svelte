@@ -51,6 +51,27 @@
   let inputsError = $state<string | null>(null);
   let inspectedModelPath = $state('');
 
+  // Input file path validation
+  let inputFileErrors = $state<Record<number, string | null>>({});
+
+  function debounceInputFileCheck(index: number) {
+    const path = modelInputs[index]?.path?.trim();
+    if (!path) {
+      inputFileErrors = { ...inputFileErrors, [index]: null };
+      return;
+    }
+    configStore.checkPath(path).then(result => {
+      if (modelInputs[index]?.path?.trim() !== path) return; // stale
+      if (!result.exists) {
+        inputFileErrors = { ...inputFileErrors, [index]: `File not found: ${path}` };
+      } else if (!result.is_file) {
+        inputFileErrors = { ...inputFileErrors, [index]: `Not a file: ${path}` };
+      } else {
+        inputFileErrors = { ...inputFileErrors, [index]: null };
+      }
+    });
+  }
+
   // Plugin configuration -- separate state for main and reference devices
   let pluginConfigExpanded = $state(false);
 
@@ -141,6 +162,7 @@
       onOvPathInput();
     } else if (browserTarget === 'input') {
       modelInputs[browserInputIndex] = { ...modelInputs[browserInputIndex], path };
+      debounceInputFileCheck(browserInputIndex);
     } else {
       modelPath = path;
       onModelPathInput();
@@ -237,12 +259,14 @@
     inputsError = null;
     modelInputs = [];
 
-    const infos: ModelInputInfo[] = await configStore.fetchModelInputs(path, ovPath || undefined);
+    const result = await configStore.fetchModelInputs(path, ovPath || undefined);
 
-    if (infos.length === 0) {
-      inputsError = 'Could not read model inputs. Check the model path.';
+    if (result.error) {
+      inputsError = result.error;
+    } else if (result.inputs.length === 0) {
+      inputsError = 'Model has no inputs.';
     } else {
-      modelInputs = infos.map((info) => {
+      modelInputs = result.inputs.map((info) => {
         const dynDims = hasDynamicDims(info.shape);
         return {
           name: info.name,
@@ -382,6 +406,7 @@
       const path = named.get(modelInputs[i].name);
       if (path) {
         modelInputs[i] = { ...modelInputs[i], source: 'file', path };
+        debounceInputFileCheck(i);
       }
     }
 
@@ -390,6 +415,7 @@
     for (let i = 0; i < modelInputs.length && posIdx < positional.length; i++) {
       if (modelInputs[i].source === 'random') {
         modelInputs[i] = { ...modelInputs[i], source: 'file', path: positional[posIdx++] };
+        debounceInputFileCheck(i);
       }
     }
   }
@@ -501,261 +527,356 @@
   }
 </script>
 
-<div class="flex-1 flex items-start justify-center p-6 pt-8 bg-[--bg-primary] overflow-y-auto">
-  <div class="max-w-2xl w-full">
-    <div class="flex items-center gap-3 mb-4">
-      <button class="text-content-secondary hover:text-content-primary" onclick={onback}>&larr; Back</button>
-      <h2 class="text-xl font-bold">{isCloneMode ? `Clone of ${cloneSourceName || 'session'}` : 'New Session'}</h2>
+<div class="form-root">
+  <div class="form-inner">
+    <!-- Header -->
+    <div class="form-header">
+      <button class="back-btn" onclick={onback}>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="8" x2="4" y2="8" />
+          <polyline points="8,4 4,8 8,12" />
+        </svg>
+        Back
+      </button>
+      <h2 class="form-title">
+        {#if isCloneMode}
+          Clone of <span class="title-model">{cloneSourceName || 'session'}</span>
+        {:else}
+          New Session
+        {/if}
+      </h2>
     </div>
 
-    <form class="space-y-3" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
-      <div>
-        <label for="ov-path" class="block text-xs text-content-secondary mb-0.5">OpenVINO Path (optional)</label>
-        <div class="relative flex gap-1">
-          <PathInput
-            bind:value={ovPath}
-            mode="directory"
-            placeholder="/opt/intel/openvino"
-            class="flex-1"
-            id="ov-path"
-            oninput={onOvPathInput}
-          />
-          <button
-            type="button"
-            class="px-2 py-2 bg-[--bg-input] border border-[--border-color] rounded hover:bg-[--bg-panel] transition-colors text-sm"
-            title="Browse directories"
-            onclick={() => openBrowser('ov')}
-          >&#128194;</button>
-          {#if ovValidating}
-            <div class="absolute right-12 top-1/2 -translate-y-1/2 text-xs text-content-secondary">
-              Checking...
+    <form class="form-body" onsubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
+      <!-- Section: Paths -->
+      <div class="form-section">
+        <div class="section-label">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+            <path d="M2 5.5V3a1 1 0 011-1h3l1.5 1.5H11a1 1 0 011 1V11a1 1 0 01-1 1H3a1 1 0 01-1-1V5.5z" />
+          </svg>
+          Paths
+        </div>
+
+        <div class="field-group">
+          <label for="ov-path" class="field-label">OpenVINO Path <span class="field-opt">optional</span></label>
+          <div class="path-row">
+            <PathInput
+              bind:value={ovPath}
+              mode="directory"
+              placeholder="/opt/intel/openvino"
+              class="flex-1"
+              id="ov-path"
+              oninput={onOvPathInput}
+            />
+            <button
+              type="button"
+              class="browse-btn"
+              title="Browse directories"
+              onclick={() => openBrowser('ov')}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+                <path d="M2 5.5V3a1 1 0 011-1h3l1.5 1.5H11a1 1 0 011 1V11a1 1 0 01-1 1H3a1 1 0 01-1-1V5.5z" />
+              </svg>
+            </button>
+            <div class="field-status-slot">
+              {#if ovValidating}
+                <div class="field-status">
+                  <svg class="status-spin" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.2" stroke-dasharray="20" stroke-dashoffset="6" stroke-linecap="round" />
+                  </svg>
+                </div>
+              {:else if ovError}
+                <div class="field-status field-warn" title={ovError}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+                    <path d="M7 1.5L12.5 11.5H1.5L7 1.5z" stroke-linejoin="round" />
+                    <line x1="7" y1="6" x2="7" y2="8.5" stroke-linecap="round" />
+                    <circle cx="7" cy="10" r="0.5" fill="currentColor" />
+                  </svg>
+                </div>
+              {/if}
             </div>
-          {:else if ovError}
-            <div class="absolute right-12 top-1/2 -translate-y-1/2 text-yellow-400 cursor-help" title={ovError}>
-              &#9888;
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label for="model-path" class="field-label">Model Path <span class="field-req">.xml</span></label>
+          <div class="path-row">
+            <PathInput
+              bind:value={modelPath}
+              mode="file"
+              placeholder="/path/to/model.xml"
+              class="flex-1"
+              id="model-path"
+              oninput={onModelPathInput}
+            />
+            <button
+              type="button"
+              class="browse-btn"
+              title="Browse files"
+              onclick={() => openBrowser('model')}
+            >
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+                <path d="M2 5.5V3a1 1 0 011-1h3l1.5 1.5H11a1 1 0 011 1V11a1 1 0 01-1 1H3a1 1 0 01-1-1V5.5z" />
+              </svg>
+            </button>
+            <div class="field-status-slot">
+              {#if loadingInputs}
+                <div class="field-status">
+                  <svg class="status-spin" width="12" height="12" viewBox="0 0 12 12" fill="none">
+                    <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.2" stroke-dasharray="20" stroke-dashoffset="6" stroke-linecap="round" />
+                  </svg>
+                </div>
+              {:else if inputsError}
+                <div class="field-status field-warn" title={inputsError}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+                    <path d="M7 1.5L12.5 11.5H1.5L7 1.5z" stroke-linejoin="round" />
+                    <line x1="7" y1="6" x2="7" y2="8.5" stroke-linecap="round" />
+                    <circle cx="7" cy="10" r="0.5" fill="currentColor" />
+                  </svg>
+                </div>
+              {/if}
             </div>
-          {/if}
+          </div>
         </div>
       </div>
 
-      <div>
-        <label for="model-path" class="block text-xs text-content-secondary mb-0.5">Model Path (.xml) *</label>
-        <div class="relative flex gap-1">
-          <PathInput
-            bind:value={modelPath}
-            mode="file"
-            placeholder="/path/to/model.xml"
-            class="flex-1"
-            id="model-path"
-            oninput={onModelPathInput}
-          />
-          <button
-            type="button"
-            class="px-2 py-2 bg-[--bg-input] border border-[--border-color] rounded hover:bg-[--bg-panel] transition-colors text-sm"
-            title="Browse files"
-            onclick={() => openBrowser('model')}
-          >&#128194;</button>
-          {#if loadingInputs}
-            <div class="absolute right-12 top-1/2 -translate-y-1/2 text-xs text-content-secondary">
-              Reading...
-            </div>
-          {:else if inputsError}
-            <div class="absolute right-12 top-1/2 -translate-y-1/2 text-yellow-400 cursor-help" title={inputsError}>
-              &#9888;
-            </div>
-          {/if}
-        </div>
-      </div>
-
-      <!-- Model Inputs Section -->
+      <!-- Section: Model Inputs -->
       {#if modelInputs.length > 0}
-        <div class="border border-[--border-color] rounded p-2 space-y-2 max-h-[45vh] overflow-y-auto">
-          <div class="text-xs text-content-secondary font-medium sticky top-0 bg-[--bg-surface] z-10 pb-1">Model Inputs ({modelInputs.length})</div>
-          {#each modelInputs as input, i (input.name)}
-            <div class="bg-[--bg-panel] rounded px-2 py-1.5 space-y-1">
-              <div class="flex items-center justify-between">
-                <div class="font-mono text-xs text-accent truncate">{input.name}</div>
-                <div class="text-[11px] text-content-secondary whitespace-nowrap ml-2">
-                  {input.element_type} &middot; {formatShape(input.shape)}
+        <div class="form-section">
+          <div class="section-label">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+              <rect x="2" y="2" width="10" height="10" rx="2" />
+              <line x1="5" y1="5" x2="9" y2="5" />
+              <line x1="5" y1="7" x2="9" y2="7" />
+              <line x1="5" y1="9" x2="7" y2="9" />
+            </svg>
+            Model Inputs
+            <span class="section-count">{modelInputs.length}</span>
+          </div>
+
+          <div class="inputs-list">
+            {#each modelInputs as input, i (input.name)}
+              <div class="input-card">
+                <div class="input-header">
+                  <div class="font-mono text-xs text-accent truncate">{input.name}</div>
+                  <div class="input-type">
+                    {input.element_type} &middot; {formatShape(input.shape)}
+                  </div>
                 </div>
-              </div>
-              <div class="flex gap-2 items-center">
-                <div class="flex-1">
-                  <select
-                    id="source-{i}"
-                    bind:value={modelInputs[i].source}
-                    title="Source"
-                    class="w-full px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
-                  >
-                    <option value="random">Random</option>
-                    <option value="file">File</option>
-                  </select>
+                <div class="input-controls">
+                  <div class="input-ctrl">
+                    <select
+                      id="source-{i}"
+                      bind:value={modelInputs[i].source}
+                      title="Source"
+                      class="ctrl-select"
+                    >
+                      <option value="random">Random</option>
+                      <option value="file">File</option>
+                    </select>
+                  </div>
+                  <div class="input-ctrl">
+                    <select
+                      id="dtype-{i}"
+                      bind:value={modelInputs[i].data_type}
+                      title="Data Type"
+                      class="ctrl-select"
+                    >
+                      {#each getAllowedPrecisions(input.element_type) as p (p)}
+                        <option value={p}>{p.toUpperCase()}</option>
+                      {/each}
+                    </select>
+                  </div>
+                  <div class="input-ctrl">
+                    <select
+                      id="layout-{i}"
+                      bind:value={modelInputs[i].layout}
+                      title="Layout"
+                      class="ctrl-select"
+                    >
+                      {#each getLayoutOptions(input.shape) as l (l)}
+                        <option value={l}>{l}</option>
+                      {/each}
+                    </select>
+                  </div>
                 </div>
-                <div class="flex-1">
-                  <select
-                    id="dtype-{i}"
-                    bind:value={modelInputs[i].data_type}
-                    title="Data Type"
-                    class="w-full px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
-                  >
-                    {#each getAllowedPrecisions(input.element_type) as p (p)}
-                      <option value={p}>{p.toUpperCase()}</option>
-                    {/each}
-                  </select>
-                </div>
-                <div class="flex-1">
-                  <select
-                    id="layout-{i}"
-                    bind:value={modelInputs[i].layout}
-                    title="Layout"
-                    class="w-full px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
-                  >
-                    {#each getLayoutOptions(input.shape) as l (l)}
-                      <option value={l}>{l}</option>
-                    {/each}
-                  </select>
-                </div>
-              </div>
-              {#if hasDynamicDims(input.shape)}
-                <div class="border border-yellow-700/50 rounded px-2 py-1 space-y-0.5">
-                  <div class="text-[11px] text-yellow-400 font-medium">Dynamic Shape</div>
-                  <div class="grid gap-1" style="grid-template-columns: auto 1fr 1fr 1fr;">
-                    <div class="text-xs text-content-secondary font-medium px-1">Dim</div>
-                    {#if input.source === 'random'}
-                      <div class="text-xs text-content-secondary font-medium px-1">Value</div>
-                    {:else}
-                      <div></div>
-                    {/if}
-                    <div class="text-xs text-content-secondary font-medium px-1">Min</div>
-                    <div class="text-xs text-content-secondary font-medium px-1">Max</div>
-                    {#each input.shape as dim, d}
-                      <div class="text-xs text-content-secondary px-1 py-1.5 font-mono">[{d}]</div>
-                      {#if typeof dim === 'string'}
-                        {#if input.source === 'random'}
+                {#if hasDynamicDims(input.shape)}
+                  <div class="dynamic-shape-box">
+                    <div class="dynamic-label">
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><circle cx="5" cy="5" r="3" /></svg>
+                      Dynamic Shape
+                    </div>
+                    <div class="dynamic-grid" style="grid-template-columns: auto 1fr 1fr 1fr;">
+                      <div class="dg-header">Dim</div>
+                      {#if input.source === 'random'}
+                        <div class="dg-header">Value</div>
+                      {:else}
+                        <div></div>
+                      {/if}
+                      <div class="dg-header">Min</div>
+                      <div class="dg-header">Max</div>
+                      {#each input.shape as dim, d}
+                        <div class="dg-dim">[{d}]</div>
+                        {#if typeof dim === 'string'}
+                          {#if input.source === 'random'}
+                            <input
+                              type="number"
+                              min="1"
+                              value={input.resolved_shape?.[d] ?? 1}
+                              oninput={(e) => {
+                                const rs = [...(modelInputs[i].resolved_shape ?? [])];
+                                rs[d] = parseInt((e.target as HTMLInputElement).value) || 1;
+                                modelInputs[i] = { ...modelInputs[i], resolved_shape: rs };
+                              }}
+                              onwheel={(e) => handleDimWheel(e,
+                                () => modelInputs[i].resolved_shape?.[d] ?? 1,
+                                (v) => { const rs = [...(modelInputs[i].resolved_shape ?? [])]; rs[d] = v; modelInputs[i] = { ...modelInputs[i], resolved_shape: rs }; }
+                              )}
+                              class="dg-input"
+                            />
+                          {:else}
+                            <div></div>
+                          {/if}
                           <input
                             type="number"
                             min="1"
-                            value={input.resolved_shape?.[d] ?? 1}
+                            value={input.lower_bounds?.[d] ?? 1}
                             oninput={(e) => {
-                              const rs = [...(modelInputs[i].resolved_shape ?? [])];
-                              rs[d] = parseInt((e.target as HTMLInputElement).value) || 1;
-                              modelInputs[i] = { ...modelInputs[i], resolved_shape: rs };
+                              const lb = [...(modelInputs[i].lower_bounds ?? [])];
+                              lb[d] = parseInt((e.target as HTMLInputElement).value) || 1;
+                              modelInputs[i] = { ...modelInputs[i], lower_bounds: lb };
                             }}
                             onwheel={(e) => handleDimWheel(e,
-                              () => modelInputs[i].resolved_shape?.[d] ?? 1,
-                              (v) => { const rs = [...(modelInputs[i].resolved_shape ?? [])]; rs[d] = v; modelInputs[i] = { ...modelInputs[i], resolved_shape: rs }; }
+                              () => modelInputs[i].lower_bounds?.[d] ?? 1,
+                              (v) => { const lb = [...(modelInputs[i].lower_bounds ?? [])]; lb[d] = v; modelInputs[i] = { ...modelInputs[i], lower_bounds: lb }; }
                             )}
-                            class="w-full px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
+                            class="dg-input"
+                          />
+                          <input
+                            type="number"
+                            min="1"
+                            value={input.upper_bounds?.[d] ?? 1024}
+                            oninput={(e) => {
+                              const ub = [...(modelInputs[i].upper_bounds ?? [])];
+                              ub[d] = parseInt((e.target as HTMLInputElement).value) || 1;
+                              modelInputs[i] = { ...modelInputs[i], upper_bounds: ub };
+                            }}
+                            onwheel={(e) => handleDimWheel(e,
+                              () => modelInputs[i].upper_bounds?.[d] ?? 1024,
+                              (v) => { const ub = [...(modelInputs[i].upper_bounds ?? [])]; ub[d] = v; modelInputs[i] = { ...modelInputs[i], upper_bounds: ub }; }
+                            )}
+                            class="dg-input"
                           />
                         {:else}
-                          <div></div>
+                          {#if input.source === 'random'}
+                            <div class="dg-static">{dim}</div>
+                          {:else}
+                            <div></div>
+                          {/if}
+                          <div class="dg-static">{dim}</div>
+                          <div class="dg-static">{dim}</div>
                         {/if}
-                        <input
-                          type="number"
-                          min="1"
-                          value={input.lower_bounds?.[d] ?? 1}
-                          oninput={(e) => {
-                            const lb = [...(modelInputs[i].lower_bounds ?? [])];
-                            lb[d] = parseInt((e.target as HTMLInputElement).value) || 1;
-                            modelInputs[i] = { ...modelInputs[i], lower_bounds: lb };
-                          }}
-                          onwheel={(e) => handleDimWheel(e,
-                            () => modelInputs[i].lower_bounds?.[d] ?? 1,
-                            (v) => { const lb = [...(modelInputs[i].lower_bounds ?? [])]; lb[d] = v; modelInputs[i] = { ...modelInputs[i], lower_bounds: lb }; }
-                          )}
-                          class="w-full px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
-                        />
-                        <input
-                          type="number"
-                          min="1"
-                          value={input.upper_bounds?.[d] ?? 1024}
-                          oninput={(e) => {
-                            const ub = [...(modelInputs[i].upper_bounds ?? [])];
-                            ub[d] = parseInt((e.target as HTMLInputElement).value) || 1;
-                            modelInputs[i] = { ...modelInputs[i], upper_bounds: ub };
-                          }}
-                          onwheel={(e) => handleDimWheel(e,
-                            () => modelInputs[i].upper_bounds?.[d] ?? 1024,
-                            (v) => { const ub = [...(modelInputs[i].upper_bounds ?? [])]; ub[d] = v; modelInputs[i] = { ...modelInputs[i], upper_bounds: ub }; }
-                          )}
-                          class="w-full px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
-                        />
-                      {:else}
-                        {#if input.source === 'random'}
-                          <div class="text-xs text-content-secondary px-1.5 py-1.5 font-mono">{dim}</div>
-                        {:else}
-                          <div></div>
-                        {/if}
-                        <div class="text-xs text-content-secondary px-1.5 py-1.5 font-mono">{dim}</div>
-                        <div class="text-xs text-content-secondary px-1.5 py-1.5 font-mono">{dim}</div>
-                      {/if}
-                    {/each}
+                      {/each}
+                    </div>
                   </div>
-                </div>
-              {/if}
-              {#if input.source === 'file'}
-                <div class="flex gap-1">
-                  <input
-                    type="text"
-                    bind:value={modelInputs[i].path}
-                    placeholder="/path/to/input.npy"
-                    class="flex-1 px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded text-sm focus:border-accent focus:outline-none"
-                  />
-                  <button
-                    type="button"
-                    class="px-2 py-1.5 bg-[--bg-input] border border-[--border-color] rounded hover:bg-[--bg-panel] transition-colors text-sm"
-                    title="Browse files"
-                    onclick={() => openBrowser('model', i)}
-                  >&#128194;</button>
-                </div>
-              {/if}
-            </div>
-          {/each}
+                {/if}
+                {#if input.source === 'file'}
+                  <div class="path-row" style="margin-top: 0.25rem;">
+                    <input
+                      type="text"
+                      bind:value={modelInputs[i].path}
+                      placeholder="/path/to/input.npy"
+                      class="file-input"
+                      class:input-error={inputFileErrors[i]}
+                      oninput={() => debounceInputFileCheck(i)}
+                    />
+                    <button
+                      type="button"
+                      class="browse-btn small"
+                      title="Browse files"
+                      onclick={() => openBrowser('model', i)}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+                        <path d="M2 5.5V3a1 1 0 011-1h3l1.5 1.5H11a1 1 0 011 1V11a1 1 0 01-1 1H3a1 1 0 01-1-1V5.5z" />
+                      </svg>
+                    </button>
+                    <div class="field-status-slot">
+                      {#if inputFileErrors[i]}
+                        <div class="field-status field-warn" title={inputFileErrors[i]}>
+                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+                            <path d="M7 1.5L12.5 11.5H1.5L7 1.5z" stroke-linejoin="round" />
+                            <line x1="7" y1="6" x2="7" y2="8.5" stroke-linecap="round" />
+                            <circle cx="7" cy="10" r="0.5" fill="currentColor" />
+                          </svg>
+                        </div>
+                      {/if}
+                    </div>
+                  </div>
+                  {#if inputFileErrors[i]}
+                    <div class="input-file-error">{inputFileErrors[i]}</div>
+                  {/if}
+                {/if}
+              </div>
+            {/each}
+          </div>
         </div>
       {/if}
 
-      <div class="grid grid-cols-2 gap-3">
-        <div>
-          <label for="main-device" class="block text-xs text-content-secondary mb-0.5">
-            Main Device
-            {#if changedFields.has('main_device')}
-              <span class="text-yellow-400 ml-1">(changed)</span>
-            {/if}
-          </label>
-          <select id="main-device" bind:value={mainDevice} onchange={onMainDeviceChange} class="w-full px-2 py-1.5 bg-[--bg-input] border rounded text-sm focus:border-accent focus:outline-none {changedFields.has('main_device') ? 'border-yellow-500' : 'border-[--border-color]'}">
-            {#each configStore.devices as device (device)}
-              <option value={device}>{device}</option>
-            {/each}
-          </select>
+      <!-- Section: Device Selection -->
+      <div class="form-section">
+        <div class="section-label">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+            <rect x="1" y="4" width="5" height="6" rx="1" />
+            <rect x="8" y="4" width="5" height="6" rx="1" />
+            <line x1="6" y1="7" x2="8" y2="7" />
+          </svg>
+          Devices
         </div>
-        <div>
-          <label for="ref-device" class="block text-xs text-content-secondary mb-0.5">
-            Reference Device
-            {#if changedFields.has('ref_device')}
-              <span class="text-yellow-400 ml-1">(changed)</span>
-            {/if}
-          </label>
-          <select id="ref-device" bind:value={refDevice} onchange={onRefDeviceChange} class="w-full px-2 py-1.5 bg-[--bg-input] border rounded text-sm focus:border-accent focus:outline-none {changedFields.has('ref_device') ? 'border-yellow-500' : 'border-[--border-color]'}">
-            {#each configStore.devices as device (device)}
-              <option value={device}>{device}</option>
-            {/each}
-          </select>
+
+        <div class="device-row">
+          <div class="device-col">
+            <label for="main-device" class="field-label">
+              Main Device
+              {#if changedFields.has('main_device')}
+                <span class="changed-badge">changed</span>
+              {/if}
+            </label>
+            <select id="main-device" bind:value={mainDevice} onchange={onMainDeviceChange} class="device-select {changedFields.has('main_device') ? 'is-changed' : ''}">
+              {#each configStore.devices as device (device)}
+                <option value={device}>{device}</option>
+              {/each}
+            </select>
+          </div>
+          <div class="device-vs">vs</div>
+          <div class="device-col">
+            <label for="ref-device" class="field-label">
+              Reference Device
+              {#if changedFields.has('ref_device')}
+                <span class="changed-badge">changed</span>
+              {/if}
+            </label>
+            <select id="ref-device" bind:value={refDevice} onchange={onRefDeviceChange} class="device-select {changedFields.has('ref_device') ? 'is-changed' : ''}">
+              {#each configStore.devices as device (device)}
+                <option value={device}>{device}</option>
+              {/each}
+            </select>
+          </div>
         </div>
       </div>
 
       <!-- Plugin Configuration -->
       {#snippet pluginConfigPanel(label: string, properties: DeviceProperty[], configValues: Record<string, string>, loading: boolean, prefix: string, onValueChange: (key: string, val: string) => void)}
-        <div class="flex-1 min-w-0">
-          <div class="text-xs text-content-secondary font-medium mb-1.5">{label}</div>
+        <div class="plugin-panel">
+          <div class="plugin-panel-label">{label}</div>
           {#if loading}
-            <div class="text-xs text-content-secondary py-2">Loading...</div>
+            <div class="plugin-loading">Loading...</div>
           {:else if properties.length === 0}
-            <div class="text-xs text-content-secondary py-2">No configurable properties.</div>
+            <div class="plugin-loading">No configurable properties.</div>
           {:else}
-            <div class="space-y-1.5 max-h-48 overflow-y-auto">
+            <div class="plugin-list">
               {#each properties as prop (prop.name)}
-                <div class="flex items-center gap-2">
-                  <label for="{prefix}-{prop.name}" class="text-xs text-content-secondary font-mono truncate flex-1" title={prop.name}>
+                <div class="plugin-prop">
+                  <label for="{prefix}-{prop.name}" class="plugin-prop-name" title={prop.name}>
                     {prop.name}
                   </label>
                   {#if prop.type === 'bool'}
@@ -763,7 +884,7 @@
                       id="{prefix}-{prop.name}"
                       value={configValues[prop.name] ?? prop.value}
                       onchange={(e) => onValueChange(prop.name, (e.target as HTMLSelectElement).value)}
-                      class="w-24 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
+                      class="plugin-prop-input"
                     >
                       <option value="True">True</option>
                       <option value="true">true</option>
@@ -777,7 +898,7 @@
                       id="{prefix}-{prop.name}"
                       value={configValues[prop.name] ?? prop.value}
                       onchange={(e) => onValueChange(prop.name, (e.target as HTMLSelectElement).value)}
-                      class="w-24 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
+                      class="plugin-prop-input"
                     >
                       {#each prop.options as opt (opt)}
                         <option value={opt}>{opt}</option>
@@ -789,7 +910,7 @@
                       type={prop.type === 'int' ? 'number' : 'text'}
                       value={configValues[prop.name] ?? prop.value}
                       oninput={(e) => onValueChange(prop.name, (e.target as HTMLInputElement).value)}
-                      class="w-24 px-1.5 py-1 bg-[--bg-input] border border-[--border-color] rounded text-xs focus:border-accent focus:outline-none"
+                      class="plugin-prop-input"
                     />
                   {/if}
                 </div>
@@ -800,7 +921,7 @@
       {/snippet}
 
       <details
-        class="border border-[--border-color] rounded"
+        class="plugin-details"
         ontoggle={(e) => {
           const open = (e.currentTarget as HTMLDetailsElement).open;
           pluginConfigExpanded = open;
@@ -810,17 +931,23 @@
           }
         }}
       >
-        <summary class="px-3 py-2 text-xs text-content-secondary cursor-pointer hover:text-content-primary select-none">
+        <summary class="plugin-summary">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+            <circle cx="6" cy="6" r="4.5" />
+            <circle cx="4.5" cy="5.5" r="0.8" fill="currentColor" />
+            <circle cx="7.5" cy="5.5" r="0.8" fill="currentColor" />
+            <line x1="4.5" y1="7.5" x2="7.5" y2="7.5" />
+          </svg>
           Plugin Configuration
           {#if Object.keys(getPluginConfigPayload()).length + Object.keys(getRefPluginConfigPayload()).length > 0}
-            <span class="ml-1 text-accent">({Object.keys(getPluginConfigPayload()).length + Object.keys(getRefPluginConfigPayload()).length} changed)</span>
+            <span class="plugin-changed-count">{Object.keys(getPluginConfigPayload()).length + Object.keys(getRefPluginConfigPayload()).length} changed</span>
           {/if}
         </summary>
-        <div class="px-3 pb-3">
-          <div class="text-[11px] text-content-secondary mb-2">
+        <div class="plugin-body">
+          <div class="plugin-hint">
             Only changed values will be sent to the inference engine.
           </div>
-          <div class="grid grid-cols-2 gap-4">
+          <div class="plugin-grid">
             {@render pluginConfigPanel(
               `Main: ${mainDevice}`,
               mainPluginProperties,
@@ -842,7 +969,12 @@
       </details>
 
       {#if error}
-        <div class="p-3 bg-red-900/50 border border-red-700 rounded text-red-300 text-sm">
+        <div class="form-error">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+            <circle cx="7" cy="7" r="5.5" />
+            <line x1="7" y1="4.5" x2="7" y2="7.5" stroke-linecap="round" />
+            <circle cx="7" cy="9.5" r="0.5" fill="currentColor" />
+          </svg>
           {error}
         </div>
       {/if}
@@ -850,8 +982,14 @@
       <button
         type="submit"
         disabled={submitting}
-        class="w-full py-2 bg-accent hover:bg-accent-hover disabled:bg-[--bg-panel] disabled:text-content-secondary rounded-lg font-medium transition-colors text-sm"
+        class="submit-btn"
+        class:is-submitting={submitting}
       >
+        {#if submitting}
+          <svg class="submit-spin" width="14" height="14" viewBox="0 0 14 14" fill="none">
+            <circle cx="7" cy="7" r="5" stroke="currentColor" stroke-width="1.5" stroke-dasharray="24" stroke-dashoffset="6" stroke-linecap="round" />
+          </svg>
+        {/if}
         {submitting ? (isCloneMode ? 'Cloning...' : 'Creating...') : (isCloneMode ? 'Clone & Run' : 'Start Session')}
       </button>
     </form>
@@ -866,3 +1004,601 @@
     oncancel={() => showBrowser = false}
   />
 {/if}
+
+<style>
+  /* ── Root ── */
+  .form-root {
+    flex: 1;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 1.5rem;
+    padding-top: 2rem;
+    background: var(--bg-primary);
+    background-image:
+      radial-gradient(ellipse 60% 40% at 50% 0%, rgba(76, 141, 255, 0.03) 0%, transparent 100%);
+    overflow-y: auto;
+  }
+
+  .form-inner {
+    max-width: 40rem;
+    width: 100%;
+    animation: fade-down 0.4s ease-out both;
+  }
+
+  /* ── Header ── */
+  .form-header {
+    margin-bottom: 1.5rem;
+  }
+
+  .back-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.3rem 0.6rem 0.3rem 0.4rem;
+    border: none;
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    margin-bottom: 0.75rem;
+  }
+
+  .back-btn:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary);
+  }
+
+  .form-title {
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin: 0;
+    line-height: 1.2;
+  }
+
+  .title-model {
+    color: #4C8DFF;
+  }
+
+  /* ── Form Body ── */
+  .form-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  /* ── Sections ── */
+  .form-section {
+    background: var(--bg-panel);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .section-label {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+    opacity: 0.6;
+  }
+
+  .section-count {
+    background: rgba(76, 141, 255, 0.12);
+    color: rgba(76, 141, 255, 0.8);
+    padding: 0.05rem 0.4rem;
+    border-radius: 99px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+  }
+
+  /* ── Field Groups ── */
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .field-label {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+  }
+
+  .field-opt {
+    font-weight: 400;
+    opacity: 0.5;
+    font-size: 0.7rem;
+    margin-left: 0.25rem;
+  }
+
+  .field-req {
+    font-family: var(--font-mono);
+    font-weight: 400;
+    opacity: 0.5;
+    font-size: 0.65rem;
+    margin-left: 0.25rem;
+  }
+
+  .path-row {
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+  }
+
+  .browse-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+  }
+
+  .browse-btn:hover {
+    background: var(--bg-menu);
+    color: var(--text-primary);
+    border-color: rgba(76, 141, 255, 0.25);
+  }
+
+  .browse-btn.small {
+    padding: 0.375rem;
+  }
+
+  .field-status-slot {
+    width: 20px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .field-status {
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+  }
+
+  .field-warn {
+    color: #E8A849;
+    cursor: help;
+    background: rgba(232, 168, 73, 0.12);
+    border-radius: 50%;
+    padding: 3px;
+    animation: field-warn-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes field-warn-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(232, 168, 73, 0.3); }
+    50% { box-shadow: 0 0 0 4px rgba(232, 168, 73, 0); }
+  }
+
+  .status-spin {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ── Model Inputs ── */
+  .inputs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 45vh;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+
+  .inputs-list::-webkit-scrollbar { width: 4px; }
+  .inputs-list::-webkit-scrollbar-track { background: transparent; }
+  .inputs-list::-webkit-scrollbar-thumb { background: #3A3F56; border-radius: 99px; }
+
+  .input-card {
+    background: var(--bg-input);
+    border-radius: 0.5rem;
+    padding: 0.625rem 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    border: 1px solid transparent;
+    transition: border-color 0.15s ease;
+  }
+
+  .input-card:hover {
+    border-color: rgba(76, 141, 255, 0.1);
+  }
+
+  .input-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .input-type {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    opacity: 0.6;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+  }
+
+  .input-controls {
+    display: flex;
+    gap: 0.35rem;
+    align-items: center;
+  }
+
+  .input-ctrl {
+    flex: 1;
+  }
+
+  .ctrl-select {
+    width: 100%;
+    padding: 0.3rem 0.4rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.3rem;
+    font-size: 0.7rem;
+    color: var(--text-primary);
+    transition: border-color 0.15s ease;
+  }
+
+  .ctrl-select:focus {
+    border-color: #4C8DFF;
+    outline: none;
+  }
+
+  /* ── Dynamic Shape ── */
+  .dynamic-shape-box {
+    border: 1px solid rgba(232, 168, 73, 0.25);
+    border-radius: 0.375rem;
+    padding: 0.5rem;
+    background: rgba(232, 168, 73, 0.03);
+  }
+
+  .dynamic-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #E8A849;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-bottom: 0.35rem;
+  }
+
+  .dynamic-grid {
+    display: grid;
+    gap: 0.25rem;
+  }
+
+  .dg-header {
+    font-size: 0.65rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    padding: 0 0.25rem;
+  }
+
+  .dg-dim {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    padding: 0.375rem 0.25rem;
+  }
+
+  .dg-input {
+    width: 100%;
+    padding: 0.3rem 0.4rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.3rem;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+  }
+
+  .dg-input:focus {
+    border-color: #4C8DFF;
+    outline: none;
+  }
+
+  .dg-static {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    padding: 0.375rem 0.4rem;
+    opacity: 0.6;
+  }
+
+  .file-input {
+    flex: 1;
+    padding: 0.375rem 0.5rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+  }
+
+  .file-input:focus {
+    border-color: #4C8DFF;
+    outline: none;
+  }
+
+  .file-input.input-error {
+    border-color: rgba(232, 168, 73, 0.5);
+  }
+
+  .input-file-error {
+    font-size: 0.7rem;
+    color: #E8A849;
+    margin-top: 0.2rem;
+    padding-left: 0.1rem;
+  }
+
+  /* ── Device Selection ── */
+  .device-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0;
+  }
+
+  .device-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .device-vs {
+    flex-shrink: 0;
+    padding: 0 0.75rem;
+    padding-bottom: 0.4rem;
+    font-size: 0.7rem;
+    font-style: italic;
+    color: var(--text-secondary);
+    opacity: 0.35;
+  }
+
+  .device-select {
+    width: 100%;
+    padding: 0.5rem 0.6rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--text-primary);
+    transition: border-color 0.15s ease;
+  }
+
+  .device-select:focus {
+    border-color: #4C8DFF;
+    outline: none;
+  }
+
+  .device-select.is-changed {
+    border-color: rgba(232, 168, 73, 0.5);
+  }
+
+  .changed-badge {
+    font-size: 0.6rem;
+    font-weight: 500;
+    color: #E8A849;
+    margin-left: 0.35rem;
+    letter-spacing: 0.02em;
+  }
+
+  /* ── Plugin Configuration ── */
+  .plugin-details {
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    transition: border-color 0.15s ease;
+  }
+
+  .plugin-details[open] {
+    border-color: rgba(76, 141, 255, 0.15);
+  }
+
+  .plugin-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.65rem 0.85rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+    transition: color 0.15s ease;
+    list-style: none;
+  }
+
+  .plugin-summary::-webkit-details-marker { display: none; }
+
+  .plugin-summary:hover {
+    color: var(--text-primary);
+  }
+
+  .plugin-changed-count {
+    margin-left: auto;
+    font-size: 0.65rem;
+    color: #4C8DFF;
+    font-weight: 500;
+  }
+
+  .plugin-body {
+    padding: 0 0.85rem 0.85rem;
+  }
+
+  .plugin-hint {
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    margin-bottom: 0.75rem;
+  }
+
+  .plugin-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  .plugin-panel {
+    min-width: 0;
+  }
+
+  .plugin-panel-label {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+  }
+
+  .plugin-loading {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    padding: 0.5rem 0;
+  }
+
+  .plugin-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    max-height: 12rem;
+    overflow-y: auto;
+  }
+
+  .plugin-prop {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .plugin-prop-name {
+    flex: 1;
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .plugin-prop-input {
+    width: 6rem;
+    padding: 0.25rem 0.4rem;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 0.3rem;
+    font-size: 0.7rem;
+    color: var(--text-primary);
+    flex-shrink: 0;
+  }
+
+  .plugin-prop-input:focus {
+    border-color: #4C8DFF;
+    outline: none;
+  }
+
+  /* ── Error ── */
+  .form-error {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    padding: 0.85rem 1rem;
+    background: rgba(229, 77, 77, 0.12);
+    border: 1px solid rgba(229, 77, 77, 0.35);
+    border-left: 3px solid #E54D4D;
+    border-radius: 0.75rem;
+    color: #F0A0A0;
+    font-size: 0.8rem;
+    line-height: 1.45;
+    animation: error-slide-in 0.35s ease-out both;
+    box-shadow: 0 2px 12px rgba(229, 77, 77, 0.1), inset 0 0 20px rgba(229, 77, 77, 0.03);
+  }
+
+  .form-error svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: #E54D4D;
+    animation: error-icon-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes error-slide-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes error-icon-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* ── Submit ── */
+  .submit-btn {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: #4C8DFF;
+    border: none;
+    border-radius: 0.75rem;
+    color: white;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
+  }
+
+  .submit-btn:hover:not(:disabled) {
+    background: #6BA1FF;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 20px rgba(76, 141, 255, 0.25);
+  }
+
+  .submit-btn:active:not(:disabled) {
+    transform: scale(0.99);
+  }
+
+  .submit-btn:disabled {
+    background: var(--bg-panel);
+    color: var(--text-secondary);
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+
+  .submit-spin {
+    animation: spin 1s linear infinite;
+  }
+</style>
