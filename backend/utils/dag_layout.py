@@ -277,8 +277,12 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
     Parallel edges from the same source get consistent spacing.
     Uses actual target-port arrival x (not node center) for smooth interpolation.
     """
-    # Build real-node intervals per layer for overlap checking
+    # Build real-node intervals per layer for overlap checking.
+    # Corridor obstacles are tracked separately so they influence
+    # resolution (no collision) but not initial boundary computation
+    # (prevents distant corridors from pulling local edges away).
     layer_intervals: list[list[tuple[float, float]]] = [[] for _ in range(num_layers)]
+    corridor_obstacles: list[list[tuple[float, float]]] = [[] for _ in range(num_layers)]
     for L in range(num_layers):
         for nid in layers[L]:
             w = ext_nmap[nid]["width"]
@@ -334,7 +338,7 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                 dL = layer_of[did]
                 t = (dL - src_L) / span
                 ix = src_cx + t * (tgt_cx - src_cx)
-                for left, right in layer_intervals[dL]:
+                for left, right in layer_intervals[dL] + corridor_obstacles[dL]:
                     if left - NODE_SPACING <= ix <= right + NODE_SPACING:
                         straight_ok = False
                         break
@@ -406,14 +410,15 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
             for r in side_routes:
                 all_dummies.extend(r["dummies"])
 
-            # Resolve: ensure base ± max_extent clears all nodes at all layers
+            # Resolve: ensure base ± max_extent clears all real nodes AND
+            # previously-placed corridor obstacles at all layers.
             for _ in range(20):
                 clear = True
                 lo_x = base - max_extent
                 hi_x = base + max_extent
                 for did in all_dummies:
                     dL = layer_of[did]
-                    for left, right in layer_intervals[dL]:
+                    for left, right in layer_intervals[dL] + corridor_obstacles[dL]:
                         if left - NODE_SPACING < hi_x and lo_x < right + NODE_SPACING:
                             base = ((right + NODE_SPACING + max_extent)
                                     if go_right
@@ -432,8 +437,14 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                 order = list(reversed(order))
             for rank_in_side, k in enumerate(order):
                 par_off = (rank_in_side - (side_count - 1) / 2) * EDGE_SPACING if side_count > 1 else 0
+                pos_x = base + par_off
                 for did in side_routes[k]["dummies"]:
-                    x_of[did] = base + par_off
+                    x_of[did] = pos_x
+
+            # Register placed corridors so later source groups avoid them.
+            for did in all_dummies:
+                dL = layer_of[did]
+                corridor_obstacles[dL].append((x_of[did], x_of[did]))
 
         # Apply straight-line edges
         for rank, (idx, chain) in enumerate(chains):
