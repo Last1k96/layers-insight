@@ -290,55 +290,176 @@ class TestFanOutSpreading:
 
 
 class TestTransformerFanOut:
-    def test_high_fanout_corridors_avoid_nodes(self):
-        """Transformer mask fan-out: 1 source → 12 targets across many layers.
+    """Tests for transformer-like graph patterns.
 
-        Simulates Where_2 → 12 ScaledDotProductAttention pattern.
-        Corridor waypoints must not overlap with any real node.
+    Reproduces CamemBERT layout issues:
+    - Where_2 (Select) fans out to 12 SDPA nodes
+    - Shape (ShapeOf) fans out to 12 Reshape nodes
+    - Many single-edge skip connections (residual LayerNorm→Add)
+    - Dozens of other single-edge source groups
+    """
+
+    @staticmethod
+    def _build_transformer_graph():
+        """Build a simplified CamemBERT-like graph.
+
+        Returns (nodes, edges, key_names) where key_names is a dict
+        with 'where', 'shape', 'sdpa_*', 'reshape_*', 'ln_*', 'add_*'.
         """
-        # Build: where → chain of 12 "layers", each with 3 ops,
-        # each ending at an SDPA-like target.
-        # where connects to every SDPA via long-range edges.
-        nodes = [_node("where")]
+        nodes = []
         edges = []
-        prev_layer_out = "where"
+        key = {}
+
+        # Two early fan-out sources (Where_2 = Select mask, Shape = ShapeOf)
+        nodes.append(_node("where", width=100))
+        nodes.append(_node("shape", width=100))
+        edges.append(_edge("where", "shape"))
+
         sdpa_names = []
+        reshape_names = []
+        ln_names = []
+        add_names = []
         all_intermediate = []
+
+        prev_main = "shape"
         for t in range(12):
-            # 3 intermediate ops per "transformer layer"
-            layer_nodes = []
-            prev = prev_layer_out
-            for step in range(3):
+            # Each transformer layer: 5 ops in the main chain,
+            # plus a residual (skip) connection from ln → add.
+            ln = f"ln_{t}"
+            nodes.append(_node(ln))
+            edges.append(_edge(prev_main, ln))
+            ln_names.append(ln)
+
+            prev = ln
+            for step in range(4):
                 nid = f"L{t}_op{step}"
                 nodes.append(_node(nid))
                 edges.append(_edge(prev, nid))
                 prev = nid
-                layer_nodes.append(nid)
-            all_intermediate.extend(layer_nodes)
+                all_intermediate.append(nid)
 
+            # SDPA consumes Q/K/V (from chain) + mask (from where)
             sdpa = f"sdpa_{t}"
             nodes.append(_node(sdpa, width=200))
             edges.append(_edge(prev, sdpa))
-            # Long-range fan-out edge: where → sdpa
             edges.append(_edge("where", sdpa))
             sdpa_names.append(sdpa)
-            prev_layer_out = sdpa
 
+            # Reshape consumes SDPA output + shape (from shape)
+            reshape = f"reshape_{t}"
+            nodes.append(_node(reshape))
+            edges.append(_edge(sdpa, reshape))
+            edges.append(_edge("shape", reshape))
+            reshape_names.append(reshape)
+
+            # Residual add: ln → (skip over 5 ops + sdpa + reshape) → add
+            add = f"add_{t}"
+            nodes.append(_node(add))
+            edges.append(_edge(reshape, add))
+            edges.append(_edge(ln, add))  # residual skip
+            add_names.append(add)
+
+            prev_main = add
+
+        key.update(sdpa=sdpa_names, reshape=reshape_names,
+                   ln=ln_names, add=add_names, intermediate=all_intermediate)
+        return nodes, edges, key
+
+    def test_high_fanout_corridors_avoid_nodes(self):
+        """Corridor waypoints from fan-out sources must not overlap real nodes
+        in the same vertical region (same layer range)."""
+        nodes, edges, key = self._build_transformer_graph()
+        result = compute_dag_layout(nodes, edges)
+        pos = result["nodes"]
+        node_h = 32  # NODE_HEIGHT
+
+        all_real = key["intermediate"] + key["ln"] + key["add"] + key["sdpa"] + key["reshape"]
+        for source in ("where", "shape"):
+            for eidx, e in enumerate(edges):
+                if e["source"] != source:
+                    continue
+                wps = result["edges"][f"e{eidx}"]["waypoints"]
+                tgt = e["target"]
+                for wp in wps[1:-1]:
+                    for nid in all_real:
+                        if nid == tgt or nid == source:
+                            continue
+                        ny = pos[nid]["y"]
+                        # Only check nodes at the same vertical level
+                        if abs(ny - wp["y"]) > node_h + 20:
+                            continue
+                        n_left = pos[nid]["x"]
+                        n_right = n_left + ([n for n in nodes if n["id"] == nid][0]["width"])
+                        assert wp["x"] <= n_left - 5 or wp["x"] >= n_right + 5, \
+                            f"{source} corridor wp x={wp['x']:.0f} overlaps {nid} [{n_left:.0f}, {n_right:.0f}] at y≈{ny:.0f}"
+
+    def test_competing_fanout_sources_use_opposite_sides(self):
+        """Where (Select) and Shape corridors must be on opposite sides."""
+        nodes, edges, key = self._build_transformer_graph()
         result = compute_dag_layout(nodes, edges)
         pos = result["nodes"]
 
-        # Verify corridor waypoints don't overlap real intermediate nodes
+        def _corridor_median(source_name):
+            xs = []
+            for eidx, e in enumerate(edges):
+                if e["source"] != source_name:
+                    continue
+                wps = result["edges"][f"e{eidx}"]["waypoints"]
+                xs.extend(wp["x"] for wp in wps[1:-1])
+            return sorted(xs)[len(xs) // 2] if xs else None
+
+        # Compute graph center
+        centers = [pos[n["id"]]["x"] + n["width"] / 2 for n in nodes]
+        graph_center = (min(centers) + max(centers)) / 2
+
+        w_med = _corridor_median("where")
+        s_med = _corridor_median("shape")
+        assert w_med is not None and s_med is not None
+        # Must be on opposite sides of graph center
+        assert (w_med < graph_center) != (s_med < graph_center), \
+            f"both on same side: where={w_med:.0f} shape={s_med:.0f} center={graph_center:.0f}"
+
+    def test_residual_skip_not_pushed_to_fanout_corridors(self):
+        """Residual connections (ln→add) must stay close to the graph, not
+        get pushed to the same position as the large fan-out corridors."""
+        nodes, edges, key = self._build_transformer_graph()
+        result = compute_dag_layout(nodes, edges)
+        pos = result["nodes"]
+
+        # Find fan-out corridor positions
+        fanout_xs = []
+        for source in ("where", "shape"):
+            for eidx, e in enumerate(edges):
+                if e["source"] != source:
+                    continue
+                wps = result["edges"][f"e{eidx}"]["waypoints"]
+                fanout_xs.extend(wp["x"] for wp in wps[1:-1])
+
+        if not fanout_xs:
+            return
+        fanout_left = min(fanout_xs)
+        fanout_right = max(fanout_xs)
+
+        # Check each residual skip edge (ln → add)
         for eidx, e in enumerate(edges):
-            if e["source"] != "where":
+            if not (e["source"].startswith("ln_") and e["target"].startswith("add_")):
                 continue
-            ek = f"e{eidx}"
-            wps = result["edges"][ek]["waypoints"]
-            for wp in wps[1:-1]:  # skip start/end
-                for nid in all_intermediate:
-                    n_left = pos[nid]["x"]
-                    n_right = pos[nid]["x"] + 120
-                    assert wp["x"] <= n_left - 5 or wp["x"] >= n_right + 5, \
-                        f"corridor wp x={wp['x']:.0f} overlaps {nid} [{n_left:.0f}, {n_right:.0f}]"
+            wps = result["edges"][f"e{eidx}"]["waypoints"]
+            skip_xs = [wp["x"] for wp in wps[1:-1]]
+            if not skip_xs:
+                continue
+
+            src_x = pos[e["source"]]["x"]
+            tgt_x = pos[e["target"]]["x"]
+            local_center = (src_x + tgt_x) / 2 + 60  # approx node center
+
+            for wx in skip_xs:
+                # Skip corridor must be closer to its own nodes than to fan-out corridors
+                dist_to_local = abs(wx - local_center)
+                dist_to_fanout = min(abs(wx - fanout_left), abs(wx - fanout_right))
+                assert dist_to_fanout > dist_to_local * 0.5, \
+                    f"residual {e['source']}→{e['target']} wp x={wx:.0f} is at fanout corridor " \
+                    f"(dist_local={dist_to_local:.0f}, dist_fanout={dist_to_fanout:.0f})"
 
 
 class TestPerformance:

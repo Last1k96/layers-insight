@@ -303,11 +303,26 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
         if len(chain) > 2:
             source_groups[chain[0]].append((i, chain))
 
-    for src, chains in source_groups.items():
+    # Classify source groups: "major" (high-fan-out, e.g. Where_2 with
+    # 12 corridor edges) vs "minor" (1-3 skip connections).  Only major
+    # groups participate in global corridor avoidance; minor groups stay
+    # local and don't pollute corridor_obstacles.
+    MAJOR_THRESHOLD = 4  # corridor edges needed to be "major"
+    major_side_taken: str | None = None  # 'left' or 'right'
+
+    # Process major groups first (most edges first, then left-to-right)
+    # so they get first pick of sides.  Minor groups after.
+    sorted_sources = sorted(
+        source_groups.items(),
+        key=lambda sc: (-len(sc[1]), x_of[sc[0]] + ext_nmap[sc[0]]["width"] / 2),
+    )
+
+    for src, chains in sorted_sources:
         # Sort by target x for deterministic parallel ordering
         chains.sort(key=lambda ic: x_of[ic[1][-1]])
         n_parallel = len(chains)
         src_cx = x_of[src] + ext_nmap[src]["width"] / 2
+        is_major = n_parallel >= MAJOR_THRESHOLD
 
         # --- Pass 1: compute per-edge routing (straight vs corridor) ---
         edge_routes: list[dict] = []  # per-chain routing info
@@ -332,14 +347,19 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
             else:
                 tgt_cx = x_of[tgt_n] + ext_nmap[tgt_n]["width"] / 2
 
-            # Check whether the ideal straight line is clear
+            # Check whether the ideal straight line is clear.
+            # Only real nodes block straight lines — corridor obstacles
+            # are zero-width routing points that B-splines curve around.
+            # Account for parallel offset that will be applied to
+            # straight edges (up to ±max_par_off).
+            max_par = ((n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
             straight_ok = True
             for did in dummies:
                 dL = layer_of[did]
                 t = (dL - src_L) / span
                 ix = src_cx + t * (tgt_cx - src_cx)
-                for left, right in layer_intervals[dL] + corridor_obstacles[dL]:
-                    if left - NODE_SPACING <= ix <= right + NODE_SPACING:
+                for left, right in layer_intervals[dL]:
+                    if left - NODE_SPACING - max_par <= ix <= right + NODE_SPACING + max_par:
                         straight_ok = False
                         break
                 if not straight_ok:
@@ -356,62 +376,110 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                     "tgt_cx": tgt_cx, "span": span,
                 })
             else:
-                # Compute corridor base for this edge
-                src_x = x_of[src_n]
-                tgt_x = x_of[tgt_n]
-                src_r = src_x + ext_nmap[src_n]["width"]
-                tgt_r = tgt_x + ext_nmap[tgt_n]["width"]
-
-                max_boundary = -float("inf")
-                min_boundary = float("inf")
-                if span > 10:
-                    # Long-range edges (e.g. transformer mask fan-out):
-                    # scan ALL nodes in intermediate layers so the corridor
-                    # routes fully outside the graph.
-                    for did in dummies:
-                        dL = layer_of[did]
-                        for left, right in layer_intervals[dL]:
-                            if right > max_boundary:
-                                max_boundary = right
-                            if left < min_boundary:
-                                min_boundary = left
-                else:
-                    # Short skip-connections: bounded scan around src/tgt
-                    margin = min(NODE_SPACING * 5, NODE_SPACING + span * 2)
-                    range_lo = min(src_x, tgt_x) - margin
-                    range_hi = max(src_r, tgt_r) + margin
-                    for did in dummies:
-                        dL = layer_of[did]
-                        for left, right in layer_intervals[dL]:
-                            if right >= range_lo and left <= range_hi:
-                                if right > max_boundary:
-                                    max_boundary = right
-                                if left < min_boundary:
-                                    min_boundary = left
-
-                left_corr = min_boundary - NODE_SPACING if min_boundary < float("inf") else src_cx
-                right_corr = max_boundary + NODE_SPACING if max_boundary > -float("inf") else src_cx
-                # When the source is clearly outside the intermediate
-                # boundaries, use distance to pick the closer side.
-                # When the source is inside (local skip-connections),
-                # route toward the target so the exit curve doesn't
-                # cross back through the intermediates.
-                if src_cx > max_boundary or src_cx < min_boundary:
-                    dist_left = abs(src_cx - left_corr) + abs(tgt_cx - left_corr)
-                    dist_right = abs(src_cx - right_corr) + abs(tgt_cx - right_corr)
-                    go_right = dist_right <= dist_left
-                else:
-                    go_right = tgt_cx >= src_cx
-                base = right_corr if go_right else left_corr
-
                 edge_routes.append({
                     "mode": "corridor", "chain": chain, "dummies": dummies,
-                    "base": base, "go_right": go_right, "tgt_cx": tgt_cx, "tgt_L": tgt_L,
+                    "tgt_cx": tgt_cx, "tgt_L": tgt_L, "span": span,
                 })
 
+        # Count corridor edges to decide routing strategy
+        corridor_routes = [r for r in edge_routes if r.get("mode") == "corridor"]
+        if not corridor_routes:
+            # Apply straight-line edges only
+            for rank, (idx, chain) in enumerate(chains):
+                route = edge_routes[rank]
+                if route["mode"] == "straight":
+                    par_off = (rank - (n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
+                    for did in route["dummies"]:
+                        dL = layer_of[did]
+                        t = (dL - route["src_L"]) / route["span"]
+                        x_of[did] = route["src_cx"] + t * (route["tgt_cx"] - route["src_cx"]) + par_off
+            continue
+
+        # --- Compute corridor boundary (real nodes only for side decision) ---
+        # Scan all intermediate layers to find the real-node extent.
+        all_corridor_dummies = []
+        for r in corridor_routes:
+            all_corridor_dummies.extend(r["dummies"])
+
+        max_boundary = -float("inf")
+        min_boundary = float("inf")
+        if is_major:
+            # Major groups: scan ALL real nodes in intermediate layers
+            for did in all_corridor_dummies:
+                dL = layer_of[did]
+                for left, right in layer_intervals[dL]:
+                    if right > max_boundary:
+                        max_boundary = right
+                    if left < min_boundary:
+                        min_boundary = left
+        else:
+            # Minor groups: bounded scan around src/tgt
+            src_x = x_of[src]
+            src_r = src_x + ext_nmap[src]["width"]
+            all_tgt_x = [r["tgt_cx"] for r in corridor_routes]
+            margin = min(NODE_SPACING * 5, NODE_SPACING * 2)
+            range_lo = min(src_x, min(all_tgt_x)) - margin
+            range_hi = max(src_r, max(all_tgt_x)) + margin
+            for did in all_corridor_dummies:
+                dL = layer_of[did]
+                for left, right in layer_intervals[dL]:
+                    if right >= range_lo and left <= range_hi:
+                        if right > max_boundary:
+                            max_boundary = right
+                        if left < min_boundary:
+                            min_boundary = left
+
+        left_corr = min_boundary - NODE_SPACING if min_boundary < float("inf") else src_cx
+        right_corr = max_boundary + NODE_SPACING if max_boundary > -float("inf") else src_cx
+
+        # --- Side decision ---
+        if is_major:
+            # Major groups: single group-level decision using median
+            # target, so all edges go to the same side.  Check existing
+            # corridor obstacles to avoid the occupied side.
+            median_tgt = sorted(r["tgt_cx"] for r in corridor_routes)[len(corridor_routes) // 2]
+
+            # Also account for corridor obstacles in boundary to detect
+            # already-occupied sides.
+            obs_min = min_boundary
+            obs_max = max_boundary
+            for did in all_corridor_dummies:
+                dL = layer_of[did]
+                for cl, cr in corridor_obstacles[dL]:
+                    if cr > obs_max:
+                        obs_max = cr
+                    if cl < obs_min:
+                        obs_min = cl
+            obs_left = obs_min - NODE_SPACING if obs_min < float("inf") else left_corr
+            obs_right = obs_max + NODE_SPACING if obs_max > -float("inf") else right_corr
+
+            dist_left = abs(src_cx - obs_left) + abs(median_tgt - obs_left)
+            dist_right = abs(src_cx - obs_right) + abs(median_tgt - obs_right)
+            group_go_right = dist_right <= dist_left
+
+            # If the preferred side is already taken by another major
+            # group, force to the opposite side.
+            preferred_side = "right" if group_go_right else "left"
+            if major_side_taken is not None and preferred_side == major_side_taken:
+                group_go_right = not group_go_right
+            major_side_taken = "right" if group_go_right else "left"
+
+            for r in corridor_routes:
+                r["go_right"] = group_go_right
+                r["base"] = right_corr if group_go_right else left_corr
+        else:
+            # Minor groups: per-edge decision based on local boundary
+            for r in corridor_routes:
+                tgt_cx = r["tgt_cx"]
+                if src_cx > max_boundary or src_cx < min_boundary:
+                    dl = abs(src_cx - left_corr) + abs(tgt_cx - left_corr)
+                    dr = abs(src_cx - right_corr) + abs(tgt_cx - right_corr)
+                    r["go_right"] = dr <= dl
+                else:
+                    r["go_right"] = tgt_cx >= src_cx
+                r["base"] = right_corr if r["go_right"] else left_corr
+
         # --- Pass 2 & 3: compute shared base per side, assign by target order ---
-        # Group corridor edges by side, compute ONE shared base that clears
-        # ALL edges in the side, then assign par_off by target x order.
         left_indices = [i for i, r in enumerate(edge_routes) if r.get("mode") == "corridor" and not r["go_right"]]
         right_indices = [i for i, r in enumerate(edge_routes) if r.get("mode") == "corridor" and r["go_right"]]
 
@@ -428,7 +496,7 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
 
             # Collect ALL dummies from all edges in this side group,
             # plus a few layers near the source so the corridor entry
-            # curve doesn't cross nearby nodes (e.g. Multiply_78).
+            # curve doesn't cross nearby nodes.
             all_dummies = []
             for r in side_routes:
                 all_dummies.extend(r["dummies"])
@@ -437,15 +505,16 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
             extra_layers = [L for L in range(max(0, src_L - 1), min(num_layers, src_L + 3))
                             if layer_intervals[L]]
 
-            # Resolve: ensure base ± max_extent clears all real nodes AND
-            # previously-placed corridor obstacles at all layers.
+            # Resolve: major groups avoid real nodes AND other major
+            # corridors.  Minor groups only avoid real nodes.
             for _ in range(20):
                 clear = True
                 lo_x = base - max_extent
                 hi_x = base + max_extent
                 for did in all_dummies:
                     dL = layer_of[did]
-                    for left, right in layer_intervals[dL] + corridor_obstacles[dL]:
+                    obstacles = layer_intervals[dL] + corridor_obstacles[dL] if is_major else layer_intervals[dL]
+                    for left, right in obstacles:
                         if left - NODE_SPACING < hi_x and lo_x < right + NODE_SPACING:
                             base = ((right + NODE_SPACING + max_extent)
                                     if go_right
@@ -461,7 +530,6 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                 for eL in extra_layers:
                     for left, right in layer_intervals[eL]:
                         if go_right:
-                            # bspline_x ≈ (src_right + 5*corr) / 6 must > right + pad
                             min_corr = (6 * (right + NODE_SPACING) - src_right) / 5
                             needed = min_corr + max_extent
                             if base < needed:
@@ -476,11 +544,7 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                 if clear:
                     break
 
-            # Assign par_off by peel-off order: edges that leave the corridor
-            # earliest (closest target) get the innermost slot (closest to
-            # targets), so they're already gone when later edges peel off.
-            # For right-side corridors: earliest peel-off → leftmost slot.
-            # For left-side corridors: earliest peel-off → rightmost slot.
+            # Assign par_off by peel-off order
             order = sorted(range(side_count), key=lambda k: side_routes[k]["tgt_L"])
             if not go_right:
                 order = list(reversed(order))
@@ -490,10 +554,12 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                 for did in side_routes[k]["dummies"]:
                     x_of[did] = pos_x
 
-            # Register placed corridors so later source groups avoid them.
-            for did in all_dummies:
-                dL = layer_of[did]
-                corridor_obstacles[dL].append((x_of[did], x_of[did]))
+            # Only major groups register corridor obstacles — minor
+            # groups are local and shouldn't affect global routing.
+            if is_major:
+                for did in all_dummies:
+                    dL = layer_of[did]
+                    corridor_obstacles[dL].append((x_of[did], x_of[did]))
 
         # Apply straight-line edges
         for rank, (idx, chain) in enumerate(chains):
