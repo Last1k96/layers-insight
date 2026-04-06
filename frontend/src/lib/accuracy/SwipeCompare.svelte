@@ -9,6 +9,7 @@
 		type ColormapName,
 	} from './tensorUtils';
 	import { rangeScroll } from './rangeScroll';
+	import { keyboardNav } from './keyboardNav';
 
 	let {
 		main,
@@ -32,6 +33,8 @@
 	let mode: 'swipe' | 'blend' = $state('swipe');
 	let swipePos = $state(0.5); // 0-1, left=ref, right=main
 	let blendAlpha = $state(0.5);
+	let animating = $state(false);
+	let animDir = $state(1);
 
 	let hoverX = $state(-1);
 	let hoverY = $state(-1);
@@ -236,11 +239,32 @@
 	function handleMouseLeave() { dragging = false; swipeDragging = false; showTooltip = false; }
 
 	$effect(() => { shape; zoom = 1; panX = 0; panY = 0; });
+
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
+
+	// Animated swipe
+	$effect(() => {
+		if (!animating || mode !== 'swipe') return;
+		let frameId: number;
+		function tick() {
+			swipePos += animDir * 0.005;
+			if (swipePos >= 1) { swipePos = 1; animDir = -1; }
+			if (swipePos <= 0) { swipePos = 0; animDir = 1; }
+			frameId = requestAnimationFrame(tick);
+		}
+		frameId = requestAnimationFrame(tick);
+		return () => cancelAnimationFrame(frameId);
+	});
 </script>
 
 <svelte:window onmouseup={handleMouseUp} />
 
-<div class="flex flex-col gap-4 relative h-full">
+<div class="flex flex-col gap-4 relative h-full" tabindex="0" use:keyboardNav={{
+	onResetZoom: resetView,
+	onTogglePlay: () => { animating = !animating; },
+	onNextChannel: () => { if (channel < dims.channels - 1) channel++; },
+	onPrevChannel: () => { if (channel > 0) channel--; },
+}}>
 	<div class="flex flex-wrap gap-4 items-center text-xs">
 		{#if dims.batches > 1}
 			<label class="flex items-center gap-2 flex-1 min-w-[10rem]">
@@ -290,6 +314,27 @@
 		<label class="flex items-center gap-1.5 text-gray-400">
 			<input type="checkbox" bind:checked={sharedRange} /> Shared range
 		</label>
+		{#if mode === 'swipe'}
+			<button
+				class="px-2 py-0.5 rounded text-xs border border-edge hover:bg-surface-hover"
+				class:text-green-400={animating}
+				class:text-gray-400={!animating}
+				onclick={() => animating = !animating}
+			>{animating ? 'Stop' : 'Animate'}</button>
+		{/if}
+		<button
+			class="px-2 py-0.5 text-gray-400 hover:text-gray-200 border border-edge rounded text-xs"
+			onclick={resetView}
+		>Reset view</button>
+	</div>
+
+	<!-- Position indicator -->
+	<div class="text-xs text-gray-500">
+		{#if mode === 'swipe'}
+			Swipe: {(swipePos * 100).toFixed(0)}% — <span class="text-blue-400">{refLabel}</span> | <span class="text-red-400">{mainLabel}</span>
+		{:else}
+			Blend: {((1 - blendAlpha) * 100).toFixed(0)}% <span class="text-blue-400">{refLabel}</span> / {(blendAlpha * 100).toFixed(0)}% <span class="text-red-400">{mainLabel}</span>
+		{/if}
 	</div>
 
 	<div class="flex-1 flex justify-center bg-surface-base rounded-lg p-4 overflow-hidden min-h-0">

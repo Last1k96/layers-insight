@@ -30,6 +30,7 @@
 	let colormap: ColormapName = $state('viridis');
 	let blockSize = $state(4);
 	let sharedRange = $state(true);
+	let showGrid = $state(false);
 
 	let hoverX = $state(-1);
 	let hoverY = $state(-1);
@@ -113,6 +114,20 @@
 		ctx.drawImage(offscreen, 0, 0);
 		ctx.resetTransform();
 
+		// Grid overlay
+		if (showGrid) {
+			ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+			ctx.lineWidth = 1;
+			for (let gx = 0; gx <= w; gx += blockSize) {
+				const sx = ox + gx * es;
+				ctx.beginPath(); ctx.moveTo(sx, oy); ctx.lineTo(sx, oy + h * es); ctx.stroke();
+			}
+			for (let gy = 0; gy <= h; gy += blockSize) {
+				const sy = oy + gy * es;
+				ctx.beginPath(); ctx.moveTo(ox, sy); ctx.lineTo(ox + w * es, sy); ctx.stroke();
+			}
+		}
+
 		if (showTooltip && hoverX >= 0 && hoverY >= 0) {
 			const sx = hoverX * es + ox, sy = hoverY * es + oy;
 			ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
@@ -130,7 +145,7 @@
 		drawColorbar(ctx, 10, dh - 30, Math.min(200, dw - 20), 12, colormap, range?.[0] ?? 0, range?.[1] ?? 1);
 	}
 
-	$effect(() => { compositeImage; zoom; panX; panY; showTooltip; hoverX; hoverY; blockSize; redraw(); });
+	$effect(() => { compositeImage; zoom; panX; panY; showTooltip; hoverX; hoverY; blockSize; showGrid; redraw(); });
 
 	function screenToData(cx: number, cy: number): [number, number] {
 		if (!canvas || !refSlice) return [-1, -1];
@@ -172,6 +187,23 @@
 	function handleMouseLeave() { dragging = false; showTooltip = false; }
 
 	$effect(() => { shape; zoom = 1; panX = 0; panY = 0; });
+
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
+
+	// Compute mean abs diff for a block
+	function blockMeanDiff(bx: number, by: number): number {
+		if (!refSlice || !mainSlice) return 0;
+		const w = refSlice.w, h = refSlice.h;
+		let sum = 0, count = 0;
+		for (let dy = 0; dy < blockSize && by + dy < h; dy++) {
+			for (let dx = 0; dx < blockSize && bx + dx < w; dx++) {
+				const idx = (by + dy) * w + (bx + dx);
+				sum += Math.abs(refSlice.data[idx] - mainSlice.data[idx]);
+				count++;
+			}
+		}
+		return count > 0 ? sum / count : 0;
+	}
 </script>
 
 <svelte:window onmouseup={handleMouseUp} />
@@ -211,6 +243,13 @@
 		<label class="flex items-center gap-1.5 text-gray-400">
 			<input type="checkbox" bind:checked={sharedRange} /> Shared range
 		</label>
+		<label class="flex items-center gap-1.5 text-gray-400">
+			<input type="checkbox" bind:checked={showGrid} /> Grid
+		</label>
+		<button
+			class="px-2 py-0.5 text-gray-400 hover:text-gray-200 border border-edge rounded text-xs"
+			onclick={resetView}
+		>Reset view</button>
 		<span class="text-gray-500">
 			<span class="text-blue-400">{refLabel}</span> / <span class="text-red-400">{mainLabel}</span> interleaved
 		</span>
@@ -239,6 +278,7 @@
 			<div><span class="text-blue-400">{refLabel}:</span> {formatValue(refSlice.data[idx])}</div>
 			<div><span class="text-red-400">{mainLabel}:</span> {formatValue(mainSlice.data[idx])}</div>
 			<div><span class="text-gray-400">|Diff|:</span> {formatValue(Math.abs(refSlice.data[idx] - mainSlice.data[idx]))}</div>
+			<div><span class="text-gray-400">Block mean |diff|:</span> {formatValue(blockMeanDiff(Math.floor(hoverX / blockSize) * blockSize, Math.floor(hoverY / blockSize) * blockSize))}</div>
 		</div>
 	{/if}
 </div>

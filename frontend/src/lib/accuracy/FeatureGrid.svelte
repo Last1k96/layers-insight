@@ -32,6 +32,25 @@
 	let globalNorm = $state(true);
 	let selectedChannel = $state<number | null>(null);
 
+	// Hover stats overlay
+	let hoveredCell = $state<number | null>(null);
+
+	// Error threshold filter
+	let hideGoodChannels = $state(false);
+	let errorThresholdExp = $state(-3);
+	let errorThreshold = $derived(Math.pow(10, errorThresholdExp));
+
+	// Double-click zoom
+	let zoomedChannel = $state<number | null>(null);
+	let zoomPanX = $state(0);
+	let zoomPanY = $state(0);
+	let zoomLevel = $state(1);
+	let zoomDragging = $state(false);
+	let zoomDragStartX = 0;
+	let zoomDragStartY = 0;
+	let zoomPanStartX = 0;
+	let zoomPanStartY = 0;
+
 	let dims = $derived(getSpatialDims(shape));
 
 	// Compute per-channel error stats for sorting
@@ -55,10 +74,13 @@
 	});
 
 	let sortedChannels = $derived.by(() => {
-		const arr = [...channelErrors];
+		let arr = [...channelErrors];
 		if (sortBy === 'error') arr.sort((a, b) => b.mse - a.mse);
 		else if (sortBy === 'activation') arr.sort((a, b) => b.meanAct - a.meanAct);
 		// else keep index order
+		if (hideGoodChannels) {
+			arr = arr.filter(ch => ch.mse >= errorThreshold);
+		}
 		return arr;
 	});
 
@@ -84,6 +106,19 @@
 	let gridCols = $derived(Math.ceil(Math.sqrt(dims.channels)));
 	let gridRows = $derived(Math.ceil(dims.channels / gridCols));
 
+	function getSliceData(chIdx: number): Float32Array {
+		if (showMode === 'diff') {
+			const mSlice = extractSlice(main, shape, batch, chIdx);
+			const rSlice = extractSlice(ref, shape, batch, chIdx);
+			const data = new Float32Array(mSlice.data.length);
+			for (let j = 0; j < data.length; j++) data[j] = Math.abs(mSlice.data[j] - rSlice.data[j]);
+			return data;
+		} else {
+			const tensor = showMode === 'ref' ? ref : main;
+			return extractSlice(tensor, shape, batch, chIdx).data;
+		}
+	}
+
 	function redraw() {
 		if (!canvas || dims.channels === 0) return;
 		const ctx = canvas.getContext('2d');
@@ -91,6 +126,36 @@
 		const dw = canvas.clientWidth, dh = canvas.clientHeight;
 		canvas.width = dw; canvas.height = dh;
 
+		// Zoomed single-channel mode
+		if (zoomedChannel !== null) {
+			const ch = channelErrors[zoomedChannel];
+			if (!ch) return;
+			const sliceData = getSliceData(ch.idx);
+			const imgData = valueToImageData(sliceData, dims.width, dims.height, colormap, globalRange);
+			const offscreen = new OffscreenCanvas(dims.width, dims.height);
+			offscreen.getContext('2d')!.putImageData(imgData, 0, 0);
+
+			const baseScale = Math.min(dw / dims.width, dh / dims.height);
+			const es = baseScale * zoomLevel;
+			const ox = (dw - dims.width * baseScale) / 2 + zoomPanX;
+			const oy = (dh - dims.height * baseScale) / 2 + zoomPanY;
+
+			ctx.clearRect(0, 0, dw, dh);
+			ctx.imageSmoothingEnabled = false;
+			ctx.setTransform(es, 0, 0, es, ox, oy);
+			ctx.drawImage(offscreen, 0, 0);
+			ctx.resetTransform();
+
+			// Title
+			ctx.fillStyle = '#e5e7eb';
+			ctx.font = 'bold 12px monospace';
+			ctx.textAlign = 'left';
+			ctx.textBaseline = 'top';
+			ctx.fillText(`Channel ${ch.idx} — MSE: ${formatValue(ch.mse)}, Max|Diff|: ${formatValue(ch.maxAbs)}`, 8, 8);
+			return;
+		}
+
+		// Grid mode
 		const padding = 2;
 		const labelH = 12;
 		const cellW = Math.floor((dw - padding * (gridCols + 1)) / gridCols);
@@ -109,16 +174,7 @@
 			const y = padding + row * (cellH + padding + labelH);
 
 			// Get slice data
-			let sliceData: Float32Array;
-			if (showMode === 'diff') {
-				const mSlice = extractSlice(main, shape, batch, ch.idx);
-				const rSlice = extractSlice(ref, shape, batch, ch.idx);
-				sliceData = new Float32Array(mSlice.data.length);
-				for (let j = 0; j < sliceData.length; j++) sliceData[j] = Math.abs(mSlice.data[j] - rSlice.data[j]);
-			} else {
-				const tensor = showMode === 'ref' ? ref : main;
-				sliceData = extractSlice(tensor, shape, batch, ch.idx).data;
-			}
+			const sliceData = getSliceData(ch.idx);
 
 			// Render to small ImageData then scale
 			const imgData = valueToImageData(sliceData, dims.width, dims.height, colormap, globalRange);
@@ -148,13 +204,26 @@
 			ctx.fillStyle = ch.mse > 0.01 ? '#f87171' : ch.mse > 0.001 ? '#fbbf24' : '#6ee7b7';
 			ctx.textAlign = 'center';
 			ctx.fillText(`ch${ch.idx}`, x + cellW / 2, y);
+
+			// Hover stats overlay
+			if (hoveredCell === i) {
+				ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+				ctx.fillRect(x, y + labelH, cellW, cellH);
+				ctx.fillStyle = '#e5e7eb';
+				ctx.font = '9px monospace';
+				ctx.textAlign = 'center';
+				ctx.textBaseline = 'middle';
+				const cy = y + labelH + cellH / 2;
+				ctx.fillText(`MSE: ${formatValue(ch.mse)}`, x + cellW / 2, cy - 6);
+				ctx.fillText(`Max|d|: ${formatValue(ch.maxAbs)}`, x + cellW / 2, cy + 6);
+			}
 		}
 	}
 
-	$effect(() => { sortedChannels; showMode; colormap; globalNorm; globalRange; selectedChannel; redraw(); });
+	$effect(() => { sortedChannels; showMode; colormap; globalNorm; globalRange; selectedChannel; hoveredCell; zoomedChannel; zoomLevel; zoomPanX; zoomPanY; redraw(); });
 
-	function handleClick(e: MouseEvent) {
-		if (!canvas) return;
+	function hitTestGrid(e: MouseEvent): number | null {
+		if (!canvas) return null;
 		const rect = canvas.getBoundingClientRect();
 		const mx = e.clientX - rect.left;
 		const my = e.clientY - rect.top;
@@ -169,9 +238,75 @@
 		const row = Math.floor(my / (cellH + padding + labelH));
 		const idx = row * gridCols + col;
 
-		if (idx >= 0 && idx < sortedChannels.length) {
+		if (idx >= 0 && idx < sortedChannels.length) return idx;
+		return null;
+	}
+
+	function handleClick(e: MouseEvent) {
+		if (zoomedChannel !== null) return; // clicks handled differently in zoom mode
+		const idx = hitTestGrid(e);
+		if (idx !== null) {
 			selectedChannel = selectedChannel === sortedChannels[idx].idx ? null : sortedChannels[idx].idx;
 		}
+	}
+
+	function handleDblClick(e: MouseEvent) {
+		if (zoomedChannel !== null) return;
+		const idx = hitTestGrid(e);
+		if (idx !== null) {
+			zoomedChannel = sortedChannels[idx].idx;
+			zoomLevel = 1;
+			zoomPanX = 0;
+			zoomPanY = 0;
+		}
+	}
+
+	function handleMouseMove(e: MouseEvent) {
+		if (zoomedChannel !== null) {
+			if (zoomDragging) {
+				zoomPanX = zoomPanStartX + (e.clientX - zoomDragStartX);
+				zoomPanY = zoomPanStartY + (e.clientY - zoomDragStartY);
+			}
+			return;
+		}
+		const idx = hitTestGrid(e);
+		hoveredCell = idx;
+	}
+
+	function handleMouseLeave() {
+		hoveredCell = null;
+		zoomDragging = false;
+	}
+
+	function handleZoomWheel(e: WheelEvent) {
+		if (zoomedChannel === null) return;
+		e.preventDefault();
+		const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+		const rect = canvas.getBoundingClientRect();
+		const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+		const dw = canvas.clientWidth, dh = canvas.clientHeight;
+		const baseScale = Math.min(dw / dims.width, dh / dims.height);
+		const cxOff = (dw - dims.width * baseScale) / 2;
+		const cyOff = (dh - dims.height * baseScale) / 2;
+		zoomPanX = cx - (cx - cxOff - zoomPanX) * factor - cxOff;
+		zoomPanY = cy - (cy - cyOff - zoomPanY) * factor - cyOff;
+		zoomLevel *= factor;
+	}
+
+	function handleZoomMouseDown(e: MouseEvent) {
+		if (zoomedChannel === null || e.button !== 0) return;
+		zoomDragging = true;
+		zoomDragStartX = e.clientX; zoomDragStartY = e.clientY;
+		zoomPanStartX = zoomPanX; zoomPanStartY = zoomPanY;
+	}
+
+	function handleZoomMouseUp() { zoomDragging = false; }
+
+	function resetZoom() {
+		zoomedChannel = null;
+		zoomLevel = 1;
+		zoomPanX = 0;
+		zoomPanY = 0;
 	}
 </script>
 
@@ -211,7 +346,17 @@
 		<label class="flex items-center gap-1.5 text-gray-400">
 			<input type="checkbox" bind:checked={globalNorm} /> Global norm
 		</label>
-		<span class="text-gray-500">{dims.channels} channels | {gridCols}x{gridRows} grid</span>
+		<label class="flex items-center gap-1.5 text-gray-400">
+			<input type="checkbox" bind:checked={hideGoodChannels} /> Hide low-error
+		</label>
+		{#if hideGoodChannels}
+			<label class="flex items-center gap-2">
+				<span class="text-gray-400">MSE &ge;</span>
+				<input use:rangeScroll type="range" min="-6" max="-1" step="0.5" bind:value={errorThresholdExp} class="w-20" />
+				<span class="text-gray-300 font-mono text-xs">{errorThreshold.toExponential(1)}</span>
+			</label>
+		{/if}
+		<span class="text-gray-500">{sortedChannels.length}{hideGoodChannels ? `/${dims.channels}` : ''} channels | {gridCols}x{gridRows} grid</span>
 	</div>
 
 	{#if selectedChannel !== null}
@@ -223,12 +368,28 @@
 		</div>
 	{/if}
 
-	<div class="flex-1 bg-surface-base rounded-lg p-2 overflow-hidden min-h-0">
+	<div class="flex-1 bg-surface-base rounded-lg p-2 overflow-hidden min-h-0 relative">
+		{#if zoomedChannel !== null}
+			<div class="absolute top-3 right-3 z-10 flex gap-1">
+				<button class="px-2 py-0.5 rounded text-xs border border-edge bg-surface-panel text-gray-300 hover:text-white"
+					onclick={() => { zoomLevel = 1; zoomPanX = 0; zoomPanY = 0; }}>Reset Zoom</button>
+				<button class="px-2 py-0.5 rounded text-xs border border-edge bg-surface-panel text-gray-300 hover:text-white"
+					onclick={resetZoom}>Back to Grid</button>
+			</div>
+		{/if}
 		<canvas
 			bind:this={canvas}
-			class="w-full h-full cursor-pointer"
+			class="w-full h-full"
+			class:cursor-pointer={zoomedChannel === null}
+			class:cursor-crosshair={zoomedChannel !== null}
 			style="image-rendering: pixelated;"
 			onclick={handleClick}
+			ondblclick={handleDblClick}
+			onmousemove={handleMouseMove}
+			onmouseleave={handleMouseLeave}
+			onwheel={handleZoomWheel}
+			onmousedown={handleZoomMouseDown}
+			onmouseup={handleZoomMouseUp}
 		></canvas>
 	</div>
 </div>

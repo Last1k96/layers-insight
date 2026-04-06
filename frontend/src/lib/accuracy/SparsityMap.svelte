@@ -21,6 +21,7 @@
 	} = $props();
 
 	let canvas: HTMLCanvasElement;
+	let sparsityBarCanvas: HTMLCanvasElement;
 	let batch = $state(0);
 	let channel = $state(0);
 	let thresholdExp = $state(-7);
@@ -143,10 +144,21 @@
 			ctx.fillStyle = '#f87171';
 			ctx.fillText(mainLabel, ox + (w + gap) * es + 2, oy - 4);
 		} else {
-			// XOR mode: show where sparsity differs
+			// XOR mode: show where sparsity differs, with magnitude scaling
 			const es = baseScale * zoom;
 			const ox = (dw - w * baseScale) / 2 + panX;
 			const oy = (dh - h * baseScale) / 2 + panY;
+
+			// Find max absolute value in each slice for magnitude normalization
+			let maxAbsRef = 0, maxAbsMain = 0;
+			for (let i = 0; i < refSlice.data.length; i++) {
+				const ar = Math.abs(refSlice.data[i]);
+				const am = Math.abs(mainSlice.data[i]);
+				if (ar > maxAbsRef) maxAbsRef = ar;
+				if (am > maxAbsMain) maxAbsMain = am;
+			}
+			if (maxAbsRef === 0) maxAbsRef = 1;
+			if (maxAbsMain === 0) maxAbsMain = 1;
 
 			const img = new ImageData(w, h);
 			for (let i = 0; i < refSlice.data.length; i++) {
@@ -160,11 +172,19 @@
 					// Both non-zero
 					img.data[px] = 60; img.data[px + 1] = 60; img.data[px + 2] = 60;
 				} else if (rZero && !mZero) {
-					// Ref zero, main non-zero (activation appeared)
-					img.data[px] = 248; img.data[px + 1] = 113; img.data[px + 2] = 113;
+					// Ref zero, main non-zero (activation appeared) - scale by main magnitude
+					const brightness = Math.abs(mainSlice.data[i]) / maxAbsMain;
+					const b = 0.2 + 0.8 * brightness; // min 20% brightness
+					img.data[px] = Math.round(248 * b);
+					img.data[px + 1] = Math.round(113 * b);
+					img.data[px + 2] = Math.round(113 * b);
 				} else {
-					// Ref non-zero, main zero (activation died)
-					img.data[px] = 96; img.data[px + 1] = 165; img.data[px + 2] = 250;
+					// Ref non-zero, main zero (activation died) - scale by ref magnitude
+					const brightness = Math.abs(refSlice.data[i]) / maxAbsRef;
+					const b = 0.2 + 0.8 * brightness; // min 20% brightness
+					img.data[px] = Math.round(96 * b);
+					img.data[px + 1] = Math.round(165 * b);
+					img.data[px + 2] = Math.round(250 * b);
 				}
 				img.data[px + 3] = 255;
 			}
@@ -234,6 +254,49 @@
 	function handleMouseLeave() { dragging = false; showTooltip = false; }
 
 	$effect(() => { shape; zoom = 1; panX = 0; panY = 0; });
+
+	// Sparsity bar chart rendering
+	$effect(() => {
+		if (!sparsityBarCanvas || channelSparsity.length === 0) return;
+		const ctx = sparsityBarCanvas.getContext('2d');
+		if (!ctx) return;
+		const dw = sparsityBarCanvas.clientWidth, dh = sparsityBarCanvas.clientHeight;
+		sparsityBarCanvas.width = dw; sparsityBarCanvas.height = dh;
+		ctx.clearRect(0, 0, dw, dh);
+
+		const n = channelSparsity.length;
+		const barGroupW = dw / n;
+		const barW = Math.max(1, barGroupW * 0.4);
+		const maxPct = 100;
+
+		for (let c = 0; c < n; c++) {
+			const { refPct, mainPct } = channelSparsity[c];
+			const x = c * barGroupW;
+			const refH = (refPct / maxPct) * dh;
+			const mainH = (mainPct / maxPct) * dh;
+
+			// Highlight current channel
+			if (c === channel) {
+				ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+				ctx.fillRect(x, 0, barGroupW, dh);
+			}
+
+			// Ref bar (blue)
+			ctx.fillStyle = c === channel ? '#60a5fa' : '#3b82f680';
+			ctx.fillRect(x, dh - refH, barW, refH);
+
+			// Main bar (red)
+			ctx.fillStyle = c === channel ? '#f87171' : '#ef444480';
+			ctx.fillRect(x + barW, dh - mainH, barW, mainH);
+		}
+
+		// Baseline
+		ctx.strokeStyle = '#444';
+		ctx.lineWidth = 0.5;
+		ctx.beginPath(); ctx.moveTo(0, dh - 0.5); ctx.lineTo(dw, dh - 0.5); ctx.stroke();
+	});
+
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
 </script>
 
 <svelte:window onmouseup={handleMouseUp} />
@@ -267,6 +330,10 @@
 				class:bg-accent={showMode === 'xor'} class:text-white={showMode === 'xor'} class:text-gray-400={showMode !== 'xor'}
 				onclick={() => showMode = 'xor'}>XOR Diff</button>
 		</div>
+		<button
+			class="px-2 py-0.5 text-gray-400 hover:text-gray-200 border border-edge rounded text-xs"
+			onclick={resetView}
+		>Reset view</button>
 	</div>
 
 	<div class="flex gap-6 text-xs">
@@ -279,6 +346,26 @@
 			</span>
 		{/if}
 	</div>
+
+	{#if dims.channels > 1}
+		<div class="bg-surface-base rounded-lg px-2 pt-1 pb-0 overflow-hidden" style="height: 60px;">
+			<div class="text-[9px] text-gray-500 mb-0.5 flex justify-between">
+				<span>Per-channel sparsity (<span class="text-blue-400">{refLabel}</span> / <span class="text-red-400">{mainLabel}</span>)</span>
+				<span class="text-gray-600">ch {channel}</span>
+			</div>
+			<canvas
+				bind:this={sparsityBarCanvas}
+				class="w-full cursor-pointer"
+				style="height: 44px;"
+				onclick={(e: MouseEvent) => {
+					const rect = sparsityBarCanvas.getBoundingClientRect();
+					const mx = e.clientX - rect.left;
+					const idx = Math.floor((mx / rect.width) * dims.channels);
+					if (idx >= 0 && idx < dims.channels) channel = idx;
+				}}
+			></canvas>
+		</div>
+	{/if}
 
 	<div class="flex-1 flex justify-center bg-surface-base rounded-lg p-4 overflow-hidden min-h-0">
 		<canvas

@@ -4,6 +4,9 @@
 		extractSlice,
 		formatValue,
 		drawColorbar,
+		valueToImageData,
+		computeStats,
+		ALL_COLORMAP_OPTIONS,
 		type ColormapName,
 	} from './tensorUtils';
 	import { rangeScroll } from './rangeScroll';
@@ -23,9 +26,21 @@
 	} = $props();
 
 	let canvas: HTMLCanvasElement;
+	let histCanvas: HTMLCanvasElement;
 	let batch = $state(0);
 	let channel = $state(0);
 	let maxULP = $state(100);
+
+	let binPreset = $state<'default' | 'fine' | 'coarse'>('default');
+	const BIN_PRESETS = {
+		default: [0, 1, 10, 100],
+		fine: [0, 1, 5, 10, 50, 100],
+		coarse: [0, 10, 1000],
+	};
+	let bins = $derived(BIN_PRESETS[binPreset]);
+
+	let viewMode = $state<'categorical' | 'continuous'>('categorical');
+	let continuousColormap: ColormapName = $state('inferno');
 
 	let hoverX = $state(-1);
 	let hoverY = $state(-1);
@@ -80,19 +95,20 @@
 	let refSlice = $derived(extractSlice(ref, shape, batch, channel));
 	let mainSlice = $derived(extractSlice(main, shape, batch, channel));
 
-	// Stats
+	// Stats — dynamic bins
 	let ulpStats = $derived.by(() => {
-		let exact = 0, low = 0, med = 0, high = 0, vhigh = 0, special = 0;
+		const counts = new Array(bins.length + 1).fill(0); // bins.length buckets + 1 overflow + special
+		let special = 0;
 		for (let i = 0; i < ulpMap.data.length; i++) {
 			const v = ulpMap.data[i];
-			if (v < 0) special++;
-			else if (v === 0) exact++;
-			else if (v <= 1) low++;
-			else if (v <= 10) med++;
-			else if (v <= 100) high++;
-			else vhigh++;
+			if (v < 0) { special++; continue; }
+			let placed = false;
+			for (let b = 0; b < bins.length; b++) {
+				if (v <= bins[b]) { counts[b]++; placed = true; break; }
+			}
+			if (!placed) counts[bins.length]++;
 		}
-		return { exact, low, med, high, vhigh, special, total: ulpMap.data.length };
+		return { counts, special, total: ulpMap.data.length, bins };
 	});
 
 	let baseScale = $derived.by(() => {
@@ -102,15 +118,27 @@
 		return Math.min(dw / ulpMap.w, dh / ulpMap.h);
 	});
 
-	// Color mapping for ULP
+	// Categorical color palette for dynamic bins
+	const BIN_COLORS: [number, number, number][] = [
+		[20, 120, 20],   // exact match (0)
+		[50, 200, 50],   // 1st bin boundary
+		[200, 200, 50],  // 2nd bin boundary
+		[220, 170, 30],  // 3rd bin boundary
+		[220, 130, 30],  // 4th bin boundary
+		[220, 80, 30],   // 5th bin boundary
+		[220, 50, 50],   // overflow
+	];
+
+	// Color mapping for ULP — dynamic bins
 	function ulpToRGB(ulp: number): [number, number, number] {
 		if (ulp < 0) return [255, 0, 255]; // NaN/Inf
-		if (ulp === 0) return [20, 120, 20]; // exact match
-		if (ulp <= 1) return [50, 200, 50]; // 1 ULP
-		if (ulp <= 10) return [200, 200, 50]; // 2-10 ULP
-		if (ulp <= 100) return [220, 130, 30]; // 10-100 ULP
-		return [220, 50, 50]; // >100 ULP
+		for (let b = 0; b < bins.length; b++) {
+			if (ulp <= bins[b]) return BIN_COLORS[Math.min(b, BIN_COLORS.length - 1)];
+		}
+		return BIN_COLORS[Math.min(bins.length, BIN_COLORS.length - 1)]; // overflow
 	}
+
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
 
 	function redraw() {
 		if (!canvas) return;
@@ -120,17 +148,29 @@
 		canvas.width = dw; canvas.height = dh;
 
 		const { data, w, h } = ulpMap;
-		const img = new ImageData(w, h);
-		for (let i = 0; i < data.length; i++) {
-			const [r, g, b] = ulpToRGB(data[i]);
-			img.data[i * 4] = r;
-			img.data[i * 4 + 1] = g;
-			img.data[i * 4 + 2] = b;
-			img.data[i * 4 + 3] = 255;
-		}
 
-		const offscreen = new OffscreenCanvas(w, h);
-		offscreen.getContext('2d')!.putImageData(img, 0, 0);
+		let offscreen: OffscreenCanvas;
+		if (viewMode === 'continuous') {
+			// Continuous mode: log of ULP values through a colormap
+			const logData = new Float32Array(data.length);
+			for (let i = 0; i < data.length; i++) {
+				logData[i] = data[i] > 0 ? Math.log(data[i] + 1) : (data[i] < 0 ? -1 : 0);
+			}
+			const img = valueToImageData(logData, w, h, continuousColormap);
+			offscreen = new OffscreenCanvas(w, h);
+			offscreen.getContext('2d')!.putImageData(img, 0, 0);
+		} else {
+			const img = new ImageData(w, h);
+			for (let i = 0; i < data.length; i++) {
+				const [r, g, b] = ulpToRGB(data[i]);
+				img.data[i * 4] = r;
+				img.data[i * 4 + 1] = g;
+				img.data[i * 4 + 2] = b;
+				img.data[i * 4 + 3] = 255;
+			}
+			offscreen = new OffscreenCanvas(w, h);
+			offscreen.getContext('2d')!.putImageData(img, 0, 0);
+		}
 
 		const es = baseScale * zoom;
 		const ox = (dw - w * baseScale) / 2 + panX;
@@ -150,7 +190,53 @@
 		}
 	}
 
-	$effect(() => { ulpMap; zoom; panX; panY; showTooltip; hoverX; hoverY; redraw(); });
+	// ULP histogram data: 20 log-spaced bins
+	let histBins = $derived.by(() => {
+		const { data } = ulpMap;
+		let maxVal = 1;
+		for (let i = 0; i < data.length; i++) {
+			if (data[i] > maxVal) maxVal = data[i];
+		}
+		const numBins = 20;
+		const logMax = Math.log(maxVal + 1);
+		const edges: number[] = [];
+		for (let i = 0; i <= numBins; i++) {
+			edges.push(Math.exp((i / numBins) * logMax) - 1);
+		}
+		const counts = new Array(numBins).fill(0);
+		for (let i = 0; i < data.length; i++) {
+			if (data[i] < 0) continue; // skip NaN/Inf
+			for (let b = 0; b < numBins; b++) {
+				if (data[i] <= edges[b + 1] || b === numBins - 1) { counts[b]++; break; }
+			}
+		}
+		return { edges, counts, maxVal };
+	});
+
+	function drawHistogram() {
+		if (!histCanvas) return;
+		const ctx = histCanvas.getContext('2d');
+		if (!ctx) return;
+		const dw = histCanvas.clientWidth, dh = histCanvas.clientHeight;
+		histCanvas.width = dw; histCanvas.height = dh;
+
+		const { counts, edges } = histBins;
+		const maxCount = Math.max(...counts, 1);
+		const logMax = Math.log(maxCount + 1);
+		const barW = dw / counts.length;
+
+		ctx.clearRect(0, 0, dw, dh);
+		for (let i = 0; i < counts.length; i++) {
+			const barH = counts[i] > 0 ? (Math.log(counts[i] + 1) / logMax) * (dh - 4) : 0;
+			const midUlp = (edges[i] + edges[i + 1]) / 2;
+			const [r, g, b] = ulpToRGB(midUlp);
+			ctx.fillStyle = `rgb(${r},${g},${b})`;
+			ctx.fillRect(i * barW + 1, dh - barH, barW - 2, barH);
+		}
+	}
+
+	$effect(() => { ulpMap; zoom; panX; panY; showTooltip; hoverX; hoverY; viewMode; bins; continuousColormap; redraw(); });
+	$effect(() => { histBins; drawHistogram(); });
 
 	function screenToData(cx: number, cy: number): [number, number] {
 		if (!canvas) return [-1, -1];
@@ -212,15 +298,43 @@
 				<span class="text-gray-300 w-8 shrink-0">{channel}/{dims.channels}</span>
 			</label>
 		{/if}
+		<label class="flex items-center gap-2">
+			<span class="text-gray-400">Bins:</span>
+			<select use:rangeScroll bind:value={binPreset} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
+				<option value="default">Default</option>
+				<option value="fine">Fine</option>
+				<option value="coarse">Coarse</option>
+			</select>
+		</label>
+		<div class="flex items-center gap-1">
+			<span class="text-gray-400">View:</span>
+			<button onclick={() => viewMode = 'categorical'} class="px-2 py-0.5 rounded text-xs {viewMode === 'categorical' ? 'bg-blue-600 text-white' : 'bg-surface-base border border-edge text-gray-400'}">Categorical</button>
+			<button onclick={() => viewMode = 'continuous'} class="px-2 py-0.5 rounded text-xs {viewMode === 'continuous' ? 'bg-blue-600 text-white' : 'bg-surface-base border border-edge text-gray-400'}">Continuous</button>
+		</div>
+		{#if viewMode === 'continuous'}
+			<label class="flex items-center gap-2">
+				<span class="text-gray-400">Colormap:</span>
+				<select use:rangeScroll bind:value={continuousColormap} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
+					{#each ALL_COLORMAP_OPTIONS as opt}
+						<option value={opt.value}>{opt.label}</option>
+					{/each}
+				</select>
+			</label>
+		{/if}
+		<button onclick={resetView} class="px-2 py-0.5 rounded bg-surface-base border border-edge text-gray-400 hover:text-gray-200 text-xs">Reset zoom</button>
 	</div>
 
 	<div class="flex flex-wrap gap-4 text-xs">
 		<div class="flex items-center gap-3">
-			<span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background: rgb(20,120,20)"></span> <span class="text-green-600">Exact (0)</span>: {ulpStats.exact}</span>
-			<span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background: rgb(50,200,50)"></span> <span class="text-green-400">1 ULP</span>: {ulpStats.low}</span>
-			<span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background: rgb(200,200,50)"></span> <span class="text-yellow-400">2-10</span>: {ulpStats.med}</span>
-			<span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background: rgb(220,130,30)"></span> <span class="text-orange-400">10-100</span>: {ulpStats.high}</span>
-			<span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background: rgb(220,50,50)"></span> <span class="text-red-400">>100</span>: {ulpStats.vhigh}</span>
+			{#each ulpStats.bins as boundary, i}
+				{@const color = BIN_COLORS[Math.min(i, BIN_COLORS.length - 1)]}
+				{@const label = i === 0 ? `Exact (0)` : `${ulpStats.bins[i - 1]}-${boundary}`}
+				<span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background: rgb({color[0]},{color[1]},{color[2]})"></span> <span class="text-gray-300">{label}</span>: {ulpStats.counts[i]}</span>
+			{/each}
+			{#if true}
+				{@const overflowColor = BIN_COLORS[Math.min(bins.length, BIN_COLORS.length - 1)]}
+				<span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background: rgb({overflowColor[0]},{overflowColor[1]},{overflowColor[2]})"></span> <span class="text-gray-300">&gt;{ulpStats.bins[ulpStats.bins.length - 1]}</span>: {ulpStats.counts[ulpStats.bins.length]}</span>
+			{/if}
 			{#if ulpStats.special > 0}
 				<span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background: rgb(255,0,255)"></span> <span class="text-fuchsia-400">NaN/Inf</span>: {ulpStats.special}</span>
 			{/if}
@@ -237,6 +351,11 @@
 			onmousemove={handleMouseMove}
 			onmouseleave={handleMouseLeave}
 		></canvas>
+	</div>
+
+	<div class="bg-surface-base rounded-lg px-4 py-2">
+		<div class="text-xs text-gray-500 mb-1">ULP distribution (log scale)</div>
+		<canvas bind:this={histCanvas} class="w-full" style="height: 60px;"></canvas>
 	</div>
 
 	{#if showTooltip && hoverX >= 0 && hoverY >= 0}

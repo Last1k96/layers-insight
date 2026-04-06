@@ -9,6 +9,7 @@
 		type ColormapName,
 	} from './tensorUtils';
 	import { rangeScroll } from './rangeScroll';
+	import { keyboardNav } from './keyboardNav';
 
 	let {
 		main,
@@ -180,11 +181,18 @@
 	function handleMouseLeave() { dragging = false; showTooltip = false; }
 
 	$effect(() => { shape; zoom = 1; panX = 0; panY = 0; });
+
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
 </script>
 
 <svelte:window onmouseup={handleMouseUp} />
 
-<div class="flex flex-col gap-4 relative h-full">
+<div class="flex flex-col gap-4 relative h-full" tabindex="0" use:keyboardNav={{
+	onResetZoom: resetView,
+	onTogglePlay: () => { playing = !playing; },
+	onNextChannel: () => { if (channel < dims.channels - 1) channel++; },
+	onPrevChannel: () => { if (channel > 0) channel--; },
+}}>
 	<div class="flex flex-wrap gap-4 items-center text-xs">
 		{#if dims.batches > 1}
 			<label class="flex items-center gap-2 flex-1 min-w-[10rem]">
@@ -230,6 +238,18 @@
 		<label class="flex items-center gap-1.5 text-gray-400">
 			<input type="checkbox" bind:checked={sharedRange} /> Shared range
 		</label>
+		<button
+			class="px-2 py-0.5 text-gray-400 hover:text-gray-200 border border-edge rounded text-xs"
+			onclick={resetView}
+		>Reset view</button>
+	</div>
+
+	<!-- Frame indicator -->
+	<div class="flex items-center gap-2 text-xs">
+		<span class="inline-block w-2.5 h-2.5 rounded-full" style:background={showingRef ? '#60a5fa' : '#f87171'}></span>
+		<span class={showingRef ? 'text-blue-400' : 'text-red-400'}>{showingRef ? refLabel : mainLabel}</span>
+		<span class="text-gray-500">Frame {showingRef ? '1' : '2'}/2</span>
+		<span class="text-gray-600 text-[10px]">[Space] play/pause</span>
 	</div>
 
 	<div class="flex-1 flex justify-center bg-surface-base rounded-lg p-4 overflow-hidden min-h-0">

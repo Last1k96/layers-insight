@@ -3,12 +3,18 @@
     getSpatialDims,
     extractSlice,
     valueToImageData,
+    normalizedValueToImageData,
     formatValue,
     drawColorbar,
     computeStats,
+    ALL_COLORMAP_OPTIONS,
+    ALL_NORM_MODE_OPTIONS,
     type ColormapName,
+    type NormMode,
+    type NormOptions,
   } from './tensorUtils';
   import { rangeScroll } from './rangeScroll';
+  import { keyboardNav } from './keyboardNav';
 
   let {
     diff,
@@ -30,6 +36,7 @@
   let sliceIndex = $state(0);
   let channelIndex = $state(0);
   let colormap: ColormapName = $state('blueGreenRed');
+  let normMode = $state<NormMode>('linear');
   let globalNorm = $state(false);
 
   // Hover state
@@ -75,9 +82,10 @@
   });
 
   // Offscreen image
+  let normOpts = $derived<NormOptions>({ mode: normMode });
   let offscreenImage = $derived.by(() => {
     if (!sliceData) return null;
-    return valueToImageData(sliceData.data, sliceData.w, sliceData.h, colormap, globalRange);
+    return normalizedValueToImageData(sliceData.data, sliceData.w, sliceData.h, colormap, normOpts, globalRange);
   });
 
   // Auto-fit: compute base scale so image fills canvas
@@ -227,17 +235,18 @@
     panY = 0;
   });
 
-  const colormapOptions: { value: ColormapName; label: string }[] = [
-    { value: 'blueGreenRed', label: 'Blue-Green-Red' },
-    { value: 'viridis', label: 'Viridis' },
-    { value: 'coolwarm', label: 'Coolwarm' },
-    { value: 'magma', label: 'Magma' },
-  ];
+  function resetView() { zoom = 1; panX = 0; panY = 0; }
 </script>
 
 <svelte:window onmouseup={handleMouseUp} />
 
-<div class="flex flex-col gap-4 relative h-full">
+<div class="flex flex-col gap-4 relative h-full" tabindex="0" use:keyboardNav={{
+  onResetZoom: resetView,
+  onNextChannel: () => { if (channelIndex < dims.channels - 1) channelIndex++; },
+  onPrevChannel: () => { if (channelIndex > 0) channelIndex--; },
+  onNextBatch: () => { if (sliceIndex < dims.batches - 1) sliceIndex++; },
+  onPrevBatch: () => { if (sliceIndex > 0) sliceIndex--; },
+}}>
   <!-- Controls -->
   <div class="flex flex-wrap gap-4 items-center text-xs w-full">
     {#if dims.batches > 1}
@@ -261,7 +270,19 @@
         bind:value={colormap}
         class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300"
       >
-        {#each colormapOptions as opt}
+        {#each ALL_COLORMAP_OPTIONS as opt}
+          <option value={opt.value}>{opt.label}</option>
+        {/each}
+      </select>
+    </label>
+    <label class="flex items-center gap-2">
+      <span class="text-gray-400">Norm:</span>
+      <select
+        use:rangeScroll
+        bind:value={normMode}
+        class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300"
+      >
+        {#each ALL_NORM_MODE_OPTIONS as opt}
           <option value={opt.value}>{opt.label}</option>
         {/each}
       </select>
@@ -270,6 +291,10 @@
       <input type="checkbox" bind:checked={globalNorm} />
       Global norm
     </label>
+    <button
+      class="px-2 py-0.5 text-gray-400 hover:text-gray-200 border border-edge rounded text-xs"
+      onclick={resetView}
+    >Reset view</button>
     <span class="text-gray-500">
       Shape: [{shape.join(', ')}] | Slice: {dims.height}x{dims.width}
     </span>

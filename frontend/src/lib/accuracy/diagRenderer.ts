@@ -1,7 +1,7 @@
 // Optimized diagnostics renderer — all channels in a single putImageData call.
 // Uses Uint32 LUTs, merged loops, inline density, and batched labels.
 
-import { getSpatialDims, extractSlice, computeStats, COLORMAPS } from './tensorUtils';
+import { getSpatialDims, extractSlice, computeStats, COLORMAPS, type ColormapName } from './tensorUtils';
 
 const BLOCKS_PER_ROW = 4;
 const DENSITY_BINS = 64;
@@ -44,6 +44,18 @@ export interface DiagCanvas {
   style: { width: string; height: string };
 }
 
+export interface DiagLayout {
+  panelW: number;
+  panelH: number;
+  blocksPerRow: number;
+  channelCount: number;
+  blockW: number;
+  blockH: number;
+  blockGap: number;
+  labelH: number;
+  gap: number;
+}
+
 export function renderDiagnostics(
   ctx: CanvasRenderingContext2D,
   canvas: DiagCanvas,
@@ -53,12 +65,28 @@ export function renderDiagnostics(
   containerWidth: number,
   mainLabel = 'main',
   refLabel = 'ref',
-): void {
+  colormap?: ColormapName,
+): DiagLayout | null {
   const dims = getSpatialDims(shape);
   const C = dims.channels;
   const H = dims.height;
   const W = dims.width;
-  if (C === 0 || H === 0 || W === 0) return;
+  if (C === 0 || H === 0 || W === 0) return null;
+
+  // Build LUTs: use provided colormap or fall back to defaults
+  let diffLut: Uint32Array;
+  let densityLut: Uint32Array;
+  let grayLut: Uint32Array;
+  if (colormap) {
+    const base = buildU32LUT(COLORMAPS[colormap]);
+    diffLut = base;
+    densityLut = base;
+    grayLut = base;
+  } else {
+    diffLut = coolwarmU32;
+    densityLut = viridisU32;
+    grayLut = grayU32;
+  }
 
   const gap = 2;
   const blockGap = 8;
@@ -154,18 +182,18 @@ export function renderDiagnostics(
         // Ref grayscale
         let g = ((rv - grayMin) * invGraySpan) | 0;
         if (g < 0) g = 0; else if (g > 255) g = 255;
-        px32[canvasRowTop + oxRef + px] = grayU32[g];
+        px32[canvasRowTop + oxRef + px] = grayLut[g];
 
         // Main grayscale
         g = ((mv - grayMin) * invGraySpan) | 0;
         if (g < 0) g = 0; else if (g > 255) g = 255;
-        px32[canvasRowTop + oxMain + px] = grayU32[g];
+        px32[canvasRowTop + oxMain + px] = grayLut[g];
 
         // Diff coolwarm
         let norm = (mv - rv) * invDiffMax * 127.5 + 127.5;
         let ci = norm | 0;
         if (ci < 0) ci = 0; else if (ci > 255) ci = 255;
-        px32[canvasRowBot + oxDiff + px] = coolwarmU32[ci];
+        px32[canvasRowBot + oxDiff + px] = diffLut[ci];
       }
     }
 
@@ -191,7 +219,7 @@ export function renderDiagnostics(
     const densityColored = new Uint32Array(DB2);
     for (let i = 0; i < DB2; i++) {
       const lin = (densityBuf[i] * invMaxDensity) | 0;
-      densityColored[i] = viridisU32[POW04_LUT[lin > 255 ? 255 : lin]];
+      densityColored[i] = densityLut[POW04_LUT[lin > 255 ? 255 : lin]];
     }
 
     // Nearest-neighbor upscale directly into full ImageData
@@ -234,4 +262,6 @@ export function renderDiagnostics(
   for (const l of panelLabels) {
     ctx.fillText(l.text, l.x, l.y);
   }
+
+  return { panelW, panelH, blocksPerRow: BLOCKS_PER_ROW, channelCount: C, blockW, blockH, blockGap, labelH, gap };
 }

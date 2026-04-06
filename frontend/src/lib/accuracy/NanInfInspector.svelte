@@ -24,6 +24,7 @@
 	let batch = $state(0);
 	let channel = $state(0);
 	let showDenormals = $state(true);
+	let filterClass = $state<'all' | 'nan' | 'inf' | 'negInf' | 'denorm'>('all');
 
 	let hoverX = $state(-1);
 	let hoverY = $state(-1);
@@ -92,6 +93,101 @@
 	let mainSlice = $derived(extractSlice(main, shape, batch, channel));
 	let refSlice = $derived(extractSlice(ref, shape, batch, channel));
 
+	// Anomaly list: first 50 anomalous positions across both tensors
+	interface AnomalyEntry {
+		source: 'ref' | 'main';
+		batch: number;
+		channel: number;
+		y: number;
+		x: number;
+		value: number;
+		cls: string;
+	}
+
+	let anomalyList = $derived.by((): AnomalyEntry[] => {
+		const limit = 50;
+		const bCount = dims.batches;
+		const cCount = dims.channels;
+		const h = dims.height;
+		const w = dims.width;
+		const sliceSize = h * w;
+
+		const results: AnomalyEntry[] = [];
+		for (const [tensor, source] of [[ref, 'ref' as const], [main, 'main' as const]]) {
+			const data = tensor as Float32Array;
+			const src = source as 'ref' | 'main';
+			for (let b = 0; b < bCount && results.length < limit; b++) {
+				for (let c = 0; c < cCount && results.length < limit; c++) {
+					const baseIdx = (b * cCount + c) * sliceSize;
+					for (let yi = 0; yi < h && results.length < limit; yi++) {
+						for (let xi = 0; xi < w && results.length < limit; xi++) {
+							const v = data[baseIdx + yi * w + xi];
+							const cls = classify(v);
+							if (cls === 'nan' || cls === 'inf' || cls === 'ninf' || cls === 'denormal') {
+								const clsLabel = cls === 'nan' ? 'NaN' : cls === 'inf' ? '+Inf' : cls === 'ninf' ? '-Inf' : 'Denorm';
+								results.push({ source: src, batch: b, channel: c, y: yi, x: xi, value: v, cls: clsLabel });
+							}
+						}
+					}
+				}
+			}
+		}
+		return results;
+	});
+
+	// Find first anomaly across both tensors
+	let firstAnomaly = $derived.by((): { batch: number; channel: number; y: number; x: number } | null => {
+		const bCount = dims.batches;
+		const cCount = dims.channels;
+		const h = dims.height;
+		const w = dims.width;
+		const sliceSize = h * w;
+
+		for (const data of [main, ref]) {
+			for (let b = 0; b < bCount; b++) {
+				for (let c = 0; c < cCount; c++) {
+					const baseIdx = (b * cCount + c) * sliceSize;
+					for (let yi = 0; yi < h; yi++) {
+						for (let xi = 0; xi < w; xi++) {
+							const v = data[baseIdx + yi * w + xi];
+							const cls = classify(v);
+							if (cls === 'nan' || cls === 'inf' || cls === 'ninf' || cls === 'denormal') {
+								return { batch: b, channel: c, y: yi, x: xi };
+							}
+						}
+					}
+				}
+			}
+		}
+		return null;
+	});
+
+	function jumpToAnomaly(b: number, c: number, y: number, x: number) {
+		batch = b;
+		channel = c;
+		zoom = 4;
+		// Center the pixel in the canvas after next tick
+		requestAnimationFrame(() => {
+			if (!canvas || !refSlice) return;
+			const dw = canvas.clientWidth, dh = canvas.clientHeight;
+			const w = refSlice.w, h = refSlice.h;
+			const gap = 4;
+			const totalW = w * 2 + gap;
+			const es = baseScale * zoom;
+			const defaultOx = (dw - totalW * baseScale) / 2;
+			const defaultOy = (dh - h * baseScale) / 2;
+			// We want the pixel (x, y) centered in canvas
+			panX = dw / 2 - (x + 0.5) * es - defaultOx;
+			panY = dh / 2 - (y + 0.5) * es - defaultOy;
+		});
+	}
+
+	function jumpToFirstAnomaly() {
+		if (firstAnomaly) {
+			jumpToAnomaly(firstAnomaly.batch, firstAnomaly.channel, firstAnomaly.y, firstAnomaly.x);
+		}
+	}
+
 	let baseScale = $derived.by(() => {
 		if (!refSlice || !canvas) return 1;
 		const dw = canvas.clientWidth, dh = canvas.clientHeight;
@@ -111,6 +207,17 @@
 		const w = refSlice.w, h = refSlice.h;
 		const gap = 4;
 
+		// Map filterClass to ValueClass
+		const filterMap: Record<string, ValueClass | null> = {
+			all: null,
+			nan: 'nan',
+			inf: 'inf',
+			negInf: 'ninf',
+			denorm: 'denormal',
+		};
+		const activeFilter = filterMap[filterClass];
+		const dimColor: [number, number, number] = [30, 30, 30];
+
 		// Build images
 		function buildImage(data: Float32Array): ImageData {
 			const img = new ImageData(w, h);
@@ -119,6 +226,9 @@
 				const c = classify(data[i]);
 				if (c === 'denormal' && !showDenormals) {
 					px[i * 4] = 40; px[i * 4 + 1] = 40; px[i * 4 + 2] = 40;
+				} else if (activeFilter !== null && c !== activeFilter) {
+					// Dim non-matching classes when filter is active
+					px[i * 4] = dimColor[0]; px[i * 4 + 1] = dimColor[1]; px[i * 4 + 2] = dimColor[2];
 				} else {
 					const rgb = classColors[c];
 					px[i * 4] = rgb[0]; px[i * 4 + 1] = rgb[1]; px[i * 4 + 2] = rgb[2];
@@ -172,7 +282,7 @@
 		}
 	}
 
-	$effect(() => { refSlice; mainSlice; showDenormals; zoom; panX; panY; showTooltip; hoverX; hoverY; redraw(); });
+	$effect(() => { refSlice; mainSlice; showDenormals; filterClass; zoom; panX; panY; showTooltip; hoverX; hoverY; redraw(); });
 
 	function screenToData(cx: number, cy: number): [number, number] {
 		if (!canvas || !refSlice) return [-1, -1];
@@ -218,6 +328,8 @@
 
 	$effect(() => { shape; zoom = 1; panX = 0; panY = 0; });
 
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
+
 	function pct(count: number, total: number): string {
 		if (total === 0) return '0%';
 		return (count / total * 100).toFixed(3) + '%';
@@ -245,6 +357,21 @@
 		<label class="flex items-center gap-1.5 text-gray-400">
 			<input type="checkbox" bind:checked={showDenormals} /> Show denormals
 		</label>
+		<label class="flex items-center gap-2">
+			<span class="text-gray-400">Filter:</span>
+			<select bind:value={filterClass} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
+				<option value="all">All classes</option>
+				<option value="nan">NaN only</option>
+				<option value="inf">+Inf only</option>
+				<option value="negInf">-Inf only</option>
+				<option value="denorm">Denormal only</option>
+			</select>
+		</label>
+		<button
+			class="px-2 py-0.5 rounded text-xs border border-edge text-gray-300 hover:bg-surface-overlay disabled:opacity-40 disabled:cursor-not-allowed"
+			disabled={!firstAnomaly}
+			onclick={jumpToFirstAnomaly}
+		>Jump to first anomaly</button>
 	</div>
 
 	<!-- Legend + Stats -->
@@ -291,6 +418,45 @@
 			onmouseleave={handleMouseLeave}
 		></canvas>
 	</div>
+
+	{#if anomalyList.length > 0}
+		<div class="max-h-[120px] overflow-y-auto rounded border border-edge bg-surface-base text-xs font-mono">
+			<table class="w-full">
+				<thead class="sticky top-0 bg-surface-overlay">
+					<tr class="text-gray-500">
+						<th class="px-2 py-0.5 text-left">Source</th>
+						<th class="px-2 py-0.5 text-left">Batch</th>
+						<th class="px-2 py-0.5 text-left">Ch</th>
+						<th class="px-2 py-0.5 text-left">Y</th>
+						<th class="px-2 py-0.5 text-left">X</th>
+						<th class="px-2 py-0.5 text-left">Value</th>
+						<th class="px-2 py-0.5 text-left">Class</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each anomalyList as entry}
+						<tr
+							class="hover:bg-surface-overlay cursor-pointer text-gray-300"
+							onclick={() => jumpToAnomaly(entry.batch, entry.channel, entry.y, entry.x)}
+						>
+							<td class="px-2 py-0.5" class:text-blue-400={entry.source === 'ref'} class:text-red-400={entry.source === 'main'}>{entry.source}</td>
+							<td class="px-2 py-0.5">{entry.batch}</td>
+							<td class="px-2 py-0.5">{entry.channel}</td>
+							<td class="px-2 py-0.5">{entry.y}</td>
+							<td class="px-2 py-0.5">{entry.x}</td>
+							<td class="px-2 py-0.5">{formatValue(entry.value)}</td>
+							<td class="px-2 py-0.5"
+								class:text-red-400={entry.cls === 'NaN'}
+								class:text-fuchsia-400={entry.cls === '+Inf'}
+								class:text-cyan-400={entry.cls === '-Inf'}
+								class:text-yellow-400={entry.cls === 'Denorm'}
+							>{entry.cls}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+		</div>
+	{/if}
 
 	{#if showTooltip && hoverX >= 0 && hoverY >= 0 && refSlice}
 		{@const idx = hoverY * refSlice.w + hoverX}

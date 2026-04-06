@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { getSpatialDims, extractSlice, formatValue, colormapRGB } from './tensorUtils';
+	import { getSpatialDims, extractSlice, formatValue, colormapRGB, ALL_COLORMAP_OPTIONS, type ColormapName } from './tensorUtils';
 
 	let { main, ref, shape, mainLabel = 'Main', refLabel = 'Reference' }: {
 		main: Float32Array;
@@ -11,9 +11,21 @@
 
 	let canvas: HTMLCanvasElement | undefined = $state();
 	let selectedChannel = $state<number | null>(null);
+	let selectedBlock = $state<number | null>(null);
 	let hoveredIndex = $state<number | null>(null);
 	let tooltipX = $state(0);
 	let tooltipY = $state(0);
+	let blockGridSize = $state(8);
+	let colormap: ColormapName = $state('magma');
+
+	// Reset block selection when grid size changes (block indices become invalid)
+	let prevGridSize = $state(8);
+	$effect(() => {
+		if (blockGridSize !== prevGridSize) {
+			prevGridSize = blockGridSize;
+			selectedBlock = null;
+		}
+	});
 
 	// Current layout rectangles for hit testing
 	let currentRects: { x: number; y: number; w: number; h: number; index: number }[] = [];
@@ -86,8 +98,8 @@
 		const ch = selectedChannel;
 		const h = dims.height;
 		const w = dims.width;
-		const blockRows = Math.min(8, h);
-		const blockCols = Math.min(8, w);
+		const blockRows = Math.min(blockGridSize, h);
+		const blockCols = Math.min(blockGridSize, w);
 		const blockH = Math.ceil(h / blockRows);
 		const blockW = Math.ceil(w / blockCols);
 
@@ -128,6 +140,58 @@
 		for (const b of blockErrors) {
 			const density = b.size > 0 ? b.error / b.size : 0;
 			if (density > mx) mx = density;
+		}
+		return mx || 1;
+	});
+
+	// ---------------------------------------------------------------------------
+	// Pixel-level data for drill-down level 2
+	// ---------------------------------------------------------------------------
+
+	interface PixelError {
+		pixelIdx: number;
+		row: number;
+		col: number;
+		absDiff: number;
+	}
+
+	let selectedBlockData = $derived.by((): BlockError | null => {
+		if (selectedBlock === null || !blockErrors) return null;
+		return blockErrors.find((b) => b.blockIdx === selectedBlock) ?? null;
+	});
+
+	let pixelErrors = $derived.by((): PixelError[] | null => {
+		if (selectedChannel === null || selectedBlock === null) return null;
+		const block = selectedBlockData;
+		if (!block) return null;
+
+		const ch = selectedChannel;
+		const w = dims.width;
+		const chOffset = ch * spatialSize;
+		const pixels: PixelError[] = [];
+
+		let idx = 0;
+		for (let r = block.rStart; r <= block.rEnd; r++) {
+			for (let c = block.cStart; c <= block.cEnd; c++) {
+				const i = chOffset + r * w + c;
+				const diff = Math.abs(main[i] - ref[i]);
+				pixels.push({ pixelIdx: idx++, row: r, col: c, absDiff: diff });
+			}
+		}
+
+		pixels.sort((a, b) => b.absDiff - a.absDiff);
+		return pixels;
+	});
+
+	let pixelTotalError = $derived(
+		pixelErrors ? pixelErrors.reduce((s, p) => s + p.absDiff, 0) : 0,
+	);
+
+	let pixelMaxAbsDiff = $derived.by(() => {
+		if (!pixelErrors) return 1;
+		let mx = 0;
+		for (const p of pixelErrors) {
+			if (p.absDiff > mx) mx = p.absDiff;
 		}
 		return mx || 1;
 	});
@@ -290,7 +354,7 @@
 				error: formatValue(ce.error),
 				pct: pct.toFixed(1),
 			};
-		} else {
+		} else if (selectedBlock === null) {
 			// Level 1: block view
 			if (!blockErrors) return null;
 			const be = blockErrors.find((b) => b.blockIdx === hoveredIndex);
@@ -299,6 +363,17 @@
 			return {
 				label: `H:${be.rStart}-${be.rEnd}, W:${be.cStart}-${be.cEnd}`,
 				error: formatValue(be.error),
+				pct: pct.toFixed(1),
+			};
+		} else {
+			// Level 2: pixel view
+			if (!pixelErrors) return null;
+			const pe = pixelErrors.find((p) => p.pixelIdx === hoveredIndex);
+			if (!pe) return null;
+			const pct = pixelTotalError > 0 ? (pe.absDiff / pixelTotalError) * 100 : 0;
+			return {
+				label: `Pixel [${pe.row}, ${pe.col}]`,
+				error: formatValue(pe.absDiff),
 				pct: pct.toFixed(1),
 			};
 		}
@@ -344,7 +419,7 @@
 				const ce = channelErrors.find((e) => e.channel === r.index);
 				const density = ce && ce.size > 0 ? ce.error / ce.size : 0;
 				const t = mxD > 0 ? density / mxD : 0;
-				const [cr, cg, cb] = colormapRGB(t, 'magma');
+				const [cr, cg, cb] = colormapRGB(t, colormap);
 
 				ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
 				ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -364,7 +439,7 @@
 					ctx.fillText(`${r.index}`, r.x + r.w / 2, r.y + r.h / 2);
 				}
 			}
-		} else {
+		} else if (selectedBlock === null) {
 			// Level 1: spatial blocks within selected channel
 			if (!blockErrors) return;
 			const items: TreemapItem[] = blockErrors.map((be) => ({
@@ -379,7 +454,7 @@
 				const be = blockErrors.find((b) => b.blockIdx === r.index);
 				const density = be && be.size > 0 ? be.error / be.size : 0;
 				const t = mxD > 0 ? density / mxD : 0;
-				const [cr, cg, cb] = colormapRGB(t, 'magma');
+				const [cr, cg, cb] = colormapRGB(t, colormap);
 
 				ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
 				ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -396,6 +471,38 @@
 					ctx.textBaseline = 'middle';
 					const rangeLabel = `${be.rStart}-${be.rEnd}, ${be.cStart}-${be.cEnd}`;
 					ctx.fillText(rangeLabel, r.x + r.w / 2, r.y + r.h / 2);
+				}
+			}
+		} else {
+			// Level 2: individual pixels within selected block
+			if (!pixelErrors) return;
+			const items: TreemapItem[] = pixelErrors.map((pe) => ({
+				value: pe.absDiff,
+				index: pe.pixelIdx,
+			}));
+			const rects = squarify(items, boundingRect);
+			currentRects = rects;
+			const mxD = pixelMaxAbsDiff;
+
+			for (const r of rects) {
+				const pe = pixelErrors.find((p) => p.pixelIdx === r.index);
+				const t = pe ? (mxD > 0 ? pe.absDiff / mxD : 0) : 0;
+				const [cr, cg, cb] = colormapRGB(t, colormap);
+
+				ctx.fillStyle = `rgb(${cr},${cg},${cb})`;
+				ctx.fillRect(r.x, r.y, r.w, r.h);
+
+				const isHovered = hoveredIndex === r.index;
+				ctx.strokeStyle = isHovered ? '#f59e0b' : '#374151';
+				ctx.lineWidth = isHovered ? 2 : 1;
+				ctx.strokeRect(r.x, r.y, r.w, r.h);
+
+				if (r.w > 40 && r.h > 20 && pe) {
+					ctx.fillStyle = contrastText(cr, cg, cb);
+					ctx.font = '10px monospace';
+					ctx.textAlign = 'center';
+					ctx.textBaseline = 'middle';
+					ctx.fillText(`[${pe.row},${pe.col}]`, r.x + r.w / 2, r.y + r.h / 2);
 				}
 			}
 		}
@@ -426,6 +533,9 @@
 		if (selectedChannel === null) {
 			selectedChannel = idx;
 			hoveredIndex = null;
+		} else if (selectedBlock === null) {
+			selectedBlock = idx;
+			hoveredIndex = null;
 		}
 	}
 
@@ -442,25 +552,73 @@
 
 	function resetToTop() {
 		selectedChannel = null;
+		selectedBlock = null;
+		hoveredIndex = null;
+	}
+
+	function resetToChannel() {
+		selectedBlock = null;
 		hoveredIndex = null;
 	}
 </script>
 
 <div class="relative">
-	<!-- Breadcrumb -->
-	<div class="mb-2 flex items-center gap-1 text-sm text-gray-300">
-		<button
-			class="hover:text-white underline-offset-2 {selectedChannel === null
-				? 'font-semibold text-white'
-				: 'hover:underline'}"
-			onclick={resetToTop}
-		>
-			All Channels
-		</button>
-		{#if selectedChannel !== null}
-			<span class="text-gray-500">&gt;</span>
-			<span class="font-semibold text-white">Channel {selectedChannel}</span>
-		{/if}
+	<!-- Controls -->
+	<div class="mb-2 flex items-center gap-4">
+		<!-- Breadcrumb -->
+		<div class="flex items-center gap-1 text-sm text-gray-300">
+			<button
+				class="hover:text-white underline-offset-2 {selectedChannel === null
+					? 'font-semibold text-white'
+					: 'hover:underline'}"
+				onclick={resetToTop}
+			>
+				All Channels
+			</button>
+			{#if selectedChannel !== null}
+				<span class="text-gray-500">&gt;</span>
+				<button
+					class="hover:text-white underline-offset-2 {selectedBlock === null
+						? 'font-semibold text-white'
+						: 'hover:underline'}"
+					onclick={resetToChannel}
+				>
+					Channel {selectedChannel}
+				</button>
+			{/if}
+			{#if selectedBlock !== null && selectedBlockData}
+				<span class="text-gray-500">&gt;</span>
+				<span class="font-semibold text-white">Block [{selectedBlockData.rStart}-{selectedBlockData.rEnd}, {selectedBlockData.cStart}-{selectedBlockData.cEnd}]</span>
+			{/if}
+		</div>
+
+		<div class="ml-auto flex items-center gap-3">
+			<!-- Block grid size -->
+			<label class="flex items-center gap-1 text-xs text-gray-400">
+				Grid
+				<select
+					class="rounded border border-gray-600 bg-gray-800 px-1.5 py-0.5 text-xs text-gray-200"
+					bind:value={blockGridSize}
+				>
+					{#each [4, 8, 16, 32] as size}
+						<option value={size}>{size}x{size}</option>
+					{/each}
+				</select>
+			</label>
+
+			<!-- Colormap -->
+			<label class="flex items-center gap-1 text-xs text-gray-400">
+				Colormap
+				<select
+					class="rounded border border-gray-600 bg-gray-800 px-1.5 py-0.5 text-xs text-gray-200"
+					bind:value={colormap}
+				>
+					{#each ALL_COLORMAP_OPTIONS as opt}
+						<option value={opt.value}>{opt.label}</option>
+					{/each}
+				</select>
+			</label>
+		</div>
 	</div>
 
 	<!-- Canvas -->
