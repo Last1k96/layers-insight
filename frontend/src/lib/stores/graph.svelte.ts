@@ -139,21 +139,15 @@ class GraphStore {
       const origNode = this.graphData?.nodes.find(n => n.name === cutNode);
       const origType = origNode?.type ?? cutNode;
       overrides.set(cutNode, { name: 'Parameter', type: 'Parameter', color: '#eeeeee' });
-    } else if (cutType === 'output' && cutNode) {
-      s.delete(cutNode);
-      overrides.set(cutNode, { name: 'Result', type: 'Result', color: '#eeeeee' });
     }
 
-    // Ancestor cut nodes that are still reachable in the current sub-model
-    // should be shown as Parameters/Results. If they're in the grayed set from the backend,
-    // it means they're upstream/downstream of the current cut and should stay grayed.
+    // Ancestor input-cut nodes that are still reachable in the current sub-model
+    // should be shown as Parameters. If they're in the grayed set from the backend,
+    // it means they're upstream of the current cut and should stay grayed.
     if (ancestorCuts) {
       for (const ac of ancestorCuts) {
         if (ac.cut_type === 'input' && !s.has(ac.cut_node)) {
           overrides.set(ac.cut_node, { name: 'Parameter', type: 'Parameter', color: '#eeeeee' });
-        }
-        if (ac.cut_type === 'output' && !s.has(ac.cut_node)) {
-          overrides.set(ac.cut_node, { name: 'Result', type: 'Result', color: '#eeeeee' });
         }
       }
     }
