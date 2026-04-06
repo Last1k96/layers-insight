@@ -12,6 +12,11 @@ export const GLYPH_FLOATS = 12;
 /** Bytes per glyph instance */
 export const GLYPH_BYTES = GLYPH_FLOATS * 4;
 
+/** Floats per ghost vertex (pos2 + uv2 + color4 + isText1) */
+export const GHOST_VERTEX_FLOATS = 9;
+/** Bytes per ghost vertex */
+export const GHOST_VERTEX_BYTES = GHOST_VERTEX_FLOATS * 4;
+
 /** Graph-space font size */
 export const GRAPH_FONT_SIZE = 16;
 
