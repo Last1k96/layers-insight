@@ -101,6 +101,40 @@ def compute_dag_layout(
     _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_layers, edges)
 
     # Phase 5: Y-coordinates
+    # Use span-1 (local) per-node degree to avoid inflating gaps where
+    # a high-fan-out node (e.g. Shape with 12 corridor-bound outputs)
+    # shares a layer with simple nodes.  Long-edge bonus only at the
+    # DESTINATION layer where edges converge (not at source — those
+    # depart to corridors and don't crowd the local gap).
+    node_local_out: dict[str, int] = defaultdict(int)
+    node_local_in: dict[str, int] = defaultdict(int)
+    for chain in edge_chains:
+        src_L, tgt_L = layer_of[chain[0]], layer_of[chain[-1]]
+        if tgt_L - src_L <= 2:
+            node_local_out[chain[0]] += 1
+            node_local_in[chain[-1]] += 1
+
+    layer_max_out: list[int] = [0] * num_layers
+    layer_max_in: list[int] = [0] * num_layers
+    for nid in node_ids:
+        L = layer_of[nid]
+        if node_local_out.get(nid, 0) > layer_max_out[L]:
+            layer_max_out[L] = node_local_out[nid]
+        if node_local_in.get(nid, 0) > layer_max_in[L]:
+            layer_max_in[L] = node_local_in[nid]
+
+    # Long skip edges (span > 2) arriving at each layer
+    layer_long_in: list[int] = [0] * num_layers
+    for chain in edge_chains:
+        src_L, tgt_L = layer_of[chain[0]], layer_of[chain[-1]]
+        if tgt_L - src_L > 2:
+            layer_long_in[tgt_L] += 1
+
+    DEGREE_THRESHOLD = 2
+    EXTRA_PER_DEGREE = 16   # px per local connection above threshold
+    EXTRA_PER_LONG = 10     # px per long skip edge arriving
+    typical_h = max((node_map[nid]["height"] for nid in node_ids), default=40)
+
     layer_y: list[float] = [0.0] * num_layers
     layer_mid: list[float] = [0.0] * num_layers
     y = 0.0
@@ -108,7 +142,15 @@ def compute_dag_layout(
         layer_y[L] = y
         max_h = max((ext_nmap[nid]["height"] for nid in layers[L]), default=0)
         layer_mid[L] = y + max_h / 2
-        y += max_h + LAYER_SPACING
+        # Degree-based: max single-node LOCAL fan-out/fan-in at gap boundary
+        fan = layer_max_out[L]
+        if L + 1 < num_layers:
+            fan = max(fan, layer_max_in[L + 1])
+        deg_extra = max(0, fan - DEGREE_THRESHOLD) * EXTRA_PER_DEGREE
+        # Long-edge bonus: skip edges arriving at L+1 (convergence)
+        long_extra = (layer_long_in[L + 1] if L + 1 < num_layers else 0) * EXTRA_PER_LONG
+        extra = min(typical_h, deg_extra + long_extra)
+        y += max_h + LAYER_SPACING + extra
 
     # Phase 6: Build result (only real nodes in positions)
     positions = {nid: {"x": x_of[nid], "y": layer_y[layer_of[nid]]} for nid in node_ids}
