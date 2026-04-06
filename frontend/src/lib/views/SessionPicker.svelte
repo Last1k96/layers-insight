@@ -157,7 +157,7 @@
             class:is-selected={i === selectedIndex}
             class:is-last={isLast}
             class:is-compare-selected={compareMode && compareSelection.includes(session.id)}
-            style="animation-delay: {i * 50}ms; --accent-bar: {accent};"
+            style="--accent-bar: {accent};"
             role="button"
             tabindex="0"
             onclick={() => compareMode ? toggleCompareSelect(new MouseEvent('click'), session.id) : onsessionselected(session.id)}
@@ -422,17 +422,19 @@
   .session-list {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.75rem;
     max-height: 60vh;
     overflow-y: auto;
-    padding-right: 4px;
+    padding-right: 6px;
     margin-bottom: 1rem;
+    scrollbar-width: thin;
+    scrollbar-color: #4A5070 transparent;
   }
 
-  .session-list::-webkit-scrollbar { width: 5px; }
+  .session-list::-webkit-scrollbar { width: 6px; }
   .session-list::-webkit-scrollbar-track { background: transparent; }
-  .session-list::-webkit-scrollbar-thumb { background: #3A3F56; border-radius: 99px; }
-  .session-list::-webkit-scrollbar-thumb:hover { background: #4A5070; }
+  .session-list::-webkit-scrollbar-thumb { background: #4A5070; border-radius: 99px; }
+  .session-list::-webkit-scrollbar-thumb:hover { background: #5E6590; }
 
   /* ── Session Card ── */
   .session-card {
@@ -443,8 +445,8 @@
     cursor: pointer;
     position: relative;
     overflow: hidden;
+    flex-shrink: 0;
     transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
-    animation: card-enter 0.35s ease-out both;
   }
 
   .session-card:hover {
