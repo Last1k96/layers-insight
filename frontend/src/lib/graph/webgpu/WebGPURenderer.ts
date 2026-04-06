@@ -50,6 +50,7 @@ export class WebGPURenderer {
   private _lastEdgeMode: 'default' | 'search' | 'accuracy' = 'default';
   private _lastHoveredEdge: number | null = null;
   private _lastSelectedEdge: number | null = null;
+  private _lastGrayedNodes: Set<string> = new Set();
 
   // Store last camera params so we can re-apply on resize
   private lastCameraTx = 0;
@@ -348,19 +349,23 @@ export class WebGPURenderer {
       nodeData, nodes.length,
     );
 
-    // Rebuild edges for search dimming / edge highlighting (skip if accuracy view handles it)
+    // Rebuild edges for search dimming / edge highlighting / grayed nodes (skip if accuracy view handles it)
     const edgeHighlightChanged = highlightEdge !== prevHighlight;
+    const grayedChanged = grayedNodes !== this._lastGrayedNodes;
     if (!accuracyViewActive) {
       // Only rebuild when edge coloring actually changes — not every frame
-      const isColored = searchActive || highlightEdge !== null;
+      const hasGrayed = grayedNodes.size > 0;
+      const isColored = searchActive || highlightEdge !== null || hasGrayed;
       const wasColored = this._lastEdgeMode !== 'default';
-      const needsRebuild = edgeHighlightChanged || (isColored !== wasColored);
+      const needsRebuild = edgeHighlightChanged || grayedChanged || (isColored !== wasColored);
 
       if (needsRebuild) {
         const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 }; // #4C8DFF
         const dim = { r: 0.184, g: 0.200, b: 0.255, a: 0.3 };
+        const grayDim = { r: 0.137, g: 0.149, b: 0.212, a: 0.25 };
         const edgeVerts = buildEdgeGeometry(this.graphData.edges, this.graphData.nodes, this.nodeSizeFn!, (edge, idx) => {
           if (idx === highlightEdge) return { start: hl, end: hl };
+          if (grayedNodes.has(edge.source) || grayedNodes.has(edge.target)) return { start: grayDim, end: grayDim };
           if (searchActive) return { start: dim, end: dim };
           return undefined as any; // use default
         });
@@ -379,6 +384,7 @@ export class WebGPURenderer {
     }
     this._lastHoveredEdge = hoveredEdgeIndex;
     this._lastSelectedEdge = selectedEdgeIndex;
+    this._lastGrayedNodes = grayedNodes;
 
     // Build text glyph instances (skip if zoomed out)
     // In accuracy view, pass the set of inferred node IDs so non-inferred text is hidden
