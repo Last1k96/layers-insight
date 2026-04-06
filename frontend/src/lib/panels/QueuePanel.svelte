@@ -299,6 +299,7 @@
           {/if}
           <div class="relative flex items-center gap-2 w-full">
             <button class="text-content-secondary/50 hover:text-content-secondary transition-colors"
+              aria-label="Toggle collapse"
               onclick={(e) => { e.stopPropagation(); toggleBisectCollapsed(bj.job_id); }}
             >
               <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"
@@ -369,6 +370,7 @@
           {/if}
           <div class="relative flex items-center gap-2 w-full">
             <button class="text-content-secondary/50 hover:text-content-secondary transition-colors"
+              aria-label="Toggle collapse"
               onclick={(e) => { e.stopPropagation(); toggleBisectCollapsed(bj.job_id); }}
             >
               <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"

@@ -294,7 +294,7 @@
 		></canvas>
 	</div>
 
-	<canvas bind:this={histCanvas} class="w-full h-[60px] bg-surface-base rounded" />
+	<canvas bind:this={histCanvas} class="w-full h-[60px] bg-surface-base rounded"></canvas>
 
 	{#if showTooltip && hoverX >= 0 && hoverY >= 0 && sliceData}
 		{@const idx = hoverY * sliceData.w + hoverX}

@@ -21,7 +21,7 @@
 	} = $props();
 
 	let canvas: HTMLCanvasElement;
-	let sparsityBarCanvas: HTMLCanvasElement;
+	let sparsityBarCanvas: HTMLCanvasElement = $state()!;
 	let batch = $state(0);
 	let channel = $state(0);
 	let thresholdExp = $state(-7);
