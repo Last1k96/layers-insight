@@ -71,7 +71,7 @@ class SessionService:
         temp directory into the session folder instead of copying from original path.
         """
         original_xml = Path(config.model_path)
-        model_name = original_xml.stem
+        model_name = config.session_name or original_xml.stem
         now = datetime.now(timezone.utc)
         safe_model = self._sanitize_name(model_name)
         session_id = f"{now.strftime('%Y%m%d_%H%M%S')}_{safe_model}"
@@ -797,6 +797,15 @@ class SessionService:
                 changed = True
         if changed:
             self._write_metadata(session_id, meta)
+
+    def rename_session(self, session_id: str, new_name: str) -> bool:
+        """Rename a session (update model_name in metadata). Returns True on success."""
+        if not self._session_path(session_id).exists():
+            return False
+        meta = self._read_metadata(session_id)
+        meta["info"]["model_name"] = new_name
+        self._write_metadata(session_id, meta)
+        return True
 
     def _write_metadata(self, session_id: str, metadata: dict) -> None:
         self._atomic_write(

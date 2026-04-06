@@ -25,6 +25,7 @@ class SessionConfig(BaseModel):
     """Configuration for a new session."""
     ov_path: Optional[str] = None
     model_path: str
+    session_name: Optional[str] = None
     input_path: Optional[str] = None  # path or None for random (legacy, overridden by inputs)
     main_device: str = "CPU"
     ref_device: str = "CPU"
@@ -64,6 +65,11 @@ class SubSessionInfo(BaseModel):
     task_count: int = 0
     success_count: int = 0
     failed_count: int = 0
+
+
+class RenameRequest(BaseModel):
+    """Request to rename a session."""
+    name: str
 
 
 class CutRequest(BaseModel):
