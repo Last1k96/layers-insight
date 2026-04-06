@@ -130,8 +130,21 @@ class BisectService:
     ) -> BisectJobInfo:
         """Start a new bisection search. Returns job info."""
         nodes = _nodes_between(graph_data, request.start_node, request.end_node)
+
+        # When running in a sub-session, exclude grayed-out nodes (not in the cut model)
+        if request.sub_session_id and session_service:
+            sub_meta = session_service.get_sub_session_meta(
+                request.session_id, request.sub_session_id
+            )
+            if sub_meta:
+                grayed = set(sub_meta.get("grayed_nodes", []))
+                nodes = [nid for nid in nodes if nid not in grayed]
+
         if len(nodes) < 2:
-            raise ValueError("Need at least 2 nodes in range for bisection")
+            detail = "Need at least 2 nodes in range for bisection"
+            if request.sub_session_id:
+                detail += " (after excluding nodes outside the sub-session model)"
+            raise ValueError(detail)
 
         # Store shared refs (idempotent)
         self._queue_service = queue_service

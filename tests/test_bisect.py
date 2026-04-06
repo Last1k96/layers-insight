@@ -394,3 +394,100 @@ async def test_bisect_stop_when_not_found(async_client, test_app):
     """POST /api/inference/bisect/{job_id}/stop returns 404 when job doesn't exist."""
     resp = await async_client.post("/api/inference/bisect/nonexistent/stop")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Sub-session bisect tests
+# ---------------------------------------------------------------------------
+
+class FakeSessionService:
+    """Minimal session service that returns configurable grayed_nodes."""
+    def __init__(self, grayed_nodes: list[str] | None = None):
+        self._grayed = grayed_nodes or []
+
+    def get_sub_session_meta(self, session_id: str, sub_session_id: str):
+        return {"grayed_nodes": self._grayed}
+
+    def find_task_for_node(self, session_id, node_name, sub_session_id=None):
+        return None
+
+    def _read_metadata(self, session_id):
+        return {"tasks": {}}
+
+    def save_bisect_job(self, session_id, job_id, data):
+        pass
+
+    def load_bisect_jobs(self, session_id):
+        return {}
+
+    def clear_bisect_job(self, session_id, job_id):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_bisect_filters_grayed_nodes_for_sub_session():
+    """Bisect in a sub-session should only search non-grayed nodes."""
+    svc = BisectService()
+    graph = _make_graph(10)  # op_0 .. op_9
+
+    # Gray out the first 5 ops — sub-model only has op_5..op_9
+    grayed = [f"op_{i}" for i in range(5)]
+    session_svc = FakeSessionService(grayed_nodes=grayed)
+
+    req = BisectRequest(
+        session_id="s1",
+        threshold=0.999,
+        sub_session_id="cut1",
+    )
+
+    queue = FakeQueue()
+    job = await svc.start(
+        request=req, graph_data=graph,
+        queue_service=queue, session_service=session_svc,
+        broadcast=noop_broadcast,
+    )
+
+    # 5 non-grayed nodes → ceil(log2(5)) = 3 total steps
+    assert job.total_steps == math.ceil(math.log2(5))
+    assert job.sub_session_id == "cut1"
+
+    # Verify bisect only probes non-grayed nodes
+    probed_nodes = set()
+    while any(s.job.status == BisectStatus.RUNNING for s in svc._jobs.values()):
+        await asyncio.sleep(0.01)
+        if queue.created_tasks:
+            task = queue.created_tasks[-1]
+            probed_nodes.add(task.node_name)
+            assert task.sub_session_id == "cut1"
+            # All pass — bisect should converge to the last node
+            result = _make_task(task.task_id, task.node_name, TaskStatus.SUCCESS,
+                                cos=1.0, batch_id=task.batch_id)
+            svc.on_task_complete(result)
+            await asyncio.sleep(0.01)
+
+    # No grayed node should have been probed
+    for node in grayed:
+        assert node not in probed_nodes
+
+
+@pytest.mark.asyncio
+async def test_bisect_sub_session_all_grayed_raises():
+    """Bisect should raise when all nodes are grayed out in a sub-session."""
+    svc = BisectService()
+    graph = _make_graph(5)  # op_0 .. op_4
+
+    grayed = [f"op_{i}" for i in range(5)]
+    session_svc = FakeSessionService(grayed_nodes=grayed)
+
+    req = BisectRequest(
+        session_id="s1",
+        threshold=0.999,
+        sub_session_id="cut1",
+    )
+
+    with pytest.raises(ValueError, match="sub-session"):
+        await svc.start(
+            request=req, graph_data=graph,
+            queue_service=FakeQueue(), session_service=session_svc,
+            broadcast=noop_broadcast,
+        )
