@@ -777,7 +777,7 @@ export class WebGPURenderer {
         const c = getMetricColor(inferredMetrics.get(startId)!);
         const pathColor = { r: c.r, g: c.g, b: c.b, a: 1.0 };
 
-        const queue: { nodeId: string; edgePath: typeof this.graphData.edges }[] =
+        const queue: { nodeId: string; edgePath: GraphData['edges'] }[] =
           [{ nodeId: startId, edgePath: [] }];
         const visited = new Set<string>([startId]);
 

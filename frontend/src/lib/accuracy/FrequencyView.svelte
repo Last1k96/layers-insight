@@ -29,7 +29,7 @@
 	let batch = $state(0);
 	let channel = $state(0);
 	let colormap: ColormapName = $state('inferno');
-	let showMode: 'ref' | 'main' | 'diff' = $state('diff');
+	let showMode = $state<'ref' | 'main' | 'diff'>('diff');
 
 	let dims = $derived(getSpatialDims(shape));
 

@@ -199,7 +199,7 @@
 
   // Compute column-wise min/max for color scaling
   let columnRanges = $derived.by(() => {
-    if (channelSummary.length === 0) return { meanDiff: [0, 1], maxDiff: [0, 1], cosSim: [0, 1] };
+    if (channelSummary.length === 0) return { meanDiff: [0, 1] as [number, number], maxDiff: [0, 1] as [number, number], cosSim: [0, 1] as [number, number] };
     let meanMin = Infinity, meanMax = -Infinity;
     let maxMin = Infinity, maxMax = -Infinity;
     let cosMin = Infinity, cosMax = -Infinity;

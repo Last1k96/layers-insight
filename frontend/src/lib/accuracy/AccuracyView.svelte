@@ -56,6 +56,7 @@
     | 'nanInf' | 'fft' | 'gradient';
 
   let activeTab = $state<TabKey>('heatmap');
+  let visitedTabs = $state<Set<TabKey>>(new Set<TabKey>(['heatmap']));
   let mainTensor = $state<Float32Array | null>(null);
   let refTensor = $state<Float32Array | null>(null);
   let tensorShape = $state<number[]>([]);
@@ -266,7 +267,7 @@
           {#each group.tabs as tab (tab.key)}
             <button
               class="px-2.5 py-1.5 text-xs transition-colors whitespace-nowrap rounded {activeTab === tab.key ? 'bg-accent text-white' : 'text-content-secondary hover:text-content-primary'}"
-              onclick={() => activeTab = tab.key}
+              onclick={() => { activeTab = tab.key; visitedTabs = new Set(visitedTabs).add(tab.key); }}
             >
               {tab.label}
             </button>
@@ -301,43 +302,51 @@
           refLabel={refDeviceName}
         />
       </div>
-      <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'sidebyside' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'sidebyside' ? 'auto' : 'none'}>
-        <SideBySide
-          main={mainTensor}
-          ref={refTensor}
-          shape={tensorShape}
-          mainLabel={mainDeviceName}
-          refLabel={refDeviceName}
-        />
-      </div>
-      <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'channel' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'channel' ? 'auto' : 'none'}>
-        <ChannelView
-          main={mainTensor}
-          ref={refTensor}
-          shape={tensorShape}
-          mainLabel={mainDeviceName}
-          refLabel={refDeviceName}
-        />
-      </div>
-      <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'treemap' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'treemap' ? 'auto' : 'none'}>
-        <ErrorTreemap
-          main={mainTensor}
-          ref={refTensor}
-          shape={tensorShape}
-          mainLabel={mainDeviceName}
-          refLabel={refDeviceName}
-        />
-      </div>
-      <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'diagnostics' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'diagnostics' ? 'auto' : 'none'}>
-        <Diagnostics
-          main={mainTensor}
-          ref={refTensor}
-          shape={tensorShape}
-          mainLabel={mainDeviceName}
-          refLabel={refDeviceName}
-        />
-      </div>
-      {#if canShow3D && volume3DMain && volume3DRef}
+      {#if visitedTabs.has('sidebyside')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'sidebyside' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'sidebyside' ? 'auto' : 'none'}>
+          <SideBySide
+            main={mainTensor}
+            ref={refTensor}
+            shape={tensorShape}
+            mainLabel={mainDeviceName}
+            refLabel={refDeviceName}
+          />
+        </div>
+      {/if}
+      {#if visitedTabs.has('channel')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'channel' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'channel' ? 'auto' : 'none'}>
+          <ChannelView
+            main={mainTensor}
+            ref={refTensor}
+            shape={tensorShape}
+            mainLabel={mainDeviceName}
+            refLabel={refDeviceName}
+          />
+        </div>
+      {/if}
+      {#if visitedTabs.has('treemap')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'treemap' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'treemap' ? 'auto' : 'none'}>
+          <ErrorTreemap
+            main={mainTensor}
+            ref={refTensor}
+            shape={tensorShape}
+            mainLabel={mainDeviceName}
+            refLabel={refDeviceName}
+          />
+        </div>
+      {/if}
+      {#if visitedTabs.has('diagnostics')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'diagnostics' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'diagnostics' ? 'auto' : 'none'}>
+          <Diagnostics
+            main={mainTensor}
+            ref={refTensor}
+            shape={tensorShape}
+            mainLabel={mainDeviceName}
+            refLabel={refDeviceName}
+          />
+        </div>
+      {/if}
+      {#if canShow3D && volume3DMain && volume3DRef && visitedTabs.has('volume3d')}
         <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'volume3d' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'volume3d' ? 'auto' : 'none'}>
           {#if batchCount3D > 1}
             <div class="flex items-center gap-2 mb-2 text-sm text-content-secondary">
@@ -365,106 +374,106 @@
       {/if}
 
       <!-- Error Analysis tabs -->
-      {#if activeTab === 'relativeError'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('relativeError')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'relativeError' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'relativeError' ? 'auto' : 'none'}>
           <RelativeError main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'logError'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('logError')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'logError' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'logError' ? 'auto' : 'none'}>
           <LogError main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'signedDiff'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('signedDiff')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'signedDiff' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'signedDiff' ? 'auto' : 'none'}>
           <SignedDiff main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'thresholdError'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('thresholdError')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'thresholdError' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'thresholdError' ? 'auto' : 'none'}>
           <ThresholdError main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'ssim'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('ssim')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'ssim' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'ssim' ? 'auto' : 'none'}>
           <SSIMMap main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'spatialCosine'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('spatialCosine')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'spatialCosine' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'spatialCosine' ? 'auto' : 'none'}>
           <SpatialCosine main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'ulpError'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('ulpError')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'ulpError' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'ulpError' ? 'auto' : 'none'}>
           <ULPError main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
 
       <!-- Compare tabs -->
-      {#if activeTab === 'flicker'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('flicker')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'flicker' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'flicker' ? 'auto' : 'none'}>
           <FlickerCompare main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'swipe'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('swipe')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'swipe' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'swipe' ? 'auto' : 'none'}>
           <SwipeCompare main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'checkerboard'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('checkerboard')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'checkerboard' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'checkerboard' ? 'auto' : 'none'}>
           <CheckerboardCompare main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'scatter'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('scatter')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'scatter' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'scatter' ? 'auto' : 'none'}>
           <ScatterPlot main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
 
       <!-- Channels tabs -->
-      {#if activeTab === 'featureGrid'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('featureGrid')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'featureGrid' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'featureGrid' ? 'auto' : 'none'}>
           <FeatureGrid main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'channelCorrelation'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('channelCorrelation')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'channelCorrelation' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'channelCorrelation' ? 'auto' : 'none'}>
           <ChannelCorrelation main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'sparsity'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('sparsity')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'sparsity' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'sparsity' ? 'auto' : 'none'}>
           <SparsityMap main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
 
       <!-- Statistics tabs -->
-      {#if activeTab === 'qqPlot'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('qqPlot')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'qqPlot' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'qqPlot' ? 'auto' : 'none'}>
           <QQPlot main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'metricsDashboard'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('metricsDashboard')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'metricsDashboard' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'metricsDashboard' ? 'auto' : 'none'}>
           <MetricsDashboard main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
 
       <!-- Special tabs -->
-      {#if activeTab === 'nanInf'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('nanInf')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'nanInf' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'nanInf' ? 'auto' : 'none'}>
           <NanInfInspector main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'fft'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('fft')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'fft' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'fft' ? 'auto' : 'none'}>
           <FrequencyView main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if activeTab === 'gradient'}
-        <div class="absolute inset-0 p-4 overflow-auto">
+      {#if visitedTabs.has('gradient')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'gradient' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'gradient' ? 'auto' : 'none'}>
           <GradientCompare main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
