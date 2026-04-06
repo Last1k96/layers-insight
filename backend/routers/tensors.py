@@ -5,12 +5,42 @@ import io
 import json
 import zipfile
 from pathlib import Path
+from typing import Iterator
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 router = APIRouter(prefix="/api/tensors", tags=["tensors"])
+
+
+class _ZipStreamBuffer:
+    """Write-only buffer for streaming ZIP generation.
+
+    Accumulates bytes written by zipfile and lets the caller drain them
+    after each entry, so the response can be streamed incrementally.
+    zipfile in write mode only needs write() and tell() — no seeking.
+    """
+
+    def __init__(self) -> None:
+        self._chunks: list[bytes] = []
+        self._pos = 0
+
+    def write(self, data: bytes) -> int:
+        self._chunks.append(data)
+        self._pos += len(data)
+        return len(data)
+
+    def tell(self) -> int:
+        return self._pos
+
+    def flush(self) -> None:
+        pass
+
+    def drain(self) -> bytes:
+        data = b"".join(self._chunks)
+        self._chunks.clear()
+        return data
 
 
 # --- Export route MUST be registered before the wildcard {output_name} routes
@@ -85,66 +115,77 @@ async def export_reproducer(session_id: str, task_id: str, request: Request) -> 
     if session_detail.config.original_format:
         info["session_config"]["original_format"] = session_detail.config.original_format
 
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+    safe_name = node_name.replace("/", "_").replace("\\", "_").replace(" ", "_")
+
+    def _generate() -> Iterator[bytes]:
+        buf = _ZipStreamBuffer()
         prefix = "reproducer/"
 
-        # Add cut model files (.xml and .bin)
-        for suffix in (".xml", ".bin"):
-            model_file = tensor_dir / f"cut_model{suffix}"
-            if model_file.exists():
-                zf.write(str(model_file), f"{prefix}cut_model{suffix}")
+        with zipfile.ZipFile(buf, "w") as zf:
+            # Model files — .bin stored (weights don't compress), .xml deflated
+            for suffix in (".xml", ".bin"):
+                model_file = tensor_dir / f"cut_model{suffix}"
+                if model_file.exists():
+                    compress = zipfile.ZIP_DEFLATED if suffix == ".xml" else zipfile.ZIP_STORED
+                    zf.writestr(f"{prefix}cut_model{suffix}", model_file.read_bytes(), compress_type=compress)
+                    yield buf.drain()
 
-        # Add input tensors (input_*.npy -> input_*.bin)
-        for npy_path in sorted(tensor_dir.glob("input_*.npy")):
-            arr = np.load(str(npy_path))
-            bin_name = npy_path.stem + ".bin"
-            zf.writestr(f"{prefix}{bin_name}", arr.tobytes())
-            info["inputs"].append({
-                "name": npy_path.stem,
-                "shape": list(arr.shape),
-                "dtype": str(arr.dtype),
-                "file": bin_name,
-            })
+            # Input tensors (input_*.npy -> input_*.bin) — stored uncompressed
+            for npy_path in sorted(tensor_dir.glob("input_*.npy")):
+                arr = np.load(str(npy_path))
+                bin_name = npy_path.stem + ".bin"
+                zf.writestr(f"{prefix}{bin_name}", arr.tobytes(), compress_type=zipfile.ZIP_STORED)
+                info["inputs"].append({
+                    "name": npy_path.stem,
+                    "shape": list(arr.shape),
+                    "dtype": str(arr.dtype),
+                    "file": bin_name,
+                })
+                yield buf.drain()
 
-        # Add output tensors — handle both single-output (main_output.npy)
-        # and multi-output (main_output_0.npy, main_output_1.npy, ...) patterns.
-        # The worker saves backward-compat copies (main_output.npy = output 0),
-        # so skip the unnumbered file when indexed files exist to avoid duplicates.
-        for side in ("main_output", "ref_output"):
-            indexed = sorted(tensor_dir.glob(f"{side}_[0-9]*.npy"))
-            if indexed:
-                for npy_path in indexed:
-                    arr = np.load(str(npy_path))
-                    bin_name = npy_path.stem + ".bin"
-                    zf.writestr(f"{prefix}{bin_name}", arr.tobytes())
-                    info["outputs"].append({
-                        "name": npy_path.stem,
-                        "shape": list(arr.shape),
-                        "dtype": str(arr.dtype),
-                        "file": bin_name,
-                    })
-            else:
-                npy_path = tensor_dir / f"{side}.npy"
-                if npy_path.exists():
-                    arr = np.load(str(npy_path))
-                    bin_name = f"{side}.bin"
-                    zf.writestr(f"{prefix}{bin_name}", arr.tobytes())
-                    info["outputs"].append({
-                        "name": side,
-                        "shape": list(arr.shape),
-                        "dtype": str(arr.dtype),
-                        "file": bin_name,
-                    })
+            # Output tensors — stored uncompressed (float tensors don't compress).
+            # Handle both single-output (main_output.npy) and multi-output
+            # (main_output_0.npy, ...) patterns.  Skip unnumbered file when
+            # indexed files exist to avoid duplicates.
+            for side in ("main_output", "ref_output"):
+                indexed = sorted(tensor_dir.glob(f"{side}_[0-9]*.npy"))
+                if indexed:
+                    for npy_path in indexed:
+                        arr = np.load(str(npy_path))
+                        bin_name = npy_path.stem + ".bin"
+                        zf.writestr(f"{prefix}{bin_name}", arr.tobytes(), compress_type=zipfile.ZIP_STORED)
+                        info["outputs"].append({
+                            "name": npy_path.stem,
+                            "shape": list(arr.shape),
+                            "dtype": str(arr.dtype),
+                            "file": bin_name,
+                        })
+                        yield buf.drain()
+                else:
+                    npy_path = tensor_dir / f"{side}.npy"
+                    if npy_path.exists():
+                        arr = np.load(str(npy_path))
+                        bin_name = f"{side}.bin"
+                        zf.writestr(f"{prefix}{bin_name}", arr.tobytes(), compress_type=zipfile.ZIP_STORED)
+                        info["outputs"].append({
+                            "name": side,
+                            "shape": list(arr.shape),
+                            "dtype": str(arr.dtype),
+                            "file": bin_name,
+                        })
+                        yield buf.drain()
 
-        # Write info.json
-        zf.writestr(f"{prefix}info.json", json.dumps(info, indent=2))
+            # info.json last (needs accumulated inputs/outputs lists)
+            zf.writestr(f"{prefix}info.json", json.dumps(info, indent=2), compress_type=zipfile.ZIP_DEFLATED)
+            yield buf.drain()
 
+        # ZipFile.close() writes central directory
+        tail = buf.drain()
+        if tail:
+            yield tail
 
-    buf.seek(0)
-    safe_name = node_name.replace("/", "_").replace("\\", "_").replace(" ", "_")
     return StreamingResponse(
-        buf,
+        _generate(),
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="reproducer_{safe_name}.zip"'},
     )
