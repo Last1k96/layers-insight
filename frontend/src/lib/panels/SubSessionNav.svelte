@@ -114,10 +114,16 @@
         method: 'DELETE',
       });
       if (res.ok) {
-        // If we deleted the active sub-session (or its ancestor), revert to root
+        // If we deleted the active sub-session (or its ancestor), go to parent
         const deletedIds = getSubTreeIds(subId);
         if (activeSubSessionId && deletedIds.has(activeSubSessionId)) {
-          activateRoot();
+          const deleted = subSessions.find(s => s.id === subId);
+          const parent = deleted ? subSessions.find(s => s.id === deleted.parent_id) : null;
+          if (parent) {
+            activateSubSession(parent);
+          } else {
+            activateRoot();
+          }
         }
         subSessions = subSessions.filter(s => !deletedIds.has(s.id));
       }
