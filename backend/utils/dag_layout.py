@@ -350,23 +350,22 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
             # Check whether the ideal straight line is clear.
             # Only real nodes block straight lines — corridor obstacles
             # are zero-width routing points that B-splines curve around.
-            # Account for parallel offset that will be applied to
-            # straight edges (up to ±max_par_off).
-            max_par = ((n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
+            # Use this edge's actual parallel offset (not worst-case).
+            par_off = (rank - (n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
             straight_ok = True
             for did in dummies:
                 dL = layer_of[did]
                 t = (dL - src_L) / span
-                ix = src_cx + t * (tgt_cx - src_cx)
+                ix = src_cx + t * (tgt_cx - src_cx) + par_off
                 for left, right in layer_intervals[dL]:
-                    if left - NODE_SPACING - max_par <= ix <= right + NODE_SPACING + max_par:
+                    if left - NODE_SPACING <= ix <= right + NODE_SPACING:
                         straight_ok = False
                         break
                 if not straight_ok:
                     break
 
-            # Reject steep diagonals
-            if straight_ok and abs(src_cx - tgt_cx) > ext_nmap[src_n]["width"]:
+            # Reject steep diagonals (scale threshold with span)
+            if straight_ok and abs(src_cx - tgt_cx) > ext_nmap[src_n]["width"] * min(span, 3):
                 straight_ok = False
 
             if straight_ok:
@@ -374,6 +373,27 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                     "mode": "straight", "chain": chain, "dummies": dummies,
                     "src_L": src_L, "tgt_L": tgt_L, "src_cx": src_cx,
                     "tgt_cx": tgt_cx, "span": span,
+                })
+            elif span <= 3:
+                # Nudge mode: push each dummy just enough to clear obstacles
+                nudge_xs: list[float] = []
+                for did in dummies:
+                    dL = layer_of[did]
+                    t = (dL - src_L) / span
+                    ideal_x = src_cx + t * (tgt_cx - src_cx) + par_off
+                    best_x = ideal_x
+                    for left, right in layer_intervals[dL]:
+                        if left - NODE_SPACING <= best_x <= right + NODE_SPACING:
+                            dist_left = best_x - (left - NODE_SPACING)
+                            dist_right = (right + NODE_SPACING) - best_x
+                            if dist_left <= dist_right:
+                                best_x = left - NODE_SPACING
+                            else:
+                                best_x = right + NODE_SPACING
+                    nudge_xs.append(best_x)
+                edge_routes.append({
+                    "mode": "nudge", "chain": chain, "dummies": dummies,
+                    "nudge_xs": nudge_xs,
                 })
             else:
                 edge_routes.append({
@@ -384,10 +404,13 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
         # Count corridor edges to decide routing strategy
         corridor_routes = [r for r in edge_routes if r.get("mode") == "corridor"]
         if not corridor_routes:
-            # Apply straight-line edges only
+            # Apply nudge and straight-line edges only
             for rank, (idx, chain) in enumerate(chains):
                 route = edge_routes[rank]
-                if route["mode"] == "straight":
+                if route["mode"] == "nudge":
+                    for did, nx in zip(route["dummies"], route["nudge_xs"]):
+                        x_of[did] = nx
+                elif route["mode"] == "straight":
                     par_off = (rank - (n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
                     for did in route["dummies"]:
                         dL = layer_of[did]
@@ -417,7 +440,8 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
             src_x = x_of[src]
             src_r = src_x + ext_nmap[src]["width"]
             all_tgt_x = [r["tgt_cx"] for r in corridor_routes]
-            margin = min(NODE_SPACING * 5, NODE_SPACING * 2)
+            max_span = max(r["span"] for r in corridor_routes)
+            margin = min(NODE_SPACING * 5, NODE_SPACING + max_span * NODE_SPACING // 2)
             range_lo = min(src_x, min(all_tgt_x)) - margin
             range_hi = max(src_r, max(all_tgt_x)) + margin
             for did in all_corridor_dummies:
@@ -561,10 +585,13 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                     dL = layer_of[did]
                     corridor_obstacles[dL].append((x_of[did], x_of[did]))
 
-        # Apply straight-line edges
+        # Apply nudge and straight-line edges
         for rank, (idx, chain) in enumerate(chains):
             route = edge_routes[rank]
-            if route["mode"] == "straight":
+            if route["mode"] == "nudge":
+                for did, nx in zip(route["dummies"], route["nudge_xs"]):
+                    x_of[did] = nx
+            elif route["mode"] == "straight":
                 par_off = (rank - (n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
                 for did in route["dummies"]:
                     dL = layer_of[did]
