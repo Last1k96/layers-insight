@@ -604,6 +604,43 @@ export function percentile(data: Float32Array, p: number): number {
 }
 
 // ---------------------------------------------------------------------------
+// All normalization mode options for UI selects
+// ---------------------------------------------------------------------------
+
+export const ALL_NORM_MODE_OPTIONS: { value: NormMode; label: string }[] = [
+	{ value: 'linear', label: 'Linear' },
+	{ value: 'log', label: 'Log' },
+	{ value: 'symlog', label: 'Symmetric Log' },
+	{ value: 'percentile', label: 'Percentile (5–95)' },
+	{ value: 'centered', label: 'Centered (0-sym)' },
+	{ value: 'histEq', label: 'Histogram Eq.' },
+	{ value: 'gamma', label: 'Gamma (0.5)' },
+];
+
+// ---------------------------------------------------------------------------
+// Convenience: normalize + colormap in one call
+// ---------------------------------------------------------------------------
+
+/**
+ * Apply normalization mode then convert to ImageData.
+ * For 'linear' mode with a provided range, delegates to valueToImageData (zero overhead).
+ */
+export function normalizedValueToImageData(
+	data: Float32Array,
+	w: number,
+	h: number,
+	colormap: ColormapName,
+	normOpts: NormOptions,
+	range?: [number, number],
+): ImageData {
+	if (normOpts.mode === 'linear') {
+		return valueToImageData(data, w, h, colormap, range);
+	}
+	const normed = normalizeData(data, normOpts);
+	return normalizedToImageData(normed, w, h, colormap);
+}
+
+// ---------------------------------------------------------------------------
 // All colormap options for UI selects
 // ---------------------------------------------------------------------------
 
@@ -665,4 +702,67 @@ export function drawColorbar(
 
 	ctx.textAlign = 'right';
 	ctx.fillText(formatValue(max), x + w, labelY);
+}
+
+// ---------------------------------------------------------------------------
+// KS statistic
+// ---------------------------------------------------------------------------
+
+/** Kolmogorov–Smirnov statistic: max |CDF_a(x) - CDF_b(x)|. */
+export function computeKSStatistic(a: Float32Array, b: Float32Array): number {
+	const sa = Float32Array.from(a).sort();
+	const sb = Float32Array.from(b).sort();
+	const na = sa.length;
+	const nb = sb.length;
+	let ia = 0, ib = 0, maxDiff = 0;
+	while (ia < na && ib < nb) {
+		if (sa[ia] <= sb[ib]) {
+			ia++;
+		} else {
+			ib++;
+		}
+		const diff = Math.abs(ia / na - ib / nb);
+		if (diff > maxDiff) maxDiff = diff;
+	}
+	return maxDiff;
+}
+
+// ---------------------------------------------------------------------------
+// R-squared (coefficient of determination)
+// ---------------------------------------------------------------------------
+
+/** R² = 1 − SS_res / SS_tot, where ref is treated as "true" values. */
+export function computeR2(ref: Float32Array, main: Float32Array): number {
+	const n = Math.min(ref.length, main.length);
+	if (n === 0) return 0;
+	let meanRef = 0;
+	for (let i = 0; i < n; i++) meanRef += ref[i];
+	meanRef /= n;
+	let ssRes = 0, ssTot = 0;
+	for (let i = 0; i < n; i++) {
+		const d = ref[i] - meanRef;
+		ssTot += d * d;
+		const r = main[i] - ref[i];
+		ssRes += r * r;
+	}
+	if (ssTot === 0) return ssRes === 0 ? 1 : 0;
+	return 1 - ssRes / ssTot;
+}
+
+// ---------------------------------------------------------------------------
+// Batch percentile computation
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute values at given percentile points (each in [0, 100]).
+ * Returns an array of the same length as `percentiles`.
+ */
+export function computePercentiles(data: Float32Array, pcts: number[]): number[] {
+	const sorted = Float32Array.from(data).sort();
+	const n = sorted.length;
+	if (n === 0) return pcts.map(() => 0);
+	return pcts.map(p => {
+		const idx = Math.min(n - 1, Math.max(0, Math.floor(n * p / 100)));
+		return sorted[idx];
+	});
 }

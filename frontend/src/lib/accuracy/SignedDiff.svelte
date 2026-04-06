@@ -31,6 +31,9 @@
 	let colormap: ColormapName = $state('RdBu');
 	let symmetric = $state(true);
 	let globalNorm = $state(false);
+	let showTolerance = $state(false);
+	let toleranceExp = $state(-4);
+	let tolerance = $derived(Math.pow(10, toleranceExp));
 
 	let hoverX = $state(-1);
 	let hoverY = $state(-1);
@@ -125,6 +128,17 @@
 		ctx.drawImage(offscreen, 0, 0);
 		ctx.resetTransform();
 
+		if (showTolerance && sliceData) {
+			ctx.fillStyle = 'rgba(0, 200, 100, 0.3)';
+			for (let i = 0; i < sliceData.data.length; i++) {
+				if (Math.abs(sliceData.data[i]) <= tolerance) {
+					const x = i % sliceData.w;
+					const y = Math.floor(i / sliceData.w);
+					ctx.fillRect(x * es + ox, y * es + oy, es, es);
+				}
+			}
+		}
+
 		if (showTooltip && hoverX >= 0 && hoverY >= 0) {
 			const sx = hoverX * es + ox, sy = hoverY * es + oy;
 			ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
@@ -135,7 +149,9 @@
 		drawColorbar(ctx, 10, dh - 30, Math.min(200, dw - 20), 12, colormap, sliceRange[0], sliceRange[1]);
 	}
 
-	$effect(() => { offscreenImage; zoom; panX; panY; showTooltip; hoverX; hoverY; redraw(); });
+	$effect(() => { offscreenImage; zoom; panX; panY; showTooltip; hoverX; hoverY; showTolerance; tolerance; redraw(); });
+
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
 
 	function screenToData(cx: number, cy: number): [number, number] {
 		if (!canvas || !sliceData) return [-1, -1];
@@ -211,6 +227,16 @@
 		<label class="flex items-center gap-1.5 text-gray-400">
 			<input type="checkbox" bind:checked={globalNorm} /> Global norm
 		</label>
+		<label class="flex items-center gap-1.5 text-gray-400">
+			<input type="checkbox" bind:checked={showTolerance} /> Tolerance zone
+		</label>
+		{#if showTolerance}
+			<label class="flex items-center gap-2">
+				<input use:rangeScroll type="range" min="-8" max="0" step="0.5" bind:value={toleranceExp} />
+				<span class="font-mono text-gray-300 text-xs">±{tolerance.toExponential(1)}</span>
+			</label>
+		{/if}
+		<button class="px-2 py-0.5 text-gray-400 hover:text-gray-200 border border-edge rounded text-xs" onclick={resetView}>Reset view</button>
 	</div>
 
 	<div class="flex gap-4 text-xs text-gray-400">

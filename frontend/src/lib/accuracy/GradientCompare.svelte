@@ -31,6 +31,8 @@
 	let colormap: ColormapName = $state('inferno');
 	let showMode = $state<'ref' | 'main' | 'diff'>('diff');
 	let sharedRange = $state(true);
+	let kernelType = $state<'sobel' | 'prewitt' | 'scharr'>('sobel');
+	let showDirection = $state<'magnitude' | 'horizontal' | 'vertical'>('magnitude');
 
 	let hoverX = $state(-1);
 	let hoverY = $state(-1);
@@ -49,32 +51,79 @@
 
 	let dims = $derived(getSpatialDims(shape));
 
-	// Sobel gradient magnitude
-	function sobelGradient(data: Float32Array, w: number, h: number): Float32Array {
-		const out = new Float32Array(w * h);
+	// Kernel definitions
+	type Kernel3x3 = [number, number, number, number, number, number, number, number, number];
+	const kernels: Record<string, { kx: Kernel3x3; ky: Kernel3x3 }> = {
+		sobel: {
+			kx: [-1, 0, 1, -2, 0, 2, -1, 0, 1],
+			ky: [-1, -2, -1, 0, 0, 0, 1, 2, 1],
+		},
+		prewitt: {
+			kx: [-1, 0, 1, -1, 0, 1, -1, 0, 1],
+			ky: [-1, -1, -1, 0, 0, 0, 1, 1, 1],
+		},
+		scharr: {
+			kx: [-3, 0, 3, -10, 0, 10, -3, 0, 3],
+			ky: [-3, -10, -3, 0, 0, 0, 3, 10, 3],
+		},
+	};
+
+	interface GradientResult {
+		gx: Float32Array;
+		gy: Float32Array;
+		magnitude: Float32Array;
+	}
+
+	function computeGradient(data: Float32Array, w: number, h: number, kernel: 'sobel' | 'prewitt' | 'scharr'): GradientResult {
+		const { kx, ky } = kernels[kernel];
+		const gxOut = new Float32Array(w * h);
+		const gyOut = new Float32Array(w * h);
+		const magOut = new Float32Array(w * h);
 		for (let y = 1; y < h - 1; y++) {
 			for (let x = 1; x < w - 1; x++) {
-				// Sobel X
-				const gx =
-					-data[(y - 1) * w + (x - 1)] + data[(y - 1) * w + (x + 1)]
-					- 2 * data[y * w + (x - 1)] + 2 * data[y * w + (x + 1)]
-					- data[(y + 1) * w + (x - 1)] + data[(y + 1) * w + (x + 1)];
-				// Sobel Y
-				const gy =
-					-data[(y - 1) * w + (x - 1)] - 2 * data[(y - 1) * w + x] - data[(y - 1) * w + (x + 1)]
-					+ data[(y + 1) * w + (x - 1)] + 2 * data[(y + 1) * w + x] + data[(y + 1) * w + (x + 1)];
+				// Apply 3x3 kernel
+				const p00 = data[(y - 1) * w + (x - 1)];
+				const p01 = data[(y - 1) * w + x];
+				const p02 = data[(y - 1) * w + (x + 1)];
+				const p10 = data[y * w + (x - 1)];
+				const p11 = data[y * w + x];
+				const p12 = data[y * w + (x + 1)];
+				const p20 = data[(y + 1) * w + (x - 1)];
+				const p21 = data[(y + 1) * w + x];
+				const p22 = data[(y + 1) * w + (x + 1)];
 
-				out[y * w + x] = Math.sqrt(gx * gx + gy * gy);
+				const gx = kx[0]*p00 + kx[1]*p01 + kx[2]*p02
+				         + kx[3]*p10 + kx[4]*p11 + kx[5]*p12
+				         + kx[6]*p20 + kx[7]*p21 + kx[8]*p22;
+				const gy = ky[0]*p00 + ky[1]*p01 + ky[2]*p02
+				         + ky[3]*p10 + ky[4]*p11 + ky[5]*p12
+				         + ky[6]*p20 + ky[7]*p21 + ky[8]*p22;
+
+				const idx = y * w + x;
+				gxOut[idx] = gx;
+				gyOut[idx] = gy;
+				magOut[idx] = Math.sqrt(gx * gx + gy * gy);
 			}
 		}
-		return out;
+		return { gx: gxOut, gy: gyOut, magnitude: magOut };
 	}
 
 	let refSlice = $derived(extractSlice(ref, shape, batch, channel));
 	let mainSlice = $derived(extractSlice(main, shape, batch, channel));
 
-	let refGrad = $derived(sobelGradient(refSlice.data, refSlice.w, refSlice.h));
-	let mainGrad = $derived(sobelGradient(mainSlice.data, mainSlice.w, mainSlice.h));
+	let refGradResult = $derived(computeGradient(refSlice.data, refSlice.w, refSlice.h, kernelType));
+	let mainGradResult = $derived(computeGradient(mainSlice.data, mainSlice.w, mainSlice.h, kernelType));
+
+	function pickDirection(result: GradientResult): Float32Array {
+		switch (showDirection) {
+			case 'horizontal': return result.gx;
+			case 'vertical': return result.gy;
+			default: return result.magnitude;
+		}
+	}
+
+	let refGrad = $derived(pickDirection(refGradResult));
+	let mainGrad = $derived(pickDirection(mainGradResult));
 
 	let gradDiff = $derived.by(() => {
 		const out = new Float32Array(refGrad.length);
@@ -186,6 +235,8 @@
 	function handleMouseLeave() { dragging = false; showTooltip = false; }
 
 	$effect(() => { shape; zoom = 1; panX = 0; panY = 0; });
+
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
 </script>
 
 <svelte:window onmouseup={handleMouseUp} />
@@ -215,6 +266,22 @@
 			</select>
 		</label>
 		<label class="flex items-center gap-2">
+			<span class="text-gray-400">Kernel:</span>
+			<select use:rangeScroll bind:value={kernelType} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
+				<option value="sobel">Sobel</option>
+				<option value="prewitt">Prewitt</option>
+				<option value="scharr">Scharr</option>
+			</select>
+		</label>
+		<label class="flex items-center gap-2">
+			<span class="text-gray-400">Direction:</span>
+			<select use:rangeScroll bind:value={showDirection} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
+				<option value="magnitude">Magnitude</option>
+				<option value="horizontal">Horizontal (Gx)</option>
+				<option value="vertical">Vertical (Gy)</option>
+			</select>
+		</label>
+		<label class="flex items-center gap-2">
 			<span class="text-gray-400">Colormap:</span>
 			<select use:rangeScroll bind:value={colormap} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
 				{#each ALL_COLORMAP_OPTIONS as opt}
@@ -225,10 +292,14 @@
 		<label class="flex items-center gap-1.5 text-gray-400">
 			<input type="checkbox" bind:checked={sharedRange} /> Shared range
 		</label>
+		<button
+			class="px-2 py-0.5 text-gray-400 hover:text-gray-200 border border-edge rounded text-xs"
+			onclick={resetView}
+		>Reset zoom</button>
 	</div>
 
 	<div class="flex gap-4 text-xs text-gray-400">
-		<span>Sobel gradient magnitude — min: {formatValue(displayStats.min)}, max: {formatValue(displayStats.max)}, mean: {formatValue(displayStats.mean)}</span>
+		<span>{kernelType.charAt(0).toUpperCase() + kernelType.slice(1)} gradient {showDirection} — min: {formatValue(displayStats.min)}, max: {formatValue(displayStats.max)}, mean: {formatValue(displayStats.mean)}</span>
 	</div>
 
 	<div class="flex-1 flex justify-center bg-surface-base rounded-lg p-4 overflow-hidden min-h-0">

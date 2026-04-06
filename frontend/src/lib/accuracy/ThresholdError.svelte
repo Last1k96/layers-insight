@@ -26,9 +26,12 @@
 	let canvas: HTMLCanvasElement;
 	let batch = $state(0);
 	let channel = $state(0);
-	let thresholdExp = $state(-3); // log10 of threshold
+	let warningExp = $state(-4);
+	let criticalExp = $state(-2);
 	let showRef = $state(true);
 	let refColormap: ColormapName = $state('gray');
+	let warningThreshold = $derived(Math.pow(10, warningExp));
+	let criticalThreshold = $derived(Math.pow(10, criticalExp));
 
 	let hoverX = $state(-1);
 	let hoverY = $state(-1);
@@ -46,7 +49,6 @@
 	let panStartY = 0;
 
 	let dims = $derived(getSpatialDims(shape));
-	let threshold = $derived(Math.pow(10, thresholdExp));
 
 	// Abs diff
 	let absDiff = $derived.by(() => {
@@ -59,15 +61,19 @@
 	let mainSlice = $derived(extractSlice(main, shape, batch, channel));
 	let diffSlice = $derived(extractSlice(absDiff, shape, batch, channel));
 
-	// Count exceeding threshold
-	let exceedCount = $derived.by(() => {
-		let count = 0;
+	// Count exceeding thresholds
+	let thresholdCounts = $derived.by(() => {
+		let warning = 0, critical = 0;
 		for (let i = 0; i < diffSlice.data.length; i++) {
-			if (diffSlice.data[i] > threshold) count++;
+			if (diffSlice.data[i] > criticalThreshold) critical++;
+			else if (diffSlice.data[i] > warningThreshold) warning++;
 		}
-		return count;
+		return { warning, critical };
 	});
-	let exceedPct = $derived((exceedCount / (diffSlice.data.length || 1) * 100));
+	let warningCount = $derived(thresholdCounts.warning);
+	let criticalCount = $derived(thresholdCounts.critical);
+	let warningPct = $derived((warningCount / (diffSlice.data.length || 1) * 100));
+	let criticalPct = $derived((criticalCount / (diffSlice.data.length || 1) * 100));
 
 	let baseScale = $derived.by(() => {
 		if (!refSlice || !canvas) return 1;
@@ -92,28 +98,38 @@
 		const refImg = showRef ? valueToImageData(refSlice.data, w, h, refColormap) : null;
 
 		for (let i = 0; i < w * h; i++) {
-			const exceeds = diffSlice.data[i] > threshold;
+			const val = diffSlice.data[i];
 			const px = i * 4;
+			const isCritical = val > criticalThreshold;
+			const isWarning = !isCritical && val > warningThreshold;
 			if (showRef && refImg) {
-				// Darken reference slightly where overlay
 				const r = refImg.data[px], g = refImg.data[px + 1], b = refImg.data[px + 2];
-				if (exceeds) {
-					// Red overlay with intensity based on how much it exceeds
-					const intensity = Math.min(1, Math.log10(diffSlice.data[i] / threshold + 1));
+				if (isCritical) {
+					const intensity = Math.min(1, Math.log10(val / criticalThreshold + 1));
 					pixels[px] = Math.round(r * (1 - intensity) + 255 * intensity);
 					pixels[px + 1] = Math.round(g * (1 - intensity) + 40 * intensity);
 					pixels[px + 2] = Math.round(b * (1 - intensity) + 40 * intensity);
+				} else if (isWarning) {
+					const intensity = Math.min(1, Math.log10(val / warningThreshold + 1));
+					pixels[px] = Math.round(r * (1 - intensity) + 200 * intensity);
+					pixels[px + 1] = Math.round(g * (1 - intensity) + 180 * intensity);
+					pixels[px + 2] = Math.round(b * (1 - intensity) + 30 * intensity);
 				} else {
 					pixels[px] = r;
 					pixels[px + 1] = g;
 					pixels[px + 2] = b;
 				}
 			} else {
-				if (exceeds) {
-					const intensity = Math.min(1, Math.log10(diffSlice.data[i] / threshold + 1));
+				if (isCritical) {
+					const intensity = Math.min(1, Math.log10(val / criticalThreshold + 1));
 					pixels[px] = Math.round(55 + 200 * intensity);
 					pixels[px + 1] = 30;
 					pixels[px + 2] = 30;
+				} else if (isWarning) {
+					const intensity = Math.min(1, Math.log10(val / warningThreshold + 1));
+					pixels[px] = Math.round(200 * intensity);
+					pixels[px + 1] = Math.round(180 * intensity);
+					pixels[px + 2] = Math.round(30 * intensity);
 				} else {
 					pixels[px] = 20;
 					pixels[px + 1] = 20;
@@ -144,7 +160,9 @@
 		}
 	}
 
-	$effect(() => { refSlice; diffSlice; threshold; showRef; refColormap; zoom; panX; panY; showTooltip; hoverX; hoverY; redraw(); });
+	$effect(() => { refSlice; diffSlice; warningThreshold; criticalThreshold; showRef; refColormap; zoom; panX; panY; showTooltip; hoverX; hoverY; redraw(); });
+
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
 
 	function screenToData(cx: number, cy: number): [number, number] {
 		if (!canvas || !refSlice) return [-1, -1];
@@ -207,18 +225,25 @@
 			</label>
 		{/if}
 		<label class="flex items-center gap-2 flex-1 min-w-[14rem]">
-			<span class="text-gray-400 shrink-0">Threshold: 10^</span>
-			<input use:rangeScroll type="range" min="-8" max="2" step="0.5" bind:value={thresholdExp} class="flex-1" />
-			<span class="text-gray-300 shrink-0 font-mono">{threshold.toExponential(1)}</span>
+			<span class="text-yellow-400 shrink-0">Warning: 10^</span>
+			<input use:rangeScroll type="range" min="-8" max="2" step="0.5" bind:value={warningExp} class="flex-1" />
+			<span class="text-gray-300 shrink-0 font-mono">{warningThreshold.toExponential(1)}</span>
+		</label>
+		<label class="flex items-center gap-2 flex-1 min-w-[14rem]">
+			<span class="text-red-400 shrink-0">Critical: 10^</span>
+			<input use:rangeScroll type="range" min="-8" max="2" step="0.5" bind:value={criticalExp} class="flex-1" />
+			<span class="text-gray-300 shrink-0 font-mono">{criticalThreshold.toExponential(1)}</span>
 		</label>
 		<label class="flex items-center gap-1.5 text-gray-400">
 			<input type="checkbox" bind:checked={showRef} /> Show reference
 		</label>
+		<button class="px-2 py-0.5 text-gray-400 hover:text-gray-200 border border-edge rounded text-xs" onclick={resetView}>Reset view</button>
 	</div>
 
 	<div class="flex gap-4 text-xs">
-		<span class="text-red-400">{exceedCount} pixels ({exceedPct.toFixed(1)}%) exceed threshold</span>
-		<span class="text-gray-500">{diffSlice.data.length - exceedCount} within tolerance</span>
+		<span class="text-yellow-400">{warningCount} warning ({warningPct.toFixed(1)}%)</span>
+		<span class="text-red-400">{criticalCount} critical ({criticalPct.toFixed(1)}%)</span>
+		<span class="text-gray-500">{diffSlice.data.length - warningCount - criticalCount} within tolerance</span>
 	</div>
 
 	<div class="flex-1 flex justify-center bg-surface-base rounded-lg p-4 overflow-hidden min-h-0">
@@ -235,7 +260,8 @@
 
 	{#if showTooltip && hoverX >= 0 && hoverY >= 0 && refSlice}
 		{@const idx = hoverY * refSlice.w + hoverX}
-		{@const exceeds = diffSlice.data[idx] > threshold}
+		{@const diffVal = diffSlice.data[idx]}
+		{@const band = diffVal > criticalThreshold ? 'CRITICAL' : diffVal > warningThreshold ? 'WARNING' : 'OK'}
 		<div
 			class="pointer-events-none fixed z-50 rounded border border-gray-600 bg-gray-900/95 px-3 py-2 text-xs text-gray-200 shadow-lg"
 			style="left: {tooltipScreenX + 16}px; top: {tooltipScreenY + 16}px;"
@@ -243,8 +269,8 @@
 			<div class="font-mono text-gray-400">[{hoverY}, {hoverX}]</div>
 			<div><span class="text-gray-400">{refLabel}:</span> {formatValue(refSlice.data[idx])}</div>
 			<div><span class="text-gray-400">{mainLabel}:</span> {formatValue(mainSlice.data[idx])}</div>
-			<div><span class="text-gray-400">|Diff|:</span> <span class={exceeds ? 'text-red-400' : 'text-green-400'}>{formatValue(diffSlice.data[idx])}</span></div>
-			<div class={exceeds ? 'text-red-400 font-bold' : 'text-green-400'}>{exceeds ? 'EXCEEDS' : 'OK'}</div>
+			<div><span class="text-gray-400">|Diff|:</span> <span class={band === 'CRITICAL' ? 'text-red-400' : band === 'WARNING' ? 'text-yellow-400' : 'text-green-400'}>{formatValue(diffVal)}</span></div>
+			<div class={band === 'CRITICAL' ? 'text-red-400 font-bold' : band === 'WARNING' ? 'text-yellow-400 font-bold' : 'text-green-400'}>{band}</div>
 		</div>
 	{/if}
 </div>

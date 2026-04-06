@@ -3,11 +3,15 @@
 		getSpatialDims,
 		extractSlice,
 		valueToImageData,
+		normalizedValueToImageData,
 		formatValue,
 		drawColorbar,
 		computeStats,
 		ALL_COLORMAP_OPTIONS,
+		ALL_NORM_MODE_OPTIONS,
 		type ColormapName,
+		type NormMode,
+		type NormOptions,
 	} from './tensorUtils';
 	import { rangeScroll } from './rangeScroll';
 
@@ -31,6 +35,8 @@
 	let colormap: ColormapName = $state('magma');
 	let epsilon = $state(1e-10);
 	let globalNorm = $state(false);
+	let normMode = $state<NormMode>('linear');
+	let normOpts = $derived<NormOptions>({ mode: normMode });
 
 	let hoverX = $state(-1);
 	let hoverY = $state(-1);
@@ -78,7 +84,7 @@
 
 	let offscreenImage = $derived.by(() => {
 		if (!sliceData) return null;
-		return valueToImageData(sliceData.data, sliceData.w, sliceData.h, colormap, globalRange);
+		return normalizedValueToImageData(sliceData.data, sliceData.w, sliceData.h, colormap, normOpts, globalRange);
 	});
 
 	let baseScale = $derived.by(() => {
@@ -89,6 +95,7 @@
 	});
 
 	let sliceStats = $derived(computeStats(sliceData.data));
+	let diffStats = $derived(computeStats(diffSlice.data));
 
 	function redraw() {
 		if (!canvas || !offscreenImage || !sliceData) return;
@@ -123,6 +130,8 @@
 	}
 
 	$effect(() => { offscreenImage; zoom; panX; panY; showTooltip; hoverX; hoverY; redraw(); });
+
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
 
 	function screenToData(cx: number, cy: number): [number, number] {
 		if (!canvas || !sliceData) return [-1, -1];
@@ -200,7 +209,7 @@
 			</select>
 		</label>
 		<label class="flex items-center gap-2">
-			<span class="text-gray-400">Floor:</span>
+			<span class="text-gray-400" title="Minimum value added before log10 to avoid log(0)">Epsilon (floor):</span>
 			<select use:rangeScroll bind:value={epsilon} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
 				{#each epsilonOptions as opt}
 					<option value={opt.value}>{opt.label}</option>
@@ -210,10 +219,19 @@
 		<label class="flex items-center gap-1.5 text-gray-400">
 			<input type="checkbox" bind:checked={globalNorm} /> Global norm
 		</label>
+		<label class="flex items-center gap-2">
+			<span class="text-gray-400">Norm:</span>
+			<select use:rangeScroll bind:value={normMode} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
+				{#each ALL_NORM_MODE_OPTIONS as opt}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+		</label>
+		<button class="px-2 py-0.5 text-gray-400 hover:text-gray-200 border border-edge rounded text-xs" onclick={resetView}>Reset view</button>
 	</div>
 
 	<div class="flex gap-4 text-xs text-gray-400">
-		<span>log10(|diff|) — range: [{formatValue(sliceStats.min)}, {formatValue(sliceStats.max)}]</span>
+		<span>log10(|diff|+eps) — range: [{formatValue(sliceStats.min)}, {formatValue(sliceStats.max)}] | mean |diff|: {formatValue(diffStats.mean)}</span>
 	</div>
 
 	<div class="flex-1 flex justify-center bg-surface-base rounded-lg p-4 overflow-hidden min-h-0">

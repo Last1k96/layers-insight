@@ -4,6 +4,9 @@
 		extractSlice,
 		valueToImageData,
 		formatValue,
+		drawColorbar,
+		computeStats,
+		ALL_COLORMAP_OPTIONS,
 		type ColormapName,
 	} from './tensorUtils';
 	import { rangeScroll } from './rangeScroll';
@@ -30,6 +33,9 @@
 	let channel = $state(0);
 	let colormap: ColormapName = $state('viridis');
 	let sharedRange = $state(false);
+	let showDiffThreshold = $state(false);
+	let diffThresholdExp = $state(-3);
+	let diffThreshold = $derived(Math.pow(10, diffThresholdExp));
 
 	// --- Canvas refs ---
 	let canvasRef: HTMLCanvasElement | undefined = $state();
@@ -103,6 +109,7 @@
 		w: number,
 		h: number,
 		range: [number, number] | undefined,
+		isDiff = false,
 	) {
 		if (!canvas) return;
 		const ctx = canvas.getContext('2d');
@@ -115,6 +122,19 @@
 
 		// Create offscreen imagedata at native resolution
 		const imgData = valueToImageData(data, w, h, colormap, range);
+
+		// Apply diff threshold overlay on diff panel
+		if (isDiff && showDiffThreshold) {
+			const px = imgData.data;
+			for (let i = 0; i < data.length; i++) {
+				if (data[i] > diffThreshold) {
+					const base = i * 4;
+					px[base] = Math.min(255, px[base] + 100);
+					px[base + 1] = Math.max(0, px[base + 1] - 60);
+					px[base + 2] = Math.max(0, px[base + 2] - 60);
+				}
+			}
+		}
 
 		// Create offscreen canvas to hold the image
 		const offscreen = new OffscreenCanvas(w, h);
@@ -131,6 +151,12 @@
 		ctx.setTransform(effectiveScale, 0, 0, effectiveScale, offsetX, offsetY);
 		ctx.imageSmoothingEnabled = false;
 		ctx.drawImage(offscreen, 0, 0);
+
+		// Draw colorbar
+		ctx.resetTransform();
+		const stats = computeStats(data);
+		const cbRange = range || [stats.min, stats.max];
+		drawColorbar(ctx, 4, displayH - 24, Math.min(140, displayW - 8), 10, colormap, cbRange[0], cbRange[1]);
 	}
 
 	function drawCrosshair(canvas: HTMLCanvasElement | undefined, dataX: number, dataY: number) {
@@ -175,10 +201,12 @@
 		const _zoom = zoom;
 		const _panX = panX;
 		const _panY = panY;
+		const _showDiffThreshold = showDiffThreshold;
+		const _diffThreshold = diffThreshold;
 
 		renderCanvas(canvasRef, refSlice.data, w, h, range);
 		renderCanvas(canvasMain, mainSlice.data, w, h, range);
-		renderCanvas(canvasDiff, diffData, w, h, range);
+		renderCanvas(canvasDiff, diffData, w, h, range, true);
 
 		// Draw crosshair if hovering
 		if (showTooltip && hoverX >= 0 && hoverY >= 0) {
@@ -268,8 +296,7 @@
 		channel = 0;
 	});
 
-	// Colormap options
-	const colormapOptions: ColormapName[] = ['viridis', 'coolwarm', 'blueGreenRed', 'magma'];
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
 </script>
 
 <svelte:window onmouseup={handleMouseUp} />
@@ -314,8 +341,8 @@
 				bind:value={colormap}
 				class="rounded border border-gray-600 bg-gray-800 px-2 py-0.5 text-gray-200"
 			>
-				{#each colormapOptions as cm}
-					<option value={cm}>{cm}</option>
+				{#each ALL_COLORMAP_OPTIONS as opt}
+					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>
 		</label>
@@ -324,6 +351,22 @@
 			<input type="checkbox" bind:checked={sharedRange} />
 			Shared range
 		</label>
+
+		<label class="flex items-center gap-1">
+			<input type="checkbox" bind:checked={showDiffThreshold} />
+			Diff threshold
+		</label>
+		{#if showDiffThreshold}
+			<label class="flex items-center gap-1">
+				<input use:rangeScroll type="range" min="-8" max="2" step="0.5" bind:value={diffThresholdExp} />
+				<span class="font-mono w-16 text-xs">{diffThreshold.toExponential(1)}</span>
+			</label>
+		{/if}
+
+		<button
+			class="px-2 py-0.5 text-gray-400 hover:text-gray-200 border border-gray-600 rounded text-xs"
+			onclick={resetView}
+		>Reset view</button>
 	</div>
 
 	<!-- Canvases -->

@@ -27,6 +27,9 @@
 	let canvas: HTMLCanvasElement;
 	let batch = $state(0);
 	let colormap: ColormapName = $state('turbo');
+	let rangeLower = $state(0.9);
+	let cosThreshold = $state(0.99);
+	let highlightLow = $state(false);
 
 	let hoverX = $state(-1);
 	let hoverY = $state(-1);
@@ -73,7 +76,7 @@
 
 	let offscreenImage = $derived.by(() => {
 		return valueToImageData(cosineMap, dims.width, dims.height, colormap, [
-			Math.min(mapStats.min, 0.9),
+			Math.min(mapStats.min, rangeLower),
 			1,
 		]);
 	});
@@ -84,6 +87,8 @@
 		if (!dw || !dh) return 1;
 		return Math.min(dw / dims.width, dh / dims.height);
 	});
+
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
 
 	function redraw() {
 		if (!canvas || !offscreenImage) return;
@@ -106,6 +111,20 @@
 		ctx.drawImage(offscreen, 0, 0);
 		ctx.resetTransform();
 
+		// Threshold highlighting: overlay red on pixels below threshold
+		if (highlightLow) {
+			ctx.fillStyle = 'rgba(255, 60, 60, 0.4)';
+			for (let y = 0; y < h; y++) {
+				for (let x = 0; x < w; x++) {
+					if (cosineMap[y * w + x] < cosThreshold) {
+						const sx = x * es + ox;
+						const sy = y * es + oy;
+						ctx.fillRect(sx, sy, es, es);
+					}
+				}
+			}
+		}
+
 		if (showTooltip && hoverX >= 0 && hoverY >= 0) {
 			const sx = hoverX * es + ox, sy = hoverY * es + oy;
 			ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
@@ -113,11 +132,11 @@
 			ctx.beginPath(); ctx.moveTo(0, sy + 0.5); ctx.lineTo(dw, sy + 0.5); ctx.stroke();
 		}
 
-		const rangeMin = Math.min(mapStats.min, 0.9);
+		const rangeMin = Math.min(mapStats.min, rangeLower);
 		drawColorbar(ctx, 10, dh - 30, Math.min(200, dw - 20), 12, colormap, rangeMin, 1);
 	}
 
-	$effect(() => { offscreenImage; zoom; panX; panY; showTooltip; hoverX; hoverY; redraw(); });
+	$effect(() => { offscreenImage; zoom; panX; panY; showTooltip; hoverX; hoverY; highlightLow; cosThreshold; redraw(); });
 
 	function screenToData(cx: number, cy: number): [number, number] {
 		if (!canvas) return [-1, -1];
@@ -180,6 +199,21 @@
 				{/each}
 			</select>
 		</label>
+		<label class="flex items-center gap-2">
+			<span class="text-gray-400">Range min:</span>
+			<input use:rangeScroll type="range" min="0" max="1" step="0.01" bind:value={rangeLower} class="w-20" />
+			<span class="font-mono text-gray-300 text-xs">{rangeLower.toFixed(2)}</span>
+		</label>
+		<label class="flex items-center gap-1.5 text-gray-400">
+			<input type="checkbox" bind:checked={highlightLow} /> Highlight low
+		</label>
+		{#if highlightLow}
+			<label class="flex items-center gap-2">
+				<input use:rangeScroll type="range" min="0" max="1" step="0.01" bind:value={cosThreshold} class="w-20" />
+				<span class="font-mono text-gray-300 text-xs">&lt;{cosThreshold.toFixed(2)}</span>
+			</label>
+		{/if}
+		<button onclick={resetView} class="px-2 py-0.5 rounded bg-surface-base border border-edge text-gray-400 hover:text-gray-200 text-xs">Reset zoom</button>
 		<span class="text-gray-500">{dims.channels} channels per spatial position</span>
 	</div>
 

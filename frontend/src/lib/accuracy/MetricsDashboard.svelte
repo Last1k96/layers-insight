@@ -5,6 +5,7 @@
 		computeStats,
 		cosineSimilarity,
 		formatValue,
+		computePercentiles,
 	} from './tensorUtils';
 	import { rangeScroll } from './rangeScroll';
 
@@ -127,6 +128,43 @@
 		};
 	});
 
+	// Percentile summary across all channels
+	let percentileSummary = $derived.by(() => {
+		if (metrics.length === 0) return null;
+		const psnrArr = new Float32Array(metrics.map(m => isFinite(m.psnr) ? m.psnr : 0));
+		const mseArr = new Float32Array(metrics.map(m => m.mse));
+		const pcts = [5, 25, 50, 75, 95];
+		return {
+			psnr: computePercentiles(psnrArr, pcts),
+			mse: computePercentiles(mseArr, pcts),
+			labels: pcts,
+		};
+	});
+
+	function exportCSV() {
+		const headers = ['Channel', 'PSNR', 'SQNR', 'MSE', 'Cosine', 'Max|Diff|', 'Rel L2', 'Ref Mean', 'Main Mean'];
+		const rows = sortedMetrics.map(m => [m.idx, m.psnr.toFixed(2), m.sqnr.toFixed(2), m.mse.toExponential(3), m.cosineSim.toFixed(6), m.maxAbsDiff.toExponential(3), m.relL2.toExponential(3), m.refMean.toExponential(3), m.mainMean.toExponential(3)].join(','));
+		const csv = [headers.join(','), ...rows].join('\n');
+		const blob = new Blob([csv], { type: 'text/csv' });
+		const url = URL.createObjectURL(blob);
+		const a = document.createElement('a');
+		a.href = url; a.download = 'metrics.csv'; a.click();
+		URL.revokeObjectURL(url);
+	}
+
+	function psnrCellBg(psnr: number): string {
+		if (!isFinite(psnr)) return 'background-color: rgba(0,200,0,0.1)';
+		if (psnr > 40) return 'background-color: rgba(0,200,0,0.1)';
+		if (psnr > 30) return 'background-color: rgba(200,200,0,0.1)';
+		return 'background-color: rgba(200,0,0,0.1)';
+	}
+
+	function cosineCellBg(cos: number): string {
+		if (cos > 0.9999) return 'background-color: rgba(0,200,0,0.1)';
+		if (cos > 0.999) return 'background-color: rgba(200,200,0,0.1)';
+		return 'background-color: rgba(200,0,0,0.1)';
+	}
+
 	function psnrColor(psnr: number): string {
 		if (!isFinite(psnr)) return 'text-green-400';
 		if (psnr > 40) return 'text-green-400';
@@ -214,6 +252,12 @@
 			</label>
 		{/if}
 		<span class="text-gray-500">{dims.channels} channels</span>
+		<button
+			onclick={exportCSV}
+			class="ml-auto px-2 py-0.5 rounded bg-surface-panel border border-edge text-gray-400 hover:text-gray-200 hover:border-gray-500 transition-colors"
+		>
+			Export CSV
+		</button>
 	</div>
 
 	{#if aggregate}
@@ -222,6 +266,25 @@
 			<span><span class="text-gray-500">Worst PSNR:</span> <span class={psnrColor(aggregate.worstPsnr)}>{isFinite(aggregate.worstPsnr) ? aggregate.worstPsnr.toFixed(1) + ' dB' : 'Inf'}</span></span>
 			<span><span class="text-gray-500">Worst Cosine:</span> <span class={cosineColor(aggregate.worstCosine)}>{aggregate.worstCosine.toFixed(6)}</span></span>
 			<span><span class="text-gray-500">Worst Max|Diff|:</span> {formatValue(aggregate.worstMaxDiff)}</span>
+		</div>
+	{/if}
+
+	{#if percentileSummary}
+		<div class="text-[10px] text-gray-500 font-mono flex flex-wrap gap-x-6 gap-y-0.5 px-1">
+			<span>PSNR percentiles —
+				P5: {percentileSummary.psnr[0].toFixed(1)}
+				P25: {percentileSummary.psnr[1].toFixed(1)}
+				P50: {percentileSummary.psnr[2].toFixed(1)}
+				P75: {percentileSummary.psnr[3].toFixed(1)}
+				P95: {percentileSummary.psnr[4].toFixed(1)}
+			</span>
+			<span>MSE percentiles —
+				P5: {percentileSummary.mse[0].toExponential(2)}
+				P25: {percentileSummary.mse[1].toExponential(2)}
+				P50: {percentileSummary.mse[2].toExponential(2)}
+				P75: {percentileSummary.mse[3].toExponential(2)}
+				P95: {percentileSummary.mse[4].toExponential(2)}
+			</span>
 		</div>
 	{/if}
 
@@ -250,10 +313,10 @@
 				{#each sortedMetrics as m (m.idx)}
 					<tr class="border-t border-edge/30 hover:bg-surface-hover">
 						<td class="px-2 py-1 font-mono">{m.idx}</td>
-						<td class="px-2 py-1 font-mono {psnrColor(m.psnr)}">{isFinite(m.psnr) ? m.psnr.toFixed(1) : 'Inf'}</td>
+						<td class="px-2 py-1 font-mono {psnrColor(m.psnr)}" style={psnrCellBg(m.psnr)}>{isFinite(m.psnr) ? m.psnr.toFixed(1) : 'Inf'}</td>
 						<td class="px-2 py-1 font-mono {psnrColor(m.sqnr)}">{isFinite(m.sqnr) ? m.sqnr.toFixed(1) : 'Inf'}</td>
 						<td class="px-2 py-1 font-mono">{formatValue(m.mse)}</td>
-						<td class="px-2 py-1 font-mono {cosineColor(m.cosineSim)}">{m.cosineSim.toFixed(6)}</td>
+						<td class="px-2 py-1 font-mono {cosineColor(m.cosineSim)}" style={cosineCellBg(m.cosineSim)}>{m.cosineSim.toFixed(6)}</td>
 						<td class="px-2 py-1 font-mono">{formatValue(m.maxAbsDiff)}</td>
 						<td class="px-2 py-1 font-mono">{formatValue(m.relL2)}</td>
 						<td class="px-2 py-1 font-mono text-gray-500">{formatValue(m.refMean)}</td>

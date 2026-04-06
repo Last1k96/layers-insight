@@ -3,6 +3,7 @@
 		getSpatialDims,
 		extractSlice,
 		formatValue,
+		computeKSStatistic,
 	} from './tensorUtils';
 	import { rangeScroll } from './rangeScroll';
 
@@ -75,6 +76,22 @@
 		return { refQ, mainQ, n, lo, hi };
 	});
 
+	let ksValue = $derived.by(() => {
+		let refData: Float32Array, mainData: Float32Array;
+		if (channel === -1) {
+			const batchSize = dims.channels * dims.height * dims.width;
+			const offset = batch * batchSize;
+			refData = ref.subarray(offset, offset + batchSize);
+			mainData = main.subarray(offset, offset + batchSize);
+		} else {
+			const rSlice = extractSlice(ref, shape, batch, channel);
+			const mSlice = extractSlice(main, shape, batch, channel);
+			refData = rSlice.data;
+			mainData = mSlice.data;
+		}
+		return computeKSStatistic(refData, mainData);
+	});
+
 	function redraw() {
 		if (!canvas) return;
 		const ctx = canvas.getContext('2d');
@@ -104,11 +121,45 @@
 		ctx.stroke();
 		ctx.setLineDash([]);
 
-		// Plot points
-		ctx.fillStyle = '#60a5fa';
+		// 95% confidence bands: diagonal ± 1.36 / sqrt(n)
+		if (n > 1) {
+			const ksEnvelope = 1.36 / Math.sqrt(n);
+			const envPixels = (ksEnvelope / span) * plotH;
+			ctx.strokeStyle = 'rgba(255, 200, 60, 0.3)';
+			ctx.lineWidth = 1;
+			ctx.setLineDash([3, 3]);
+
+			// Upper band (diagonal + offset)
+			ctx.beginPath();
+			ctx.moveTo(margin.left, margin.top + plotH - envPixels);
+			ctx.lineTo(margin.left + plotW, margin.top - envPixels);
+			ctx.stroke();
+
+			// Lower band (diagonal - offset)
+			ctx.beginPath();
+			ctx.moveTo(margin.left, margin.top + plotH + envPixels);
+			ctx.lineTo(margin.left + plotW, margin.top + envPixels);
+			ctx.stroke();
+
+			ctx.setLineDash([]);
+		}
+
+		// Plot points — color by deviation from identity line
+		let maxDev = 0;
+		for (let i = 0; i < n; i++) {
+			const d = Math.abs(refQ[i] - mainQ[i]);
+			if (d > maxDev) maxDev = d;
+		}
+		if (maxDev === 0) maxDev = 1;
+
 		for (let i = 0; i < n; i++) {
 			const x = margin.left + ((refQ[i] - lo) / span) * plotW;
 			const y = margin.top + plotH - ((mainQ[i] - lo) / span) * plotH;
+			const t = Math.min(1, Math.abs(refQ[i] - mainQ[i]) / maxDev);
+			const r = Math.round(100 + (250 - 100) * t);
+			const g = Math.round(200 + (80 - 200) * t);
+			const b = Math.round(100 + (80 - 100) * t);
+			ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
 			ctx.beginPath();
 			ctx.arc(x, y, 2, 0, Math.PI * 2);
 			ctx.fill();
@@ -175,7 +226,7 @@
 		}
 	}
 
-	$effect(() => { plotData; showTooltip; hoverX; redraw(); });
+	$effect(() => { plotData; ksValue; showTooltip; hoverX; redraw(); });
 
 	function handleMouseMove(e: MouseEvent) {
 		if (!canvas) return;
@@ -225,6 +276,7 @@
 
 	<div class="text-xs text-gray-500">
 		Diagonal = identical distribution. Deviations show: shift (offset), scale (slope change), tail differences (curvature at ends)
+		<span class="ml-2 text-gray-400">KS = {ksValue.toFixed(6)}</span>
 	</div>
 
 	<div class="flex-1 bg-surface-base rounded-lg p-2 overflow-hidden min-h-0">

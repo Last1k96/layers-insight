@@ -32,6 +32,10 @@
 	let windowSize = $state(7);
 	let component: 'ssim' | 'luminance' | 'contrast' | 'structure' = $state('ssim');
 
+	let ssimThreshold = $state(0.95);
+	let highlightLow = $state(false);
+	let multiScale = $state(false);
+
 	let hoverX = $state(-1);
 	let hoverY = $state(-1);
 	let showTooltip = $state(false);
@@ -114,6 +118,69 @@
 		return { ssimMap, lumMap, conMap, strMap, outW, outH, meanSSIM };
 	});
 
+	// Multi-scale SSIM: compute SSIM at multiple window sizes and take weighted geometric mean
+	let msSSIM = $derived.by(() => {
+		if (!multiScale) return 0;
+		const windowSizes = [3, 5, 7, 11];
+		const weights = [0.0448, 0.2856, 0.3001, 0.3695];
+		const rSlice = extractSlice(ref, shape, batch, channel);
+		const mSlice = extractSlice(main, shape, batch, channel);
+		const w = rSlice.w, h = rSlice.h;
+
+		const means: number[] = [];
+		for (const ws of windowSizes) {
+			const half = Math.floor(ws / 2);
+			const rStats = computeStats(rSlice.data);
+			const L = rStats.max - rStats.min || 1;
+			const C1 = (0.01 * L) ** 2;
+			const C2 = (0.03 * L) ** 2;
+
+			const outW = Math.max(1, w - ws + 1);
+			const outH = Math.max(1, h - ws + 1);
+			let sum = 0;
+			let count = 0;
+
+			for (let oy = 0; oy < outH; oy++) {
+				for (let ox = 0; ox < outW; ox++) {
+					let sumR = 0, sumM = 0, sumR2 = 0, sumM2 = 0, sumRM = 0;
+					let n = 0;
+					for (let wy = 0; wy < ws; wy++) {
+						for (let wx = 0; wx < ws; wx++) {
+							const py = oy + wy, px = ox + wx;
+							const rv = rSlice.data[py * w + px];
+							const mv = mSlice.data[py * w + px];
+							sumR += rv; sumM += mv;
+							sumR2 += rv * rv; sumM2 += mv * mv;
+							sumRM += rv * mv;
+							n++;
+						}
+					}
+					const muR = sumR / n;
+					const muM = sumM / n;
+					const sigR2 = sumR2 / n - muR * muR;
+					const sigM2 = sumM2 / n - muM * muM;
+					const sigRM = sumRM / n - muR * muM;
+					const sigR = Math.sqrt(Math.max(0, sigR2));
+					const sigM = Math.sqrt(Math.max(0, sigM2));
+
+					const luminance = (2 * muR * muM + C1) / (muR * muR + muM * muM + C1);
+					const contrast = (2 * sigR * sigM + C2) / (sigR2 + sigM2 + C2);
+					const structure = (sigRM + C2 / 2) / (sigR * sigM + C2 / 2);
+					sum += luminance * contrast * structure;
+					count++;
+				}
+			}
+			means.push(sum / (count || 1));
+		}
+
+		// Weighted geometric mean
+		let logSum = 0;
+		for (let i = 0; i < means.length; i++) {
+			logSum += weights[i] * Math.log(Math.max(1e-10, means[i]));
+		}
+		return Math.exp(logSum);
+	});
+
 	let displayMap = $derived.by(() => {
 		switch (component) {
 			case 'luminance': return ssimResult.lumMap;
@@ -136,6 +203,8 @@
 
 	let mapStats = $derived(computeStats(displayMap));
 
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
+
 	function redraw() {
 		if (!canvas || !offscreenImage) return;
 		const ctx = canvas.getContext('2d');
@@ -157,6 +226,20 @@
 		ctx.drawImage(offscreen, 0, 0);
 		ctx.resetTransform();
 
+		// Threshold highlighting: overlay red on pixels below threshold
+		if (highlightLow) {
+			ctx.fillStyle = 'rgba(255, 60, 60, 0.4)';
+			for (let y = 0; y < h; y++) {
+				for (let x = 0; x < w; x++) {
+					if (ssimResult.ssimMap[y * w + x] < ssimThreshold) {
+						const sx = x * es + ox;
+						const sy = y * es + oy;
+						ctx.fillRect(sx, sy, es, es);
+					}
+				}
+			}
+		}
+
 		if (showTooltip && hoverX >= 0 && hoverY >= 0) {
 			const sx = hoverX * es + ox, sy = hoverY * es + oy;
 			ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1;
@@ -167,7 +250,7 @@
 		drawColorbar(ctx, 10, dh - 30, Math.min(200, dw - 20), 12, colormap, 0, 1);
 	}
 
-	$effect(() => { offscreenImage; zoom; panX; panY; showTooltip; hoverX; hoverY; redraw(); });
+	$effect(() => { offscreenImage; zoom; panX; panY; showTooltip; hoverX; hoverY; highlightLow; ssimThreshold; redraw(); });
 
 	function screenToData(cx: number, cy: number): [number, number] {
 		if (!canvas) return [-1, -1];
@@ -255,10 +338,26 @@
 				{/each}
 			</select>
 		</label>
+		<label class="flex items-center gap-1.5 text-gray-400">
+			<input type="checkbox" bind:checked={highlightLow} /> Highlight low
+		</label>
+		{#if highlightLow}
+			<label class="flex items-center gap-2">
+				<input use:rangeScroll type="range" min="0" max="1" step="0.01" bind:value={ssimThreshold} class="w-20" />
+				<span class="font-mono text-gray-300 text-xs">&lt;{ssimThreshold.toFixed(2)}</span>
+			</label>
+		{/if}
+		<label class="flex items-center gap-1.5 text-gray-400">
+			<input type="checkbox" bind:checked={multiScale} /> MS-SSIM
+		</label>
+		<button onclick={resetView} class="px-2 py-0.5 rounded bg-surface-base border border-edge text-gray-400 hover:text-gray-200 text-xs">Reset zoom</button>
 	</div>
 
 	<div class="flex gap-4 text-xs text-gray-400">
 		<span class="font-medium">Mean SSIM: <span class={ssimResult.meanSSIM > 0.99 ? 'text-green-400' : ssimResult.meanSSIM > 0.95 ? 'text-yellow-400' : 'text-red-400'}>{ssimResult.meanSSIM.toFixed(6)}</span></span>
+		{#if multiScale}
+			<span class="font-medium">MS-SSIM: <span class={msSSIM > 0.99 ? 'text-green-400' : msSSIM > 0.95 ? 'text-yellow-400' : 'text-red-400'}>{msSSIM.toFixed(6)}</span></span>
+		{/if}
 		<span>Map min: {formatValue(mapStats.min)}, max: {formatValue(mapStats.max)}</span>
 		<span class="text-gray-500">{ssimResult.outW}x{ssimResult.outH} (padded by {Math.floor(windowSize / 2)})</span>
 	</div>

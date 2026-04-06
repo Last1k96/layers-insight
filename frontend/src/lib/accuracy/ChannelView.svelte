@@ -1,6 +1,7 @@
 <script lang="ts">
   import { getSpatialDims, extractSlice, computeStats, computeHistogram, cosineSimilarity, formatValue } from './tensorUtils';
   import { rangeScroll } from './rangeScroll';
+  import { keyboardNav } from './keyboardNav';
 
   let {
     main,
@@ -23,6 +24,7 @@
   }
 
   let channelIndex = $state(0);
+  let expandedHist = $state<'main' | 'ref' | 'diff' | null>(null);
 
   let mainChannel = $derived(getChannelData(main, channelIndex));
   let refChannel = $derived(getChannelData(ref, channelIndex));
@@ -45,6 +47,7 @@
   let histMain: HTMLCanvasElement;
   let histRef: HTMLCanvasElement;
   let histDiff: HTMLCanvasElement;
+  let histExpanded = $state<HTMLCanvasElement>();
 
   // Compute shared range across ref+main+diff for the selected channel
   let histRange = $derived.by((): [number, number] => {
@@ -154,6 +157,13 @@
     drawTriHistogram(histDiff, 'diff');
   });
 
+  $effect(() => {
+    if (expandedHist) {
+      mainHist; refHist; diffHist;
+      drawTriHistogram(histExpanded, expandedHist);
+    }
+  });
+
   // Sort state
   type SortKey = 'ch' | 'meanDiff' | 'maxDiff' | 'cosSim';
   let sortKey = $state<SortKey>('ch');
@@ -229,6 +239,13 @@
     return `rgb(${r}, ${g}, ${b})`;
   }
 
+  function isAnomaly(row: { cosSim: number; maxDiff: number }): boolean {
+    const [cosLo, cosHi] = columnRanges.cosSim;
+    const [maxLo, maxHi] = columnRanges.maxDiff;
+    return row.cosSim < cosLo + 0.1 * (cosHi - cosLo)
+      || row.maxDiff > maxLo + 0.9 * (maxHi - maxLo);
+  }
+
   function cosSimColor(value: number, range: [number, number]): string {
     const [lo, hi] = range;
     const span = hi - lo;
@@ -241,7 +258,15 @@
   }
 </script>
 
-<div class="h-full flex flex-col gap-4">
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+<div
+  class="h-full flex flex-col gap-4"
+  tabindex="0"
+  use:keyboardNav={{
+    onNextChannel: () => { channelIndex = Math.min(channelIndex + 1, dims.channels - 1); },
+    onPrevChannel: () => { channelIndex = Math.max(channelIndex - 1, 0); },
+  }}
+>
   <!-- Channel selector -->
   {#if dims.channels > 1}
     <div class="flex items-center gap-2 text-xs shrink-0 w-full">
@@ -269,7 +294,7 @@
         <div class="flex justify-between"><span class="text-gray-500">Mean</span><span class="font-mono text-gray-300">{formatValue(mainStats.mean)}</span></div>
         <div class="flex justify-between"><span class="text-gray-500">Std</span><span class="font-mono text-gray-300">{formatValue(mainStats.std)}</span></div>
       </div>
-      <canvas bind:this={histMain} class="w-full h-[120px] mt-2 rounded"></canvas>
+      <canvas bind:this={histMain} class="w-full h-[120px] mt-2 rounded cursor-pointer" onclick={() => expandedHist = 'main'}></canvas>
     </div>
 
     <!-- Ref Device -->
@@ -281,7 +306,7 @@
         <div class="flex justify-between"><span class="text-gray-500">Mean</span><span class="font-mono text-gray-300">{formatValue(refStats.mean)}</span></div>
         <div class="flex justify-between"><span class="text-gray-500">Std</span><span class="font-mono text-gray-300">{formatValue(refStats.std)}</span></div>
       </div>
-      <canvas bind:this={histRef} class="w-full h-[120px] mt-2 rounded"></canvas>
+      <canvas bind:this={histRef} class="w-full h-[120px] mt-2 rounded cursor-pointer" onclick={() => expandedHist = 'ref'}></canvas>
     </div>
 
     <!-- Abs Diff -->
@@ -293,9 +318,27 @@
         <div class="flex justify-between"><span class="text-gray-500">Mean</span><span class="font-mono text-gray-300">{formatValue(diffStats.mean)}</span></div>
         <div class="flex justify-between"><span class="text-gray-500">Std</span><span class="font-mono text-gray-300">{formatValue(diffStats.std)}</span></div>
       </div>
-      <canvas bind:this={histDiff} class="w-full h-[120px] mt-2 rounded"></canvas>
+      <canvas bind:this={histDiff} class="w-full h-[120px] mt-2 rounded cursor-pointer" onclick={() => expandedHist = 'diff'}></canvas>
     </div>
   </div>
+
+  <!-- Expanded histogram -->
+  {#if expandedHist}
+    <div class="shrink-0 bg-surface-base/80 rounded-lg p-3 relative">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-xs font-medium text-gray-300">
+          {expandedHist === 'main' ? mainLabel : expandedHist === 'ref' ? refLabel : 'Abs Diff'} — Expanded Histogram
+        </span>
+        <button
+          class="text-gray-400 hover:text-gray-200 text-sm px-1"
+          onclick={() => expandedHist = null}
+        >
+          &times;
+        </button>
+      </div>
+      <canvas bind:this={histExpanded} class="w-full h-[300px] rounded"></canvas>
+    </div>
+  {/if}
 
   <!-- Cosine similarity -->
   <div class="text-xs text-gray-400 shrink-0">
@@ -320,7 +363,7 @@
           <tbody>
             {#each sortedSummary as row (row.ch)}
               <tr
-                class="border-b border-edge/50 cursor-pointer hover:bg-white/5 {row.ch === channelIndex ? 'bg-white/10' : ''}"
+                class="border-b border-edge/50 cursor-pointer hover:bg-white/5 {row.ch === channelIndex ? 'bg-white/10' : ''} {isAnomaly(row) ? 'border-l-2 border-l-red-500' : ''}"
                 onclick={() => channelIndex = row.ch}
               >
                 <td class="px-2 py-1 font-mono text-gray-300">{row.ch}</td>

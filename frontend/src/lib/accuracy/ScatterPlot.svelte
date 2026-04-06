@@ -3,8 +3,11 @@
 		getSpatialDims,
 		extractSlice,
 		computeStats,
+		computeHistogram,
 		formatValue,
+		computeR2,
 		COLORMAPS,
+		ALL_COLORMAP_OPTIONS,
 		type ColormapName,
 	} from './tensorUtils';
 	import { rangeScroll } from './rangeScroll';
@@ -54,9 +57,23 @@
 		return { refData: rSlice.data, mainData: mSlice.data };
 	});
 
+	// Transform data for log axes
+	let plotData = $derived.by(() => {
+		const { refData, mainData } = scatterData;
+		if (!logAxes) return { refData, mainData };
+		const eps = 1e-10;
+		const rOut = new Float32Array(refData.length);
+		const mOut = new Float32Array(mainData.length);
+		for (let i = 0; i < refData.length; i++) {
+			rOut[i] = Math.log10(Math.abs(refData[i]) + eps);
+			mOut[i] = Math.log10(Math.abs(mainData[i]) + eps);
+		}
+		return { refData: rOut, mainData: mOut };
+	});
+
 	// Compute 2D histogram for density coloring
 	let histogram2D = $derived.by(() => {
-		const { refData, mainData } = scatterData;
+		const { refData, mainData } = plotData;
 		const refStats = computeStats(refData);
 		const mainStats = computeStats(mainData);
 
@@ -68,6 +85,10 @@
 		const hist = new Uint32Array(bins * bins);
 		const span = rMax - rMin || 1;
 
+		// Also compute marginals
+		const margRef = new Uint32Array(bins);
+		const margMain = new Uint32Array(bins);
+
 		for (let i = 0; i < refData.length; i++) {
 			let rx = refData[i], my = mainData[i];
 			if (!isFinite(rx) || !isFinite(my)) continue;
@@ -78,6 +99,8 @@
 			by = Math.max(0, Math.min(bins - 1, by));
 			// Flip Y so low values are at bottom
 			hist[(bins - 1 - by) * bins + bx]++;
+			margRef[bx]++;
+			margMain[bins - 1 - by]++;
 		}
 
 		let maxCount = 0;
@@ -85,8 +108,34 @@
 			if (hist[i] > maxCount) maxCount = hist[i];
 		}
 
-		return { hist, maxCount, rMin, rMax, bins };
+		let maxMargRef = 0, maxMargMain = 0;
+		for (let i = 0; i < bins; i++) {
+			if (margRef[i] > maxMargRef) maxMargRef = margRef[i];
+			if (margMain[i] > maxMargMain) maxMargMain = margMain[i];
+		}
+
+		return { hist, maxCount, rMin, rMax, bins, margRef, margMain, maxMargRef, maxMargMain };
 	});
+
+	// Best-fit line (least squares)
+	let bestFit = $derived.by(() => {
+		const { refData, mainData } = plotData;
+		let n = 0, sx = 0, sy = 0, sxx = 0, sxy = 0;
+		for (let i = 0; i < refData.length; i++) {
+			const x = refData[i], y = mainData[i];
+			if (!isFinite(x) || !isFinite(y)) continue;
+			sx += x; sy += y; sxx += x * x; sxy += x * y; n++;
+		}
+		if (n < 2) return null;
+		const denom = n * sxx - sx * sx;
+		if (denom === 0) return null;
+		const slope = (n * sxy - sx * sy) / denom;
+		const intercept = (sy - slope * sx) / n;
+		return { slope, intercept };
+	});
+
+	// R-squared
+	let r2 = $derived(computeR2(plotData.refData, plotData.mainData));
 
 	// Stats
 	let correlation = $derived.by(() => {
@@ -142,6 +191,22 @@
 			}
 		}
 
+		// Marginal histograms
+		const margH = 24;
+		const { margRef, margMain, maxMargRef, maxMargMain } = histogram2D;
+		// Top marginal (ref distribution)
+		ctx.fillStyle = 'rgba(96, 165, 250, 0.3)';
+		for (let i = 0; i < bins; i++) {
+			const barH = maxMargRef > 0 ? (margRef[i] / maxMargRef) * margH : 0;
+			ctx.fillRect(margin.left + i * cellW, margin.top - barH, Math.ceil(cellW), barH);
+		}
+		// Right marginal (main distribution)
+		ctx.fillStyle = 'rgba(248, 113, 113, 0.3)';
+		for (let i = 0; i < bins; i++) {
+			const barW = maxMargMain > 0 ? (margMain[i] / maxMargMain) * margH : 0;
+			ctx.fillRect(margin.left + plotW, margin.top + i * cellH, barW, Math.ceil(cellH));
+		}
+
 		// Diagonal line (perfect agreement)
 		ctx.strokeStyle = 'rgba(255,255,255,0.3)';
 		ctx.lineWidth = 1;
@@ -151,6 +216,26 @@
 		ctx.lineTo(margin.left + plotW, margin.top);
 		ctx.stroke();
 		ctx.setLineDash([]);
+
+		// Best-fit line
+		if (bestFit) {
+			const { slope, intercept } = bestFit;
+			const { rMin: bMin, rMax: bMax } = histogram2D;
+			const span = bMax - bMin || 1;
+			// Convert data space to plot space
+			const y0 = slope * bMin + intercept;
+			const y1 = slope * bMax + intercept;
+			const px0 = margin.left;
+			const px1 = margin.left + plotW;
+			const py0 = margin.top + plotH - ((y0 - bMin) / span) * plotH;
+			const py1 = margin.top + plotH - ((y1 - bMin) / span) * plotH;
+			ctx.strokeStyle = 'rgba(250, 204, 21, 0.6)';
+			ctx.lineWidth = 1.5;
+			ctx.beginPath();
+			ctx.moveTo(px0, py0);
+			ctx.lineTo(px1, py1);
+			ctx.stroke();
+		}
 
 		// Axes
 		ctx.strokeStyle = '#666';
@@ -198,7 +283,7 @@
 		}
 	}
 
-	$effect(() => { histogram2D; colormap; showTooltip; hoverX; hoverY; redraw(); });
+	$effect(() => { histogram2D; colormap; logAxes; bestFit; showTooltip; hoverX; hoverY; redraw(); });
 
 	function handleMouseMove(e: MouseEvent) {
 		if (!canvas) return;
@@ -248,10 +333,13 @@
 		<label class="flex items-center gap-2">
 			<span class="text-gray-400">Colormap:</span>
 			<select use:rangeScroll bind:value={colormap} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
-				{#each [{ value: 'inferno' as ColormapName, label: 'Inferno' }, { value: 'magma' as ColormapName, label: 'Magma' }, { value: 'viridis' as ColormapName, label: 'Viridis' }, { value: 'turbo' as ColormapName, label: 'Turbo' }] as opt}
+				{#each ALL_COLORMAP_OPTIONS as opt}
 					<option value={opt.value}>{opt.label}</option>
 				{/each}
 			</select>
+		</label>
+		<label class="flex items-center gap-1.5 text-gray-400">
+			<input type="checkbox" bind:checked={logAxes} /> Log axes
 		</label>
 		<label class="flex items-center gap-2">
 			<span class="text-gray-400">Resolution:</span>
@@ -265,8 +353,12 @@
 
 	<div class="flex gap-4 text-xs text-gray-400">
 		<span>Pearson r = {correlation.toFixed(6)}</span>
+		<span>R² = {r2.toFixed(6)}</span>
+		{#if bestFit}
+			<span class="text-yellow-400/60">fit: y = {bestFit.slope.toFixed(4)}x + {formatValue(bestFit.intercept)}</span>
+		{/if}
 		<span>{scatterData.refData.length.toLocaleString()} elements</span>
-		<span class="text-gray-500">Diagonal = perfect agreement</span>
+		<span class="text-gray-500">{logAxes ? 'Log-scale axes' : 'Diagonal = perfect agreement'}</span>
 	</div>
 
 	<div class="flex-1 bg-surface-base rounded-lg p-2 overflow-hidden min-h-0">

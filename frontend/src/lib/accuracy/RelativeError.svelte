@@ -3,11 +3,17 @@
 		getSpatialDims,
 		extractSlice,
 		valueToImageData,
+		normalizedValueToImageData,
 		formatValue,
 		drawColorbar,
 		computeStats,
+		computeHistogram,
+		colormapRGB,
 		ALL_COLORMAP_OPTIONS,
+		ALL_NORM_MODE_OPTIONS,
 		type ColormapName,
+		type NormMode,
+		type NormOptions,
 	} from './tensorUtils';
 	import { rangeScroll } from './rangeScroll';
 
@@ -26,12 +32,15 @@
 	} = $props();
 
 	let canvas: HTMLCanvasElement;
+	let histCanvas: HTMLCanvasElement;
 	let batch = $state(0);
 	let channel = $state(0);
 	let colormap: ColormapName = $state('inferno');
 	let epsilon = $state(1e-7);
 	let useLog = $state(true);
 	let globalNorm = $state(false);
+	let normMode = $state<NormMode>('linear');
+	let normOpts = $derived<NormOptions>({ mode: normMode });
 
 	// Hover
 	let hoverX = $state(-1);
@@ -84,8 +93,10 @@
 
 	let offscreenImage = $derived.by(() => {
 		if (!sliceData) return null;
-		return valueToImageData(sliceData.data, sliceData.w, sliceData.h, colormap, globalRange);
+		return normalizedValueToImageData(sliceData.data, sliceData.w, sliceData.h, colormap, normOpts, globalRange);
 	});
+
+	let relHist = $derived(computeHistogram(relSlice.data, 64));
 
 	let baseScale = $derived.by(() => {
 		if (!sliceData || !canvas) return 1;
@@ -135,6 +146,29 @@
 	}
 
 	$effect(() => { offscreenImage; zoom; panX; panY; showTooltip; hoverX; hoverY; redraw(); });
+
+	$effect(() => {
+		if (!histCanvas || !relHist) return;
+		const ctx = histCanvas.getContext('2d');
+		if (!ctx) return;
+		const w = histCanvas.clientWidth;
+		const h = histCanvas.clientHeight;
+		histCanvas.width = w;
+		histCanvas.height = h;
+		ctx.clearRect(0, 0, w, h);
+		const maxCount = Math.max(...relHist.counts);
+		if (maxCount === 0) return;
+		const barW = w / relHist.counts.length;
+		for (let i = 0; i < relHist.counts.length; i++) {
+			const barH = (relHist.counts[i] / maxCount) * h;
+			const t = i / (relHist.counts.length - 1);
+			const [r, g, b] = colormapRGB(t, colormap);
+			ctx.fillStyle = `rgb(${r},${g},${b})`;
+			ctx.fillRect(i * barW, h - barH, barW, barH);
+		}
+	});
+
+	function resetView() { zoom = 1; panX = 0; panY = 0; }
 
 	function screenToData(cx: number, cy: number): [number, number] {
 		if (!canvas || !sliceData) return [-1, -1];
@@ -232,6 +266,15 @@
 		<label class="flex items-center gap-1.5 text-gray-400">
 			<input type="checkbox" bind:checked={globalNorm} /> Global norm
 		</label>
+		<label class="flex items-center gap-2">
+			<span class="text-gray-400">Norm:</span>
+			<select use:rangeScroll bind:value={normMode} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
+				{#each ALL_NORM_MODE_OPTIONS as opt}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+		</label>
+		<button class="px-2 py-0.5 text-gray-400 hover:text-gray-200 border border-edge rounded text-xs" onclick={resetView}>Reset view</button>
 	</div>
 
 	<div class="flex gap-4 text-xs text-gray-400">
@@ -250,6 +293,8 @@
 			onmouseleave={handleMouseLeave}
 		></canvas>
 	</div>
+
+	<canvas bind:this={histCanvas} class="w-full h-[60px] bg-surface-base rounded" />
 
 	{#if showTooltip && hoverX >= 0 && hoverY >= 0 && sliceData}
 		{@const idx = hoverY * sliceData.w + hoverX}

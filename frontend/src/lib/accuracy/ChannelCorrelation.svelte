@@ -5,6 +5,7 @@
 		computeStats,
 		formatValue,
 		COLORMAPS,
+		ALL_COLORMAP_OPTIONS,
 		type ColormapName,
 	} from './tensorUtils';
 	import { rangeScroll } from './rangeScroll';
@@ -27,6 +28,7 @@
 	let batch = $state(0);
 	let colormap: ColormapName = $state('coolwarm');
 	let maxChannels = $state(64); // Limit for performance
+	let hideDiagonal = $state(false);
 
 	let hoverX = $state(-1);
 	let hoverY = $state(-1);
@@ -106,6 +108,7 @@
 
 		for (let i = 0; i < n; i++) {
 			for (let j = 0; j < n; j++) {
+				if (hideDiagonal && i === j) continue;
 				const v = corrMatrix[i * n + j];
 				// Map [-1, 1] to [0, 255]
 				const t = (v + 1) / 2;
@@ -144,7 +147,7 @@
 		}
 	}
 
-	$effect(() => { corrMatrix; colormap; showTooltip; hoverX; hoverY; redraw(); });
+	$effect(() => { corrMatrix; colormap; hideDiagonal; showTooltip; hoverX; hoverY; redraw(); });
 
 	function handleMouseMove(e: MouseEvent) {
 		if (!canvas) return;
@@ -184,6 +187,17 @@
 				<option value={128}>128</option>
 				<option value={256}>256</option>
 			</select>
+		</label>
+		<label class="flex items-center gap-2">
+			<span class="text-gray-400">Colormap:</span>
+			<select use:rangeScroll bind:value={colormap} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
+				{#each ALL_COLORMAP_OPTIONS as opt}
+					<option value={opt.value}>{opt.label}</option>
+				{/each}
+			</select>
+		</label>
+		<label class="flex items-center gap-1.5 text-gray-400">
+			<input type="checkbox" bind:checked={hideDiagonal} /> Hide diagonal
 		</label>
 		<span class="text-gray-500">
 			{numChannels}x{numChannels} correlation matrix of error vectors
