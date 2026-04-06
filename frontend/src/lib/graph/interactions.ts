@@ -39,7 +39,12 @@ export function setupInteractions(): void {
     return gpu!.edgeHitIndex.query(gp.x, gp.y, radius);
   }
 
-  // Single click: select node or edge. Ctrl+click also centers.
+  function hitTestGhost(e: MouseEvent): string | null {
+    const rect = canvas.getBoundingClientRect();
+    return gpu!.ghostHitTest(e.clientX - rect.left, e.clientY - rect.top);
+  }
+
+  // Single click: select node, ghost, or edge. Ctrl+click also centers.
   function handleClick(e: MouseEvent) {
     if (camera!.didDrag) return;
 
@@ -55,6 +60,16 @@ export function setupInteractions(): void {
         if (ctrlKey) centerOnNode(nodeId);
         refreshRenderer();
       }, 250);
+      return;
+    }
+
+    // Check ghost indicator hit (before edge, since ghosts overlap edges visually)
+    const ghostNodeId = hitTestGhost(e);
+    if (ghostNodeId) {
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+      graphStore.selectNode(ghostNodeId);
+      if (e.ctrlKey) centerOnNode(ghostNodeId);
+      refreshRenderer();
       return;
     }
 
@@ -113,6 +128,10 @@ export function setupInteractions(): void {
 
       if (hitId) {
         setHoveredNode(hitId);
+        setHoveredEdge(null);
+        canvas.style.cursor = 'pointer';
+      } else if (gpu!.ghostHitTest(e.clientX - rect.left, e.clientY - rect.top)) {
+        setHoveredNode(null);
         setHoveredEdge(null);
         canvas.style.cursor = 'pointer';
       } else {

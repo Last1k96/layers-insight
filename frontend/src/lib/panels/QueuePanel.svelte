@@ -4,9 +4,20 @@
   import { bisectStore } from '../stores/bisect.svelte';
   import { centerOnNode, refreshRenderer } from '../graph/renderer';
   import { getStatusColor } from '../graph/opColors';
+  import { logStore } from '../stores/log.svelte';
   import { advancedFilterStore } from '../stores/advancedFilter.svelte';
   import AdvancedFilter from '../components/AdvancedFilter.svelte';
   import type { InferenceTask } from '../stores/types';
+
+  let {
+    onbatchinfer = () => {},
+    onbisect = () => {},
+    ontogglelog = () => {},
+  }: {
+    onbatchinfer?: () => void;
+    onbisect?: () => void;
+    ontogglelog?: () => void;
+  } = $props();
 
   function selectTask(task: InferenceTask) {
     graphStore.selectNode(task.node_id);
@@ -155,6 +166,28 @@
     {/if}
     <div class="flex-1"></div>
     <span class="text-[11px] text-content-secondary/60 tabular-nums">{queueStore.filteredTasks.length} tasks</span>
+  </div>
+
+  <!-- Action buttons -->
+  <div class="flex items-center gap-1.5 px-3 py-1.5 shrink-0 border-b border-content-secondary/8">
+    <button
+      class="flex-1 py-1.5 text-xs font-medium text-gray-300 hover:text-gray-100 hover:bg-surface-elevated rounded-md transition-all duration-100 active:scale-[0.98]"
+      onclick={onbatchinfer}
+    >
+      Batch Infer
+    </button>
+    <button
+      class="flex-1 py-1.5 text-xs font-medium hover:bg-surface-elevated rounded-md transition-all duration-100 active:scale-[0.98] {bisectStore.isActive ? 'text-blue-400' : 'text-gray-300 hover:text-gray-100'}"
+      onclick={onbisect}
+    >
+      Bisect{bisectStore.isActive ? ' \u25CF' : ''}
+    </button>
+    <button
+      class="flex-1 py-1.5 text-xs font-medium hover:bg-surface-elevated rounded-md transition-all duration-100 active:scale-[0.98] {logStore.visible ? 'text-blue-400' : 'text-gray-300 hover:text-gray-100'}"
+      onclick={ontogglelog}
+    >
+      Logs{logStore.visible ? ' \u25CF' : ''}
+    </button>
   </div>
 
   <!-- Column headers -->

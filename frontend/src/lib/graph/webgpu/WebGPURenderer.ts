@@ -7,7 +7,7 @@ import type { NodeStatus } from '../../stores/graph.svelte';
 import { configStore } from '../../stores/config.svelte';
 import { isLightNodeColor, STATUS_COLORS } from '../opColors';
 import { getAccuracyColorRgb, type AccuracyMetricKey, type AccuracyRange } from '../../utils/accuracyColors';
-import { buildCameraMatrix, CLEAR_COLOR, EDGE_COLOR, NODE_FLOATS, NODE_RADIUS, GRAPH_FONT_SIZE } from './types';
+import { buildCameraMatrix, CLEAR_COLOR, EDGE_COLOR, NODE_FLOATS, NODE_RADIUS, GRAPH_FONT_SIZE, GHOST_VERTEX_FLOATS } from './types';
 import { createNodesPipeline, updateNodeInstances, drawNodes } from './nodesPipeline';
 import type { NodesPipelineState } from './nodesPipeline';
 import { createEdgesPipeline, updateEdgeVertices, updateEdgeViewport, drawEdges, buildEdgeGeometry, buildPathGeometry } from './edgesPipeline';
@@ -15,6 +15,8 @@ import type { AccuracyPath } from './edgesPipeline';
 import type { EdgesPipelineState } from './edgesPipeline';
 import { createTextPipeline, updateGlyphInstances, drawText } from './textPipeline';
 import type { TextPipelineState } from './textPipeline';
+import { createGhostPipeline, updateGhostVertices, updateGhostViewport, drawGhosts } from './ghostPipeline';
+import type { GhostPipelineState } from './ghostPipeline';
 import { createTextAtlas, measureText } from './textAtlas';
 import type { TextAtlasData } from './textAtlas';
 import { SpatialGrid } from './hitTest';
@@ -34,6 +36,7 @@ export class WebGPURenderer {
   /** Overlay edges drawn on top of nodes (accuracy paths). Shares pipeline/bindGroup with edgesPipeline. */
   private overlayEdgesPipeline: EdgesPipelineState | null = null;
   private textPipeline: TextPipelineState;
+  private ghostPipeline: GhostPipelineState;
   private atlas: TextAtlasData;
   private dirty = true;
   private animFrameId: number | null = null;
@@ -53,6 +56,9 @@ export class WebGPURenderer {
   private lastCameraTy = 0;
   private lastCameraScale = 1;
 
+  /** Ghost node bounding boxes for hit testing (screen-space pixels) */
+  ghostBounds: Array<{ nodeId: string; x: number; y: number; w: number; h: number }> = [];
+
 
   private constructor(
     canvas: HTMLCanvasElement,
@@ -63,6 +69,7 @@ export class WebGPURenderer {
     nodesPipeline: NodesPipelineState,
     edgesPipeline: EdgesPipelineState,
     textPipeline: TextPipelineState,
+    ghostPipeline: GhostPipelineState,
     atlas: TextAtlasData,
   ) {
     this.canvas = canvas;
@@ -73,6 +80,7 @@ export class WebGPURenderer {
     this.nodesPipeline = nodesPipeline;
     this.edgesPipeline = edgesPipeline;
     this.textPipeline = textPipeline;
+    this.ghostPipeline = ghostPipeline;
     this.atlas = atlas;
 
     // Handle canvas resize
@@ -122,10 +130,11 @@ export class WebGPURenderer {
     const nodesPipeline = createNodesPipeline(device, format, cameraBuffer);
     const edgesPipeline = createEdgesPipeline(device, format, cameraBuffer);
     const textPipeline = createTextPipeline(device, format, cameraBuffer, atlas);
+    const ghostPipeline = createGhostPipeline(device, format, atlas);
 
     return new WebGPURenderer(
       canvas, device, context, format, cameraBuffer,
-      nodesPipeline, edgesPipeline, textPipeline, atlas,
+      nodesPipeline, edgesPipeline, textPipeline, ghostPipeline, atlas,
     );
   }
 
@@ -342,10 +351,10 @@ export class WebGPURenderer {
     // Rebuild edges for search dimming / edge highlighting (skip if accuracy view handles it)
     const edgeHighlightChanged = highlightEdge !== prevHighlight;
     if (!accuracyViewActive) {
-      const needsRebuild = searchActive
-        || this._lastEdgeMode !== 'default'
-        || edgeHighlightChanged
-        || (highlightEdge !== null);
+      // Only rebuild when edge coloring actually changes — not every frame
+      const isColored = searchActive || highlightEdge !== null;
+      const wasColored = this._lastEdgeMode !== 'default';
+      const needsRebuild = edgeHighlightChanged || (isColored !== wasColored);
 
       if (needsRebuild) {
         const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 }; // #4C8DFF
@@ -357,7 +366,7 @@ export class WebGPURenderer {
         });
         this.edgesPipeline = updateEdgeVertices(this.edgesPipeline, this.device, this.cameraBuffer, edgeVerts, edgeVerts.length / 8);
       }
-      this._lastEdgeMode = (searchActive || highlightEdge !== null) ? 'search' : 'default';
+      this._lastEdgeMode = isColored ? 'search' : 'default';
     } else if (edgeHighlightChanged && highlightEdge !== null) {
       // In accuracy view, rebuild base edges with the highlighted edge visible
       const dimColor = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b, a: 0.15 };
@@ -381,6 +390,7 @@ export class WebGPURenderer {
       }
     }
     this.rebuildText(grayedNodes, zoomRatio, nodeOverrides, accuracyInferredIds);
+    this.updateGhosts(selectedEdgeIndex);
 
     this.markDirty();
   }
@@ -540,6 +550,199 @@ export class WebGPURenderer {
     );
   }
 
+  /** Build ghost indicator vertices for off-screen edge endpoints (screen-space). */
+  private updateGhosts(selectedEdgeIndex: number | null): void {
+    if (selectedEdgeIndex === null || !this.graphData) {
+      this.ghostBounds = [];
+      this.ghostPipeline = updateGhostVertices(this.ghostPipeline, this.device, this.atlas, new Float32Array(0), 0);
+      return;
+    }
+
+    const edges = this.graphData.edges;
+    if (selectedEdgeIndex >= edges.length) {
+      this.ghostBounds = [];
+      this.ghostPipeline = updateGhostVertices(this.ghostPipeline, this.device, this.atlas, new Float32Array(0), 0);
+      return;
+    }
+
+    const edge = edges[selectedEdgeIndex];
+    const nodes = this.graphData.nodes;
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    if (w === 0 || h === 0) return;
+
+    const MARGIN = 40;
+    const FONT_SIZE = 11;
+    const PAD_X = 8;
+    const PAD_Y = 4;
+    const ARROW_SIZE = 12;
+    const GAP = 4;
+
+    // Colors matching the old ghost node style
+    const bgColor = { r: 0.106, g: 0.118, b: 0.169, a: 0.9 };          // rgba(27,30,43,0.9)
+    const borderColor = { r: 0.298, g: 0.553, b: 1.0, a: 1.0 };        // #4C8DFF
+    const textColor = { r: 0.784, g: 0.800, b: 0.878, a: 1.0 };        // #c8cce0
+    const arrowColor = { r: 0.298, g: 0.553, b: 1.0, a: 1.0 };         // #4C8DFF
+
+    const bounds: typeof this.ghostBounds = [];
+    // Estimate max vertices per ghost: 6 bg + 24 border + 3 arrow + 6*labelLen text
+    const srcNode = nodes.find(n => n.id === edge.source);
+    const tgtNode = nodes.find(n => n.id === edge.target);
+    const maxLabelLen = Math.max(srcNode?.type.length ?? 0, tgtNode?.type.length ?? 0);
+    const maxVertsPerGhost = 33 + 6 * maxLabelLen;
+    const verts = new Float32Array(2 * maxVertsPerGhost * GHOST_VERTEX_FLOATS);
+    let vc = 0;
+
+    const pushVert = (x: number, y: number, u: number, v: number, r: number, g: number, b: number, a: number, isText: number) => {
+      const off = vc * GHOST_VERTEX_FLOATS;
+      verts[off] = x; verts[off + 1] = y;
+      verts[off + 2] = u; verts[off + 3] = v;
+      verts[off + 4] = r; verts[off + 5] = g; verts[off + 6] = b; verts[off + 7] = a;
+      verts[off + 8] = isText;
+      vc++;
+    };
+
+    const pushRect = (x: number, y: number, rw: number, rh: number, cr: number, cg: number, cb: number, ca: number) => {
+      pushVert(x, y, 0, 0, cr, cg, cb, ca, 0);
+      pushVert(x + rw, y, 0, 0, cr, cg, cb, ca, 0);
+      pushVert(x + rw, y + rh, 0, 0, cr, cg, cb, ca, 0);
+      pushVert(x, y, 0, 0, cr, cg, cb, ca, 0);
+      pushVert(x + rw, y + rh, 0, 0, cr, cg, cb, ca, 0);
+      pushVert(x, y + rh, 0, 0, cr, cg, cb, ca, 0);
+    };
+
+    // Border: draw outer rect then inner rect (simple border via 4 edge rects)
+    const pushBorder = (x: number, y: number, bw: number, bh: number, thickness: number, cr: number, cg: number, cb: number, ca: number) => {
+      pushRect(x, y, bw, thickness, cr, cg, cb, ca);                     // top
+      pushRect(x, y + bh - thickness, bw, thickness, cr, cg, cb, ca);    // bottom
+      pushRect(x, y + thickness, thickness, bh - 2 * thickness, cr, cg, cb, ca); // left
+      pushRect(x + bw - thickness, y + thickness, thickness, bh - 2 * thickness, cr, cg, cb, ca); // right
+    };
+
+    const atlas = this.atlas;
+    const atlasW = atlas.atlasWidth;
+    const atlasH = atlas.atlasHeight;
+    const FIRST_CHAR = 32;
+    const CHAR_COUNT = 95;
+    const labelScale = FONT_SIZE / atlas.fontSize;
+
+    for (const nodeId of [edge.source, edge.target]) {
+      const node = nodes.find(n => n.id === nodeId);
+      if (!node) continue;
+
+      const size = this.nodeSizeFn!(nodeId);
+      const cx = node.x + size.width / 2;
+      const cy = node.y + size.height / 2;
+      const sx = cx * this.lastCameraScale + this.lastCameraTx;
+      const sy = cy * this.lastCameraScale + this.lastCameraTy;
+
+      // Check if on-screen
+      if (sx >= MARGIN && sx <= w - MARGIN && sy >= MARGIN && sy <= h - MARGIN) continue;
+
+      // Ray-cast from viewport center to node position, clipped to inset viewport rect
+      const vcx = w / 2, vcy = h / 2;
+      const dx = sx - vcx, dy = sy - vcy;
+      if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) continue;
+
+      const left = MARGIN, right = w - MARGIN, top = MARGIN, bottom = h - MARGIN;
+      let tMin = Infinity;
+      if (dx !== 0) {
+        for (const t of [(left - vcx) / dx, (right - vcx) / dx]) {
+          if (t > 0) { const iy = vcy + dy * t; if (iy >= top && iy <= bottom && t < tMin) tMin = t; }
+        }
+      }
+      if (dy !== 0) {
+        for (const t of [(top - vcy) / dy, (bottom - vcy) / dy]) {
+          if (t > 0) { const ix = vcx + dx * t; if (ix >= left && ix <= right && t < tMin) tMin = t; }
+        }
+      }
+      if (!isFinite(tMin)) continue;
+
+      const ghostX = vcx + dx * tMin;
+      const ghostY = vcy + dy * tMin;
+      const angle = Math.atan2(dy, dx);
+
+      // Measure label text width
+      const label = node.type;
+      let textWidth = 0;
+      for (let i = 0; i < label.length; i++) {
+        const code = label.charCodeAt(i) - FIRST_CHAR;
+        if (code >= 0 && code < CHAR_COUNT) textWidth += atlas.glyphs[code].advance * labelScale;
+      }
+
+      // Total badge dimensions
+      const badgeW = ARROW_SIZE + GAP + textWidth + PAD_X * 2;
+      const badgeH = FONT_SIZE + PAD_Y * 2;
+      const bx = ghostX - badgeW / 2;
+      const by = ghostY - badgeH / 2;
+
+      // Store bounding box for hit testing
+      bounds.push({ nodeId, x: bx, y: by, w: badgeW, h: badgeH });
+
+      // Background rect
+      pushRect(bx, by, badgeW, badgeH, bgColor.r, bgColor.g, bgColor.b, bgColor.a);
+
+      // Border (1.5px)
+      pushBorder(bx, by, badgeW, badgeH, 1.5, borderColor.r, borderColor.g, borderColor.b, borderColor.a);
+
+      // Arrow triangle (rotated by angle)
+      const arrowCX = bx + PAD_X + ARROW_SIZE / 2;
+      const arrowCY = by + badgeH / 2;
+      const cos = Math.cos(angle), sin = Math.sin(angle);
+      const arrowR = ARROW_SIZE / 2;
+      // Triangle vertices: tip at (r,0), base at (-r/2, ±r*0.5)
+      const tipX = arrowR, tipY = 0;
+      const baseX = -arrowR * 0.5, baseY1 = -arrowR * 0.5, baseY2 = arrowR * 0.5;
+      pushVert(
+        arrowCX + tipX * cos - tipY * sin, arrowCY + tipX * sin + tipY * cos,
+        0, 0, arrowColor.r, arrowColor.g, arrowColor.b, arrowColor.a, 0,
+      );
+      pushVert(
+        arrowCX + baseX * cos - baseY1 * sin, arrowCY + baseX * sin + baseY1 * cos,
+        0, 0, arrowColor.r, arrowColor.g, arrowColor.b, arrowColor.a, 0,
+      );
+      pushVert(
+        arrowCX + baseX * cos - baseY2 * sin, arrowCY + baseX * sin + baseY2 * cos,
+        0, 0, arrowColor.r, arrowColor.g, arrowColor.b, arrowColor.a, 0,
+      );
+
+      // Text glyphs
+      let curX = bx + PAD_X + ARROW_SIZE + GAP;
+      const textY = by + PAD_Y;
+      for (let ci = 0; ci < label.length; ci++) {
+        const code = label.charCodeAt(ci) - FIRST_CHAR;
+        if (code < 0 || code >= CHAR_COUNT) { curX += 6 * labelScale; continue; }
+        const g = atlas.glyphs[code];
+        const gw = g.w * labelScale;
+        const gh = g.h * labelScale;
+        const u0 = g.x / atlasW, v0 = g.y / atlasH;
+        const u1 = (g.x + g.w) / atlasW, v1 = (g.y + g.h) / atlasH;
+
+        pushVert(curX, textY, u0, v0, textColor.r, textColor.g, textColor.b, textColor.a, 1);
+        pushVert(curX + gw, textY, u1, v0, textColor.r, textColor.g, textColor.b, textColor.a, 1);
+        pushVert(curX + gw, textY + gh, u1, v1, textColor.r, textColor.g, textColor.b, textColor.a, 1);
+        pushVert(curX, textY, u0, v0, textColor.r, textColor.g, textColor.b, textColor.a, 1);
+        pushVert(curX + gw, textY + gh, u1, v1, textColor.r, textColor.g, textColor.b, textColor.a, 1);
+        pushVert(curX, textY + gh, u0, v1, textColor.r, textColor.g, textColor.b, textColor.a, 1);
+
+        curX += g.advance * labelScale;
+      }
+    }
+
+    this.ghostBounds = bounds;
+    this.ghostPipeline = updateGhostVertices(this.ghostPipeline, this.device, this.atlas, verts, vc);
+  }
+
+  /** Check if a viewport point hits a ghost indicator. Returns the nodeId or null. */
+  ghostHitTest(viewportX: number, viewportY: number): string | null {
+    for (const b of this.ghostBounds) {
+      if (viewportX >= b.x && viewportX <= b.x + b.w && viewportY >= b.y && viewportY <= b.y + b.h) {
+        return b.nodeId;
+      }
+    }
+    return null;
+  }
+
   private rebuildEdges(accuracyView: boolean, nodeStatusMap: Map<string, NodeStatus>): void {
     if (!this.graphData || !this.nodeSizeFn) return;
 
@@ -665,6 +868,7 @@ export class WebGPURenderer {
     if (this.currentZoom >= 0.05) {
       drawText(pass, this.textPipeline);
     }
+    drawGhosts(pass, this.ghostPipeline);
 
     pass.end();
     this.device.queue.submit([encoder.finish()]);
@@ -703,6 +907,7 @@ export class WebGPURenderer {
 
     updateEdgeViewport(this.edgesPipeline, this.device, physW, physH);
     if (this.overlayEdgesPipeline) updateEdgeViewport(this.overlayEdgesPipeline, this.device, physW, physH);
+    updateGhostViewport(this.ghostPipeline, this.device, w, h);
   }
 
   destroy(): void {
@@ -715,6 +920,8 @@ export class WebGPURenderer {
     this.edgesPipeline.vertexBuffer.destroy();
     this.edgesPipeline.zoomBuffer.destroy();
     this.textPipeline.storageBuffer.destroy();
+    this.ghostPipeline.vertexBuffer.destroy();
+    this.ghostPipeline.viewportBuffer.destroy();
     this.atlas.texture.destroy();
     this.cameraBuffer.destroy();
     if (this.msaaTexture) this.msaaTexture.destroy();

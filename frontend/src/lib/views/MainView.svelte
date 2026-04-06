@@ -1,6 +1,5 @@
 <script lang="ts">
   import GraphCanvas from '../graph/GraphCanvas.svelte';
-  import GhostNodes from '../graph/GhostNodes.svelte';
   import Minimap from '../graph/Minimap.svelte';
   import GraphSearch from '../graph/GraphSearch.svelte';
   import AccuracyToggle from '../graph/AccuracyToggle.svelte';
@@ -183,33 +182,6 @@
 
   <!-- Graph fills entire background -->
   <GraphCanvas />
-  <GhostNodes />
-
-  <!-- Top-center toolbar -->
-  {#if graphStore.graphData}
-    <div class="absolute top-3 left-1/2 -translate-x-1/2 z-30 flex items-center bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-lg shadow-lg overflow-hidden">
-      <button
-        class="px-3 py-1.5 text-xs font-medium transition-colors text-gray-300 hover:text-gray-100"
-        onclick={() => { batchQueueInitialMode = 'all'; showBatchQueue = true; }}
-      >
-        Batch Infer
-      </button>
-      <div class="w-px h-5 bg-[--border-color]"></div>
-      <button
-        class="px-3 py-1.5 text-xs font-medium transition-colors hover:text-gray-100 {bisectStore.isActive ? 'text-blue-400' : 'text-gray-300'}"
-        onclick={() => showBisectPanel = !showBisectPanel}
-      >
-        Bisect{bisectStore.isActive ? ' \u25CF' : ''}
-      </button>
-      <div class="w-px h-5 bg-[--border-color]"></div>
-      <button
-        class="px-3 py-1.5 text-xs font-medium transition-colors hover:text-gray-100 {logStore.visible ? 'text-blue-400' : 'text-gray-300'}"
-        onclick={() => logStore.toggle()}
-      >
-        Logs{logStore.visible ? ' ●' : ''}
-      </button>
-    </div>
-  {/if}
 
   <!-- Minimap -->
   <Minimap />
@@ -225,7 +197,11 @@
 
   <!-- Floating panels -->
   <FloatingPanel side="left" title="Queue">
-    <QueuePanel />
+    <QueuePanel
+      onbatchinfer={() => { batchQueueInitialMode = 'all'; showBatchQueue = true; }}
+      onbisect={() => showBisectPanel = !showBisectPanel}
+      ontogglelog={() => logStore.toggle()}
+    />
   </FloatingPanel>
 
   <FloatingPanel side="right" title="Node Status">
