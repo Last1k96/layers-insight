@@ -1,4 +1,4 @@
-import type { GraphData, GraphNode, TaskStatus, AccuracyMetrics, DeviceResult } from './types';
+import type { GraphData, GraphNode, GraphEdge, TaskStatus, AccuracyMetrics, DeviceResult } from './types';
 import { queueStore } from './queue.svelte';
 
 export interface NodeStatus {
@@ -51,6 +51,15 @@ class GraphStore {
   get selectedNode(): GraphNode | null {
     if (!this.graphData || !this.selectedNodeId) return null;
     return this.graphData.nodes.find(n => n.id === this.selectedNodeId) ?? null;
+  }
+
+  get selectedEdge(): { edge: GraphEdge; sourceNode: GraphNode | null; targetNode: GraphNode | null } | null {
+    if (!this.graphData || this.selectedEdgeIndex === null) return null;
+    const edge = this.graphData.edges[this.selectedEdgeIndex];
+    if (!edge) return null;
+    const sourceNode = this.graphData.nodes.find(n => n.id === edge.source) ?? null;
+    const targetNode = this.graphData.nodes.find(n => n.id === edge.target) ?? null;
+    return { edge, sourceNode, targetNode };
   }
 
   get selectedNodeStatus(): NodeStatus | null {

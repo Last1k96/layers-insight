@@ -7,6 +7,7 @@
 
   let selectedNode = $derived(graphStore.selectedNode);
   let nodeStatus = $derived(graphStore.selectedNodeStatus);
+  let selectedEdge = $derived(graphStore.selectedEdge);
   let nodeOverride = $derived(selectedNode ? graphStore.nodeOverrides.get(selectedNode.name) : undefined);
 
   /** Propagated (concrete) shape for the selected node, if available */
@@ -172,18 +173,79 @@
 </script>
 
 <div class="p-3 overflow-y-auto h-full text-sm">
-  {#if !selectedNode}
-    <div class="flex flex-col items-center justify-center py-16 px-4">
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-content-secondary/15 mb-3">
-        <rect x="3" y="3" width="18" height="18" rx="3" />
-        <path d="M9 12h6M12 9v6" stroke-linecap="round" />
-      </svg>
-      <span class="text-content-secondary/30 text-xs">Select a node to view details</span>
+  {#if selectedEdge}
+    <!-- Edge Info -->
+    <div class="mb-4">
+      <h4 class="text-[10px] font-medium text-content-secondary/40 uppercase tracking-wider mb-2">Edge Connection</h4>
+
+      <!-- Source Node -->
+      <div class="bg-surface-base rounded-lg p-2.5 text-xs">
+        <div class="text-[10px] text-content-secondary/30 uppercase tracking-wider mb-1">Source</div>
+        <div class="flex items-center gap-1.5">
+          <span class="text-content-secondary/25 font-mono w-4 shrink-0">:{selectedEdge.edge.source_port}</span>
+          {#if selectedEdge.sourceNode}
+            <button
+              class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
+              onmouseenter={() => setHoveredNode(selectedEdge!.sourceNode!.id)}
+              onmouseleave={() => setHoveredNode(null)}
+              onclick={() => centerOnNode(selectedEdge!.sourceNode!.id)}
+            >{selectedEdge.sourceNode.name}</button>
+          {:else}
+            <span class="text-content-secondary/50 font-mono truncate">{selectedEdge.edge.source}</span>
+          {/if}
+        </div>
+        {#if selectedEdge.sourceNode}
+          <div class="text-content-secondary/40 ml-5 mt-0.5">{selectedEdge.sourceNode.type}</div>
+          {#if selectedEdge.sourceNode.shape}
+            <div class="text-content-secondary/40 ml-5 mt-0.5">
+              [{#each selectedEdge.sourceNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]
+              {#if selectedEdge.sourceNode.element_type}<span class="text-content-secondary/25"> {selectedEdge.sourceNode.element_type}</span>{/if}
+            </div>
+          {/if}
+        {/if}
+      </div>
+
+      <!-- Arrow -->
+      <div class="flex justify-center py-1">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" class="text-content-secondary/20">
+          <path d="M8 3v10M4 9l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
+
+      <!-- Target Node -->
+      <div class="bg-surface-base rounded-lg p-2.5 text-xs">
+        <div class="text-[10px] text-content-secondary/30 uppercase tracking-wider mb-1">Target</div>
+        <div class="flex items-center gap-1.5">
+          <span class="text-content-secondary/25 font-mono w-4 shrink-0">:{selectedEdge.edge.target_port}</span>
+          {#if selectedEdge.targetNode}
+            <button
+              class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
+              onmouseenter={() => setHoveredNode(selectedEdge!.targetNode!.id)}
+              onmouseleave={() => setHoveredNode(null)}
+              onclick={() => centerOnNode(selectedEdge!.targetNode!.id)}
+            >{selectedEdge.targetNode.name}</button>
+          {:else}
+            <span class="text-content-secondary/50 font-mono truncate">{selectedEdge.edge.target}</span>
+          {/if}
+        </div>
+        {#if selectedEdge.targetNode}
+          <div class="text-content-secondary/40 ml-5 mt-0.5">{selectedEdge.targetNode.type}</div>
+          {#if selectedEdge.targetNode.shape}
+            <div class="text-content-secondary/40 ml-5 mt-0.5">
+              [{#each selectedEdge.targetNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]
+              {#if selectedEdge.targetNode.element_type}<span class="text-content-secondary/25"> {selectedEdge.targetNode.element_type}</span>{/if}
+            </div>
+          {/if}
+        {/if}
+      </div>
     </div>
-  {:else}
+  {:else if selectedNode}
     <!-- Node Info -->
     <div class="mb-4">
-      <div class="font-mono font-medium text-[13px] text-content-primary break-all leading-snug">{selectedNode.name}</div>
+      <button
+        class="font-mono font-medium text-[13px] text-content-primary break-all leading-snug text-left"
+        onclick={() => centerOnNode(selectedNode!.id)}
+      >{selectedNode.name}</button>
       <div class="text-content-secondary/50 text-xs mt-1">{selectedNode.type}</div>
       {#if (selectedNode.inputs && selectedNode.inputs.length > 0) || selectedNode.shape}
         <div class="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs items-baseline">
@@ -688,5 +750,13 @@
         </div>
       </details>
     {/if}
+  {:else}
+    <div class="flex flex-col items-center justify-center py-16 px-4">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-content-secondary/15 mb-3">
+        <rect x="3" y="3" width="18" height="18" rx="3" />
+        <path d="M9 12h6M12 9v6" stroke-linecap="round" />
+      </svg>
+      <span class="text-content-secondary/30 text-xs">Select a node or edge to view details</span>
+    </div>
   {/if}
 </div>
