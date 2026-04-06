@@ -20,9 +20,6 @@ export function setupInteractions(): void {
 
   const canvas = gpu.canvas;
 
-  // Click/dblclick timer to distinguish single from double click
-  let clickTimer: ReturnType<typeof setTimeout> | null = null;
-
   const EDGE_HIT_RADIUS_PX = 8;
 
   function isEdgeGrayed(edgeIndex: number): boolean {
@@ -58,7 +55,6 @@ export function setupInteractions(): void {
     // Ghost indicator gets priority over nodes (ghosts overlap edge endpoints)
     const ghostNodeId = hitTestGhost(e);
     if (ghostNodeId) {
-      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
       centerOnNode(ghostNodeId);
       refreshRenderer();
       return;
@@ -67,20 +63,13 @@ export function setupInteractions(): void {
     const nodeId = hitTestNode(e);
 
     if (nodeId && !graphStore.grayedNodes.has(nodeId)) {
-      // Delay single-click action so dblclick can cancel it
-      const ctrlKey = e.ctrlKey;
-      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-      clickTimer = setTimeout(() => {
-        clickTimer = null;
-        graphStore.selectNode(nodeId);
-        if (ctrlKey) centerOnNode(nodeId);
-        refreshRenderer();
-      }, 250);
+      graphStore.selectNode(nodeId);
+      if (e.ctrlKey) centerOnNode(nodeId);
+      refreshRenderer();
       return;
     }
 
     // No node hit — check edge
-    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
     const edgeHit = hitTestEdge(e);
     if (edgeHit && !isEdgeGrayed(edgeHit.edgeIndex)) {
       graphStore.selectEdge(edgeHit.edgeIndex);
@@ -93,8 +82,6 @@ export function setupInteractions(): void {
 
   // Double click: select node + enqueue inference. Shift+dblclick re-enqueues.
   function handleDblClick(e: MouseEvent) {
-    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-
     const nodeId = hitTestNode(e);
     if (!nodeId || graphStore.grayedNodes.has(nodeId)) return;
 
@@ -118,7 +105,6 @@ export function setupInteractions(): void {
   cleanupFns.push(() => {
     canvas.removeEventListener('click', handleClick as EventListener);
     canvas.removeEventListener('dblclick', handleDblClick as EventListener);
-    if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
   });
 
   // Hover detection
