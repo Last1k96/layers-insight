@@ -25,6 +25,13 @@ export function setupInteractions(): void {
 
   const EDGE_HIT_RADIUS_PX = 8;
 
+  function isEdgeGrayed(edgeIndex: number): boolean {
+    const edges = graphStore.graphData?.edges;
+    if (!edges || edgeIndex >= edges.length) return false;
+    const edge = edges[edgeIndex];
+    return graphStore.grayedNodes.has(edge.source) || graphStore.grayedNodes.has(edge.target);
+  }
+
   function hitTestNode(e: MouseEvent): string | null {
     const rect = canvas.getBoundingClientRect();
     const gp = camera!.viewportToGraph(e.clientX - rect.left, e.clientY - rect.top);
@@ -59,7 +66,7 @@ export function setupInteractions(): void {
 
     const nodeId = hitTestNode(e);
 
-    if (nodeId) {
+    if (nodeId && !graphStore.grayedNodes.has(nodeId)) {
       // Delay single-click action so dblclick can cancel it
       const ctrlKey = e.ctrlKey;
       if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
@@ -75,9 +82,9 @@ export function setupInteractions(): void {
     // No node hit — check edge
     if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
     const edgeHit = hitTestEdge(e);
-    if (edgeHit) {
+    if (edgeHit && !isEdgeGrayed(edgeHit.edgeIndex)) {
       graphStore.selectEdge(edgeHit.edgeIndex);
-    } else {
+    } else if (!edgeHit) {
       graphStore.selectNode(null);
       graphStore.selectEdge(null);
     }
@@ -89,7 +96,7 @@ export function setupInteractions(): void {
     if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
 
     const nodeId = hitTestNode(e);
-    if (!nodeId) return;
+    if (!nodeId || graphStore.grayedNodes.has(nodeId)) return;
 
     const sessionId = sessionStore.currentSession?.id;
     if (!sessionId) return;
@@ -101,7 +108,7 @@ export function setupInteractions(): void {
     if (e.ctrlKey) centerOnNode(nodeId);
     refreshRenderer();
 
-    if (!graphStore.grayedNodes.has(nodeId) && (e.shiftKey || !nodeStatus)) {
+    if (e.shiftKey || !nodeStatus) {
       queueStore.enqueue(sessionId, nodeId, attrs.nodeName || attrs.label, attrs.opType, graphStore.activeSubSessionId);
     }
   }
@@ -125,7 +132,7 @@ export function setupInteractions(): void {
       const gp = camera!.viewportToGraph(e.clientX - rect.left, e.clientY - rect.top);
       const hitId = gpu!.hitGrid.query(gp.x, gp.y);
 
-      if (hitId) {
+      if (hitId && !graphStore.grayedNodes.has(hitId)) {
         setHoveredNode(hitId);
         setHoveredEdge(null);
         canvas.style.cursor = 'pointer';
@@ -139,8 +146,9 @@ export function setupInteractions(): void {
         const currentEdge = getHoveredEdge();
         const radius = EDGE_HIT_RADIUS_PX / camera!.ratio;
         const edgeHit = gpu!.edgeHitIndex.query(gp.x, gp.y, currentEdge !== null ? radius * 1.3 : radius);
-        setHoveredEdge(edgeHit?.edgeIndex ?? null);
-        canvas.style.cursor = edgeHit ? 'pointer' : '';
+        const edgeIdx = (edgeHit && !isEdgeGrayed(edgeHit.edgeIndex)) ? edgeHit.edgeIndex : null;
+        setHoveredEdge(edgeIdx);
+        canvas.style.cursor = edgeIdx !== null ? 'pointer' : '';
       }
     });
   }
