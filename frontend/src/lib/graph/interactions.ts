@@ -63,12 +63,11 @@ export function setupInteractions(): void {
       return;
     }
 
-    // Check ghost indicator hit (before edge, since ghosts overlap edges visually)
+    // Ghost indicator hit: focus on the node without changing selection
     const ghostNodeId = hitTestGhost(e);
     if (ghostNodeId) {
       if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-      graphStore.selectNode(ghostNodeId);
-      if (e.ctrlKey) centerOnNode(ghostNodeId);
+      centerOnNode(ghostNodeId);
       refreshRenderer();
       return;
     }
