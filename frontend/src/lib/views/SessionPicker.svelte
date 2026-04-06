@@ -558,14 +558,6 @@
     gap: 0.5rem;
   }
 
-  .model-name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .model-name-wrap {
     flex: 1;
     min-width: 0;

@@ -25,7 +25,7 @@
 		refLabel?: string;
 	} = $props();
 
-	let canvas: HTMLCanvasElement;
+	let canvas: HTMLCanvasElement = $state()!;
 	let batch = $state(0);
 	let channel = $state(0);
 	let colormap: ColormapName = $state('inferno');

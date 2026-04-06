@@ -187,6 +187,7 @@
 
 <svelte:window onmouseup={handleMouseUp} />
 
+<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 <div class="flex flex-col gap-4 relative h-full" tabindex="0" use:keyboardNav={{
 	onResetZoom: resetView,
 	onTogglePlay: () => { playing = !playing; },
