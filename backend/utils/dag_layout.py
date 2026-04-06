@@ -12,6 +12,7 @@ from collections import defaultdict, deque
 NODE_SPACING = 20   # horizontal gap between nodes in same layer
 LAYER_SPACING = 20  # vertical gap between layers
 DUMMY_SPACING = 2   # horizontal gap between dummy nodes (tight bundling)
+ARROW_LENGTH = 8    # must match frontend edgesPipeline.ts
 
 
 def compute_dag_layout(
@@ -231,9 +232,29 @@ def compute_dag_layout(
 
         wps: list[dict[str, float]] = [{"x": sx, "y": sy}]
         # Intermediate waypoints from dummy node positions
-        for did in chain[1:-1]:
+        dummies = chain[1:-1]
+        for did in dummies:
             dL = layer_of[did]
             wps.append({"x": x_of[did], "y": layer_mid[dL]})
+        if dummies:
+            # Corridor/nudge: vertical guides when last dummy diverges
+            if abs(x_of[dummies[-1]] - ex) > ARROW_LENGTH:
+                prev_y = layer_mid[layer_of[dummies[-1]]]
+                gap = ey - prev_y
+                step = ARROW_LENGTH
+                n_guides = max(1, min(3, int((gap * 0.4) / step)))
+                for g in range(n_guides, 0, -1):
+                    wps.append({"x": ex, "y": ey - step * g})
+        elif abs(sx - ex) > ARROW_LENGTH:
+            # Span-1 edge with offset: convert to 4-point step routing
+            # (vertical exit, smooth transition, vertical entry) so the
+            # cubic B-spline settles at target x before the arrow.
+            gap = ey - sy
+            margin = gap * 0.35
+            wps.append({"x": sx, "y": sy + margin})
+            wps.append({"x": ex, "y": ey - margin})
+            # Remove the bare start — rebuild with step pattern
+            wps[0] = {"x": sx, "y": sy}
         wps.append({"x": ex, "y": ey})
 
         ewp[f"e{i}"] = {"waypoints": wps}
@@ -633,7 +654,8 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
             for rank_in_side, k in enumerate(order):
                 par_off = (rank_in_side - (side_count - 1) / 2) * EDGE_SPACING if side_count > 1 else 0
                 pos_x = base + par_off
-                for did in side_routes[k]["dummies"]:
+                dummies_k = side_routes[k]["dummies"]
+                for did in dummies_k:
                     x_of[did] = pos_x
 
             # Only major groups register corridor obstacles — minor
