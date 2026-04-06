@@ -239,15 +239,18 @@ class TestLongEdgeStraightening:
         wp = result["edges"]["e3"]["waypoints"]
         assert len(wp) >= 4  # start + 2 intermediate + end
 
-        # The intermediate waypoints should be outside the real nodes' x-range
-        # (i.e., not overlapping b or c)
+        # The intermediate waypoints should not overlap b or c (2D bounding box)
         pos = result["nodes"]
         for midwp in wp[1:-1]:
             for nid in ["b", "c"]:
                 n_left = pos[nid]["x"]
-                n_right = pos[nid]["x"] + 120
-                assert midwp["x"] <= n_left - 10 or midwp["x"] >= n_right + 10, \
-                    f"waypoint x={midwp['x']:.0f} overlaps node {nid} [{n_left:.0f}, {n_right:.0f}]"
+                n_right = n_left + 120
+                n_top = pos[nid]["y"]
+                n_bottom = n_top + 32
+                x_in = n_left - 10 < midwp["x"] < n_right + 10
+                y_in = n_top - 10 < midwp["y"] < n_bottom + 10
+                assert not (x_in and y_in), \
+                    f"waypoint ({midwp['x']:.0f},{midwp['y']:.0f}) overlaps node {nid} [{n_left:.0f},{n_right:.0f}]x[{n_top:.0f},{n_bottom:.0f}]"
 
 
 class TestTargetPortSpreading:
@@ -385,13 +388,14 @@ class TestTransformerFanOut:
                         if nid == tgt or nid == source:
                             continue
                         ny = pos[nid]["y"]
-                        # Only check nodes at the same vertical level
-                        if abs(ny - wp["y"]) > node_h + 20:
-                            continue
+                        nw = [n for n in nodes if n["id"] == nid][0]["width"]
                         n_left = pos[nid]["x"]
-                        n_right = n_left + ([n for n in nodes if n["id"] == nid][0]["width"])
-                        assert wp["x"] <= n_left - 5 or wp["x"] >= n_right + 5, \
-                            f"{source} corridor wp x={wp['x']:.0f} overlaps {nid} [{n_left:.0f}, {n_right:.0f}] at y≈{ny:.0f}"
+                        n_right = n_left + nw
+                        # 2D bounding-box overlap check
+                        x_in = n_left - 5 < wp["x"] < n_right + 5
+                        y_in = ny - 5 < wp["y"] < ny + node_h + 5
+                        assert not (x_in and y_in), \
+                            f"{source} corridor wp ({wp['x']:.0f},{wp['y']:.0f}) overlaps {nid} [{n_left:.0f},{n_right:.0f}]x[{ny:.0f},{ny+node_h:.0f}]"
 
     def test_competing_fanout_corridors_go_toward_targets(self):
         """Corridors should route toward their targets, not away."""
