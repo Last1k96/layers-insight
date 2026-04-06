@@ -25,6 +25,8 @@
   import { onMount, onDestroy } from 'svelte';
 
   let wsDisconnected = $state(false);
+  let renamingSession = $state(false);
+  let renameValue = $state('');
   let showAccuracyView = $state(false);
   let accuracyOutputIndex = $state(0);
   let showBatchQueue = $state(false);
@@ -53,6 +55,41 @@
       loadingPct = base;
     }
   });
+
+  let sessionName = $derived(sessionStore.currentSession?.info.model_name ?? 'Queue');
+
+  function startRenameSession() {
+    renamingSession = true;
+    renameValue = sessionName;
+  }
+
+  async function commitRenameSession() {
+    const trimmed = renameValue.trim();
+    const sessionId = sessionStore.currentSession?.id;
+    if (trimmed && sessionId) {
+      await sessionStore.renameSession(sessionId, trimmed);
+      if (sessionStore.currentSession) {
+        sessionStore.currentSession.info.model_name = trimmed;
+      }
+    }
+    renamingSession = false;
+    renameValue = '';
+  }
+
+  function cancelRenameSession() {
+    renamingSession = false;
+    renameValue = '';
+  }
+
+  function handleRenameKeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitRenameSession();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelRenameSession();
+    }
+  }
 
   function restoreSessionTasks(): void {
     const session = sessionStore.currentSession;
@@ -197,6 +234,28 @@
 
   <!-- Floating panels -->
   <FloatingPanel side="left" title="Queue">
+    {#snippet header()}
+      {#if renamingSession}
+        <!-- svelte-ignore a11y_autofocus -->
+        <input
+          class="rename-input"
+          type="text"
+          bind:value={renameValue}
+          onkeydown={handleRenameKeydown}
+          onblur={commitRenameSession}
+          onclick={(e) => e.stopPropagation()}
+          autofocus
+        />
+      {:else}
+        <span class="session-name-header">
+          <span class="session-name-text">{sessionName}</span><button
+            class="rename-btn-header"
+            onclick={(e) => { e.stopPropagation(); startRenameSession(); }}
+            title="Rename session"
+          ><svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg></button>
+        </span>
+      {/if}
+    {/snippet}
     <QueuePanel
       onbatchinfer={() => { batchQueueInitialMode = 'all'; showBatchQueue = true; }}
       onbisect={() => showBisectPanel = !showBisectPanel}
@@ -248,6 +307,58 @@
 
 <!-- Keyboard shortcuts help overlay -->
 <ShortcutsHelp />
+
+<style>
+  .session-name-header {
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .session-name-text {
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+    color: var(--text-primary);
+  }
+
+  .rename-btn-header {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0.35rem;
+    margin-left: 0.25rem;
+    border-radius: 0.25rem;
+    color: var(--text-secondary);
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  }
+
+  .session-name-header:hover .rename-btn-header {
+    opacity: 0.6;
+  }
+
+  .rename-btn-header:hover {
+    opacity: 1 !important;
+    color: #4C8DFF;
+    background: rgba(76, 141, 255, 0.1);
+  }
+
+  .rename-input {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    border: 1px solid #4C8DFF;
+    border-radius: 0.25rem;
+    padding: 0 0.3rem;
+    outline: none;
+    width: 100%;
+  }
+</style>
 
 {#if showBisectPanel}
   <BisectPanel onclose={() => showBisectPanel = false} />

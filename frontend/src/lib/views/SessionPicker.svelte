@@ -18,6 +18,8 @@
   let selectedIndex = $state(-1);
   let compareMode = $state(false);
   let compareSelection = $state<string[]>([]);
+  let renamingId: string | null = $state(null);
+  let renameValue = $state('');
 
   function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
@@ -68,6 +70,38 @@
   function handleClone(e: MouseEvent, sessionId: string) {
     e.stopPropagation();
     onclonesession(sessionId);
+  }
+
+  function startRename(e: MouseEvent, session: { id: string; model_name: string }) {
+    e.stopPropagation();
+    renamingId = session.id;
+    renameValue = session.model_name;
+  }
+
+  async function commitRename() {
+    if (!renamingId) return;
+    const trimmed = renameValue.trim();
+    if (trimmed) {
+      await sessionStore.renameSession(renamingId, trimmed);
+    }
+    renamingId = null;
+    renameValue = '';
+  }
+
+  function cancelRename() {
+    renamingId = null;
+    renameValue = '';
+  }
+
+  function handleRenameKeydown(e: KeyboardEvent) {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commitRename();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      cancelRename();
+    }
   }
 
   function toggleCompareSelect(e: MouseEvent, sessionId: string) {
@@ -178,7 +212,26 @@
                     {/if}
                   </div>
                 {/if}
-                <span class="model-name">{session.model_name}</span>
+                {#if renamingId === session.id}
+                  <!-- svelte-ignore a11y_autofocus -->
+                  <input
+                    class="rename-input"
+                    type="text"
+                    bind:value={renameValue}
+                    onkeydown={handleRenameKeydown}
+                    onblur={commitRename}
+                    onclick={(e) => e.stopPropagation()}
+                    autofocus
+                  />
+                {:else}
+                  <span class="model-name-wrap">
+                    <span class="model-name-text">{session.model_name}</span><button
+                      class="rename-btn"
+                      onclick={(e) => startRename(e, session)}
+                      title="Rename session"
+                    ><svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg></button>
+                  </span>
+                {/if}
                 {#if isLast}
                   <span class="last-badge">recent</span>
                 {/if}
@@ -507,12 +560,62 @@
 
   .model-name {
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .model-name-wrap {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .model-name-text {
     font-weight: 500;
     font-size: 0.95rem;
     color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  }
+
+  .rename-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    vertical-align: middle;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0.35rem;
+    margin-left: 0.25rem;
+    border-radius: 0.25rem;
+    color: var(--text-secondary);
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  }
+
+  .session-card:hover .rename-btn {
+    opacity: 0.6;
+  }
+
+  .rename-btn:hover {
+    opacity: 1 !important;
+    color: #4C8DFF;
+    background: rgba(76, 141, 255, 0.1);
+  }
+
+  .rename-input {
+    flex: 1;
+    font-weight: 500;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    border: 1px solid #4C8DFF;
+    border-radius: 0.25rem;
+    padding: 0 0.3rem;
+    outline: none;
+    min-width: 0;
   }
 
   .last-badge {

@@ -22,6 +22,7 @@
 
   let ovPath = $state('');
   let modelPath = $state('');
+  let sessionName = $state('');
   let mainDevice = $state('CPU');
   let refDevice = $state('CPU');
   let submitting = $state(false);
@@ -40,6 +41,9 @@
     if (ovPath !== originalOvPath) changed.add('ov_path');
     return changed;
   });
+
+  // Session name placeholder derived from model path
+  let modelNameFromPath = $derived(modelPath ? modelPath.split('/').pop()?.replace(/\.[^.]+$/, '') || '' : '');
 
   // OV path validation
   let ovValidating = $state(false);
@@ -508,6 +512,7 @@
       const info = await sessionStore.createSession({
         ov_path: ovPath || undefined,
         model_path: modelPath,
+        session_name: sessionName.trim() || undefined,
         main_device: mainDevice,
         ref_device: refDevice,
         input_precision: modelInputs.length > 0 ? modelInputs[0].data_type : 'fp32',
@@ -637,6 +642,17 @@
               {/if}
             </div>
           </div>
+        </div>
+
+        <div class="field-group">
+          <label for="session-name" class="field-label">Session Name <span class="field-opt">optional</span></label>
+          <input
+            type="text"
+            id="session-name"
+            bind:value={sessionName}
+            placeholder={modelNameFromPath || 'model name'}
+            class="session-name-input"
+          />
         </div>
       </div>
 
@@ -1131,6 +1147,27 @@
     opacity: 0.5;
     font-size: 0.65rem;
     margin-left: 0.25rem;
+  }
+
+  .session-name-input {
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.3rem;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    transition: border-color 0.15s ease;
+  }
+
+  .session-name-input:focus {
+    border-color: #4C8DFF;
+    outline: none;
+  }
+
+  .session-name-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.5;
   }
 
   .path-row {

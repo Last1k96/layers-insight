@@ -49,6 +49,7 @@ export interface AppDefaults {
 export interface SessionConfig {
   ov_path?: string;
   model_path: string;
+  session_name?: string;
   input_path?: string;
   main_device: string;
   ref_device: string;

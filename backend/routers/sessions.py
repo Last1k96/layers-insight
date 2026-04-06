@@ -13,6 +13,7 @@ from backend.schemas.session import (
     CloneRequest,
     CompareResponse,
     CutRequest,
+    RenameRequest,
     SessionConfig,
     SessionDetail,
     SessionInfo,
@@ -115,6 +116,17 @@ async def delete_session(session_id: str, request: Request) -> dict:
     svc = _get_session_service(request)
     if svc.delete_session(session_id):
         return {"deleted": True}
+    raise HTTPException(status_code=404, detail="Session not found")
+
+
+@router.patch("/{session_id}/rename")
+async def rename_session(session_id: str, req: RenameRequest, request: Request) -> dict:
+    """Rename a session."""
+    svc = _get_session_service(request)
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="Name cannot be empty")
+    if svc.rename_session(session_id, req.name.strip()):
+        return {"renamed": True, "name": req.name.strip()}
     raise HTTPException(status_code=404, detail="Session not found")
 
 

@@ -78,6 +78,24 @@ class SessionStore {
     }
   }
 
+  async renameSession(sessionId: string, name: string): Promise<boolean> {
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/rename`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error(await extractError(res));
+      this.sessions = this.sessions.map(s =>
+        s.id === sessionId ? { ...s, model_name: name } : s
+      );
+      return true;
+    } catch (e: any) {
+      this.error = e.message;
+      return false;
+    }
+  }
+
   async cloneSession(sourceSessionId: string, overrides: CloneRequest): Promise<CloneResponse | null> {
     this.loading = true;
     this.error = null;
