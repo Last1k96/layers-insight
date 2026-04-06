@@ -266,6 +266,27 @@ def _sort_by_barycenter(layer, neighbor_adj, pos):
 EDGE_SPACING = 8  # px between parallel long-edge corridors
 
 
+def _nudge_clear(ideal_x: float, intervals: list[tuple[float, float]]) -> float:
+    """Find the nearest x to *ideal_x* that clears all node intervals.
+
+    Each interval is (left, right) of a real node.  The returned x
+    satisfies ``x <= left - NODE_SPACING`` or ``x >= right + NODE_SPACING``
+    for every interval.  Iterates to resolve cascading overlaps.
+    """
+    best = ideal_x
+    for _ in range(10):  # iterate to resolve cascading overlaps
+        blocked = False
+        for left, right in intervals:
+            if left - NODE_SPACING <= best <= right + NODE_SPACING:
+                dl = best - (left - NODE_SPACING)
+                dr = (right + NODE_SPACING) - best
+                best = (left - NODE_SPACING) if dl <= dr else (right + NODE_SPACING)
+                blocked = True
+        if not blocked:
+            break
+    return best
+
+
 def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_layers, edges):
     """Post-process long-edge dummy positions for visual quality.
 
@@ -347,26 +368,22 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
             else:
                 tgt_cx = x_of[tgt_n] + ext_nmap[tgt_n]["width"] / 2
 
-            # Check whether the ideal straight line is clear.
-            # Only real nodes block straight lines — corridor obstacles
-            # are zero-width routing points that B-splines curve around.
-            # Use this edge's actual parallel offset (not worst-case).
+            # Check whether step path (vertical from src, vertical to tgt)
+            # is clear.  Step routing = mostly vertical with smooth
+            # B-spline transition in the middle.
             par_off = (rank - (n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
             straight_ok = True
             for did in dummies:
                 dL = layer_of[did]
                 t = (dL - src_L) / span
-                ix = src_cx + t * (tgt_cx - src_cx) + par_off
+                # Step routing: first half at src_cx, second half at tgt_cx
+                check_x = (src_cx + par_off) if t <= 0.5 else tgt_cx
                 for left, right in layer_intervals[dL]:
-                    if left - NODE_SPACING <= ix <= right + NODE_SPACING:
+                    if left - NODE_SPACING <= check_x <= right + NODE_SPACING:
                         straight_ok = False
                         break
                 if not straight_ok:
                     break
-
-            # Reject steep diagonals (scale threshold with span)
-            if straight_ok and abs(src_cx - tgt_cx) > ext_nmap[src_n]["width"] * min(span, 3):
-                straight_ok = False
 
             if straight_ok:
                 edge_routes.append({
@@ -374,22 +391,18 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                     "src_L": src_L, "tgt_L": tgt_L, "src_cx": src_cx,
                     "tgt_cx": tgt_cx, "span": span,
                 })
-            elif span <= 3:
-                # Nudge mode: push each dummy just enough to clear obstacles
+            elif span <= 5:
+                # Nudge mode: push each dummy just enough to clear
+                # obstacles.  Uses step-path ideal (vertical from src/tgt)
+                # and iteratively resolves overlaps.  Nudge the baseline
+                # first, then re-apply par_off so parallel edges stay spaced.
                 nudge_xs: list[float] = []
                 for did in dummies:
                     dL = layer_of[did]
                     t = (dL - src_L) / span
-                    ideal_x = src_cx + t * (tgt_cx - src_cx) + par_off
-                    best_x = ideal_x
-                    for left, right in layer_intervals[dL]:
-                        if left - NODE_SPACING <= best_x <= right + NODE_SPACING:
-                            dist_left = best_x - (left - NODE_SPACING)
-                            dist_right = (right + NODE_SPACING) - best_x
-                            if dist_left <= dist_right:
-                                best_x = left - NODE_SPACING
-                            else:
-                                best_x = right + NODE_SPACING
+                    baseline = src_cx if t <= 0.5 else tgt_cx
+                    nudged_base = _nudge_clear(baseline, layer_intervals[dL])
+                    best_x = _nudge_clear(nudged_base + par_off, layer_intervals[dL])
                     nudge_xs.append(best_x)
                 edge_routes.append({
                     "mode": "nudge", "chain": chain, "dummies": dummies,
@@ -415,7 +428,7 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                     for did in route["dummies"]:
                         dL = layer_of[did]
                         t = (dL - route["src_L"]) / route["span"]
-                        x_of[did] = route["src_cx"] + t * (route["tgt_cx"] - route["src_cx"]) + par_off
+                        x_of[did] = (route["src_cx"] + par_off) if t <= 0.5 else route["tgt_cx"]
             continue
 
         # --- Compute corridor boundary (real nodes only for side decision) ---
@@ -596,7 +609,7 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                 for did in route["dummies"]:
                     dL = layer_of[did]
                     t = (dL - route["src_L"]) / route["span"]
-                    x_of[did] = route["src_cx"] + t * (route["tgt_cx"] - route["src_cx"]) + par_off
+                    x_of[did] = (route["src_cx"] + par_off) if t <= 0.5 else route["tgt_cx"]
 
 
 # ---------------------------------------------------------------------------
