@@ -52,6 +52,7 @@
   class:transition-all={!resizing}
   class:left-2={side === 'left'}
   class:right-2={side === 'right'}
+  data-panel-side={side}
   style:width="{width}px"
   style:box-shadow="var(--shadow-panel)"
 >

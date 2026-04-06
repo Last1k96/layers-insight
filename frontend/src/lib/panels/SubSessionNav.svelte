@@ -16,20 +16,19 @@
   let leftOffset = $state(330);
   let collapsed = $state(true);
 
-  // Track left panel width to position ourselves right next to it
+  // Track left panel's right edge to position ourselves flush against it
   $effect(() => {
-    function updateOffset() {
-      const savedWidth = localStorage.getItem('panel-left-width');
-      const savedCollapsed = localStorage.getItem('panel-left-collapsed');
-      const isCollapsed = savedCollapsed === 'true';
-      const w = isCollapsed ? 40 : (savedWidth ? parseInt(savedWidth) : 320);
-      leftOffset = w + 12; // panel left-2 (8px) + panel width + 4px gap
-    }
-    updateOffset();
+    const panel = document.querySelector('[data-panel-side="left"]') as HTMLElement | null;
+    if (!panel) return;
 
-    // Poll for changes since FloatingPanel writes to localStorage on resize
-    const interval = setInterval(updateOffset, 300);
-    return () => clearInterval(interval);
+    function sync() {
+      leftOffset = panel!.offsetLeft + panel!.offsetWidth + 4;
+    }
+    sync();
+
+    const ro = new ResizeObserver(sync);
+    ro.observe(panel);
+    return () => ro.disconnect();
   });
 
   let tree = $derived.by(() => buildTree(subSessions));
@@ -235,7 +234,7 @@
     top: 8px;
     z-index: 20;
     background: var(--bg-panel);
-    border-radius: 12px;
+    border-radius: 0 12px 12px 12px;
     box-shadow: var(--shadow-panel);
     min-width: 180px;
     max-width: 260px;
