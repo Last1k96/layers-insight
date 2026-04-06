@@ -534,35 +534,12 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
 
         # --- Side decision ---
         if is_major:
-            # Major groups: single group-level decision using median
-            # target, so all edges go to the same side.  Check existing
-            # corridor obstacles to avoid the occupied side.
+            # Major groups: go TOWARD the median target so edges never
+            # swing away from their destinations.  Multiple major groups
+            # on the same side are handled by conflict resolution
+            # (stacking), not by forcing to opposite sides.
             median_tgt = sorted(r["tgt_cx"] for r in corridor_routes)[len(corridor_routes) // 2]
-
-            # Also account for corridor obstacles in boundary to detect
-            # already-occupied sides.
-            obs_min = min_boundary
-            obs_max = max_boundary
-            for did in all_corridor_dummies:
-                dL = layer_of[did]
-                for cl, cr in corridor_obstacles[dL]:
-                    if cr > obs_max:
-                        obs_max = cr
-                    if cl < obs_min:
-                        obs_min = cl
-            obs_left = obs_min - NODE_SPACING if obs_min < float("inf") else left_corr
-            obs_right = obs_max + NODE_SPACING if obs_max > -float("inf") else right_corr
-
-            dist_left = abs(src_cx - obs_left) + abs(median_tgt - obs_left)
-            dist_right = abs(src_cx - obs_right) + abs(median_tgt - obs_right)
-            group_go_right = dist_right <= dist_left
-
-            # If the preferred side is already taken by another major
-            # group, force to the opposite side.
-            preferred_side = "right" if group_go_right else "left"
-            if major_side_taken is not None and preferred_side == major_side_taken:
-                group_go_right = not group_go_right
-            major_side_taken = "right" if group_go_right else "left"
+            group_go_right = median_tgt > src_cx
 
             for r in corridor_routes:
                 r["go_right"] = group_go_right
@@ -602,11 +579,15 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                 all_dummies.extend(r["dummies"])
 
             src_L = layer_of[src]
-            extra_layers = [L for L in range(max(0, src_L - 1), min(num_layers, src_L + 3))
+            # Only check the source layer and one below for B-spline
+            # entry curve clearance (not above or two below).
+            entry_layers = [L for L in range(src_L, min(num_layers, src_L + 2))
                             if layer_intervals[L]]
 
             # Resolve: major groups avoid real nodes AND other major
             # corridors.  Minor groups only avoid real nodes.
+            src_right = x_of[src] + ext_nmap[src]["width"]
+            src_left = x_of[src]
             for _ in range(20):
                 clear = True
                 lo_x = base - max_extent
@@ -620,22 +601,23 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                                     if go_right
                                     else (left - NODE_SPACING - max_extent))
                             clear = False
-                # Also check near the source.  The B-spline entry curve
-                # from the source exit to the first corridor waypoint
-                # swings through nearby nodes.  The B-spline first-segment
-                # endpoint is approximately (src_exit + 5*corridor) / 6,
-                # so compute the minimum corridor that clears each node.
-                src_right = x_of[src] + ext_nmap[src]["width"]
-                src_left = x_of[src]
-                for eL in extra_layers:
+                # B-spline entry curve check: only for nodes between
+                # the source and the corridor (not on the opposite side).
+                for eL in entry_layers:
                     for left, right in layer_intervals[eL]:
                         if go_right:
+                            # Skip nodes entirely to the left of source
+                            if right + NODE_SPACING < src_right:
+                                continue
                             min_corr = (6 * (right + NODE_SPACING) - src_right) / 5
                             needed = min_corr + max_extent
                             if base < needed:
                                 base = needed
                                 clear = False
                         else:
+                            # Skip nodes entirely to the right of source
+                            if left - NODE_SPACING > src_left:
+                                continue
                             max_corr = (6 * (left - NODE_SPACING) - src_left) / 5
                             needed = max_corr - max_extent
                             if base > needed:

@@ -393,31 +393,36 @@ class TestTransformerFanOut:
                         assert wp["x"] <= n_left - 5 or wp["x"] >= n_right + 5, \
                             f"{source} corridor wp x={wp['x']:.0f} overlaps {nid} [{n_left:.0f}, {n_right:.0f}] at y≈{ny:.0f}"
 
-    def test_competing_fanout_sources_use_opposite_sides(self):
-        """Where (Select) and Shape corridors must be on opposite sides."""
+    def test_competing_fanout_corridors_go_toward_targets(self):
+        """Corridors should route toward their targets, not away."""
         nodes, edges, key = self._build_transformer_graph()
         result = compute_dag_layout(nodes, edges)
         pos = result["nodes"]
 
-        def _corridor_median(source_name):
-            xs = []
+        def _corridor_and_targets(source_name):
+            corr_xs = []
+            tgt_xs = []
             for eidx, e in enumerate(edges):
                 if e["source"] != source_name:
                     continue
                 wps = result["edges"][f"e{eidx}"]["waypoints"]
-                xs.extend(wp["x"] for wp in wps[1:-1])
-            return sorted(xs)[len(xs) // 2] if xs else None
+                corr_xs.extend(wp["x"] for wp in wps[1:-1])
+                tgt_xs.append(wps[-1]["x"])
+            corr_med = sorted(corr_xs)[len(corr_xs) // 2] if corr_xs else None
+            tgt_med = sorted(tgt_xs)[len(tgt_xs) // 2] if tgt_xs else None
+            return corr_med, tgt_med
 
-        # Compute graph center
-        centers = [pos[n["id"]]["x"] + n["width"] / 2 for n in nodes]
-        graph_center = (min(centers) + max(centers)) / 2
-
-        w_med = _corridor_median("where")
-        s_med = _corridor_median("shape")
-        assert w_med is not None and s_med is not None
-        # Must be on opposite sides of graph center
-        assert (w_med < graph_center) != (s_med < graph_center), \
-            f"both on same side: where={w_med:.0f} shape={s_med:.0f} center={graph_center:.0f}"
+        for source in ("where", "shape"):
+            src_cx = pos[source]["x"] + [n for n in nodes if n["id"] == source][0]["width"] / 2
+            corr_med, tgt_med = _corridor_and_targets(source)
+            assert corr_med is not None and tgt_med is not None
+            # Corridor should be between source and targets (same side as targets)
+            if tgt_med < src_cx:
+                assert corr_med < src_cx, \
+                    f"{source}: targets at {tgt_med:.0f} (left of src {src_cx:.0f}) but corridor at {corr_med:.0f} (right)"
+            else:
+                assert corr_med > src_cx, \
+                    f"{source}: targets at {tgt_med:.0f} (right of src {src_cx:.0f}) but corridor at {corr_med:.0f} (left)"
 
     def test_residual_skip_not_pushed_to_fanout_corridors(self):
         """Residual connections (ln→add) must stay close to the graph, not
