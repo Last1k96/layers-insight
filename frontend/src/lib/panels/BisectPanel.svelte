@@ -113,7 +113,7 @@
         {/if}
 
         <div class="text-xs text-gray-500">
-          Range: full model (auto)
+          Range: {graphStore.activeSubSessionId ? 'sub-model' : 'full model'} (auto)
         </div>
 
         <button
