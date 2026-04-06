@@ -368,45 +368,66 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
             else:
                 tgt_cx = x_of[tgt_n] + ext_nmap[tgt_n]["width"] / 2
 
-            # Check whether step path (vertical from src, vertical to tgt)
-            # is clear.  Step routing = mostly vertical with smooth
-            # B-spline transition in the middle.
+            # Try step-routing strategies and pick the first that clears
+            # all intermediate layers.  For major fan-out groups (≥4
+            # parallel long edges), only try the standard step — we want
+            # those to fall through to corridor mode for bundled routing.
             par_off = (rank - (n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
-            straight_ok = True
-            for did in dummies:
-                dL = layer_of[did]
-                t = (dL - src_L) / span
-                # Step routing: first half at src_cx, second half at tgt_cx
-                check_x = (src_cx + par_off) if t <= 0.5 else tgt_cx
-                for left, right in layer_intervals[dL]:
-                    if left - NODE_SPACING <= check_x <= right + NODE_SPACING:
-                        straight_ok = False
+            strategies = [
+                lambda _t: (src_cx + par_off) if _t <= 0.5 else tgt_cx,
+            ]
+            if n_parallel < MAJOR_THRESHOLD:
+                strategies += [
+                    lambda _t: tgt_cx,
+                    lambda _t: src_cx + par_off,
+                ]
+            chosen_strat = None
+            for strat in strategies:
+                ok = True
+                for did in dummies:
+                    dL = layer_of[did]
+                    t = (dL - src_L) / span
+                    check_x = strat(t)
+                    for left, right in layer_intervals[dL]:
+                        if left - NODE_SPACING <= check_x <= right + NODE_SPACING:
+                            ok = False
+                            break
+                    if not ok:
                         break
-                if not straight_ok:
+                if ok:
+                    chosen_strat = strat
                     break
 
-            if straight_ok:
+            if chosen_strat is not None:
                 edge_routes.append({
                     "mode": "straight", "chain": chain, "dummies": dummies,
                     "src_L": src_L, "tgt_L": tgt_L, "src_cx": src_cx,
                     "tgt_cx": tgt_cx, "span": span,
+                    "strat": chosen_strat,
                 })
             elif span <= 5:
-                # Nudge mode: push each dummy just enough to clear
-                # obstacles.  Uses step-path ideal (vertical from src/tgt)
-                # and iteratively resolves overlaps.  Nudge the baseline
-                # first, then re-apply par_off so parallel edges stay spaced.
-                nudge_xs: list[float] = []
-                for did in dummies:
-                    dL = layer_of[did]
-                    t = (dL - src_L) / span
-                    baseline = src_cx if t <= 0.5 else tgt_cx
-                    nudged_base = _nudge_clear(baseline, layer_intervals[dL])
-                    best_x = _nudge_clear(nudged_base + par_off, layer_intervals[dL])
-                    nudge_xs.append(best_x)
+                # Nudge mode: pick the strategy with least total
+                # displacement, then nudge each dummy to clear.
+                best_nudge: list[float] | None = None
+                best_cost = float("inf")
+                for strat in strategies:
+                    xs: list[float] = []
+                    cost = 0.0
+                    for did in dummies:
+                        dL = layer_of[did]
+                        t = (dL - src_L) / span
+                        baseline = strat(t)
+                        raw = baseline - par_off  # remove par_off for baseline nudge
+                        nudged = _nudge_clear(raw, layer_intervals[dL])
+                        final = _nudge_clear(nudged + par_off, layer_intervals[dL])
+                        xs.append(final)
+                        cost += abs(final - baseline)
+                    if cost < best_cost:
+                        best_cost = cost
+                        best_nudge = xs
                 edge_routes.append({
                     "mode": "nudge", "chain": chain, "dummies": dummies,
-                    "nudge_xs": nudge_xs,
+                    "nudge_xs": best_nudge,
                 })
             else:
                 edge_routes.append({
@@ -424,11 +445,11 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                     for did, nx in zip(route["dummies"], route["nudge_xs"]):
                         x_of[did] = nx
                 elif route["mode"] == "straight":
-                    par_off = (rank - (n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
+                    strat = route["strat"]
                     for did in route["dummies"]:
                         dL = layer_of[did]
                         t = (dL - route["src_L"]) / route["span"]
-                        x_of[did] = (route["src_cx"] + par_off) if t <= 0.5 else route["tgt_cx"]
+                        x_of[did] = strat(t)
             continue
 
         # --- Compute corridor boundary (real nodes only for side decision) ---
@@ -605,11 +626,11 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                 for did, nx in zip(route["dummies"], route["nudge_xs"]):
                     x_of[did] = nx
             elif route["mode"] == "straight":
-                par_off = (rank - (n_parallel - 1) / 2) * EDGE_SPACING if n_parallel > 1 else 0
+                strat = route["strat"]
                 for did in route["dummies"]:
                     dL = layer_of[did]
                     t = (dL - route["src_L"]) / route["span"]
-                    x_of[did] = (route["src_cx"] + par_off) if t <= 0.5 else route["tgt_cx"]
+                    x_of[did] = strat(t)
 
 
 # ---------------------------------------------------------------------------
