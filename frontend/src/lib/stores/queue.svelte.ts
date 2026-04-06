@@ -311,14 +311,19 @@ class QueueStore {
     this.selectedTaskId = null;
   }
 
+  /** Combined navigable list: regular filtered tasks + bisect tasks (in inference order). */
+  get navigableList(): InferenceTask[] {
+    return [...this.filteredTasks, ...this.bisectTasks];
+  }
+
   selectByNodeId(nodeId: string | null): void {
     if (!nodeId) { this.selectedTaskId = null; return; }
-    const task = this.filteredTasks.find(t => t.node_id === nodeId);
+    const task = this.navigableList.find(t => t.node_id === nodeId);
     this.selectedTaskId = task?.task_id ?? null;
   }
 
   moveSelection(direction: 1 | -1): InferenceTask | null {
-    const tasks = this.filteredTasks;
+    const tasks = this.navigableList;
     if (tasks.length === 0) return null;
     const currentIdx = this.selectedTaskId
       ? tasks.findIndex(t => t.task_id === this.selectedTaskId)
