@@ -48,6 +48,15 @@ export function setupInteractions(): void {
   function handleClick(e: MouseEvent) {
     if (camera!.didDrag) return;
 
+    // Ghost indicator gets priority over nodes (ghosts overlap edge endpoints)
+    const ghostNodeId = hitTestGhost(e);
+    if (ghostNodeId) {
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
+      centerOnNode(ghostNodeId);
+      refreshRenderer();
+      return;
+    }
+
     const nodeId = hitTestNode(e);
 
     if (nodeId) {
@@ -60,15 +69,6 @@ export function setupInteractions(): void {
         if (ctrlKey) centerOnNode(nodeId);
         refreshRenderer();
       }, 250);
-      return;
-    }
-
-    // Ghost indicator hit: focus on the node without changing selection
-    const ghostNodeId = hitTestGhost(e);
-    if (ghostNodeId) {
-      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
-      centerOnNode(ghostNodeId);
-      refreshRenderer();
       return;
     }
 

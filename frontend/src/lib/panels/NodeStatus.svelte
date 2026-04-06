@@ -2,7 +2,7 @@
   import { graphStore } from '../stores/graph.svelte';
   import { queueStore } from '../stores/queue.svelte';
   import { sessionStore } from '../stores/session.svelte';
-  import { refreshRenderer, centerOnNode, setHoveredNode } from '../graph/renderer';
+  import { refreshRenderer, centerOnNode, setHoveredNode, setHoveredEdge } from '../graph/renderer';
   import type { ConstantData } from '../stores/types';
 
   let selectedNode = $derived(graphStore.selectedNode);
@@ -18,15 +18,27 @@
 
   let outputs = $derived.by(() => {
     if (!selectedNode || !graphStore.graphData) return [];
-    const edges = graphStore.graphData.edges.filter(e => e.source === selectedNode.id);
+    const allEdges = graphStore.graphData.edges;
     const nodeMap = new Map(graphStore.graphData.nodes.map(n => [n.id, n]));
-    return edges.map(e => ({
-      source_port: e.source_port,
-      target_port: e.target_port,
-      targetNode: nodeMap.get(e.target),
-      targetId: e.target,
-    }));
+    const result: Array<{ source_port: number; target_port: number; targetNode: typeof graphStore.graphData.nodes[0] | undefined; targetId: string; edgeIndex: number }> = [];
+    for (let i = 0; i < allEdges.length; i++) {
+      const e = allEdges[i];
+      if (e.source === selectedNode.id) {
+        result.push({ source_port: e.source_port, target_port: e.target_port, targetNode: nodeMap.get(e.target), targetId: e.target, edgeIndex: i });
+      }
+    }
+    return result;
   });
+
+  /** Find the edge index for an input connection (source -> selectedNode). */
+  function findInputEdgeIndex(sourceNodeId: string, targetPort: number): number | null {
+    if (!graphStore.graphData) return null;
+    const edges = graphStore.graphData.edges;
+    for (let i = 0; i < edges.length; i++) {
+      if (edges[i].source === sourceNodeId && edges[i].target === selectedNode?.id && edges[i].target_port === targetPort) return i;
+    }
+    return null;
+  }
 
   // Constant data cache: const_node_name -> data
   let constDataCache = $state(new Map<string, ConstantData>());
@@ -569,11 +581,13 @@
                 {#if !inp.is_const}
                   <button
                     class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
-                    title={inp.name}
                     onmouseenter={() => {
-                      if (sourceNode) setHoveredNode(sourceNode.id);
+                      if (sourceNode) {
+                        setHoveredNode(sourceNode.id);
+                        setHoveredEdge(findInputEdgeIndex(sourceNode.id, idx));
+                      }
                     }}
-                    onmouseleave={() => setHoveredNode(null)}
+                    onmouseleave={() => { setHoveredNode(null); setHoveredEdge(null); }}
                     onclick={(e) => {
                       if (sourceNode) {
                         graphStore.selectNode(sourceNode.id);
@@ -650,9 +664,8 @@
                 <span class="text-content-secondary/25 font-mono w-4 shrink-0">{out.source_port}</span>
                 <button
                   class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
-                  title={out.targetNode?.name ?? out.targetId}
-                  onmouseenter={() => setHoveredNode(out.targetId)}
-                  onmouseleave={() => setHoveredNode(null)}
+                  onmouseenter={() => { setHoveredNode(out.targetId); setHoveredEdge(out.edgeIndex); }}
+                  onmouseleave={() => { setHoveredNode(null); setHoveredEdge(null); }}
                   onclick={(e) => {
                     graphStore.selectNode(out.targetId);
                     refreshRenderer();

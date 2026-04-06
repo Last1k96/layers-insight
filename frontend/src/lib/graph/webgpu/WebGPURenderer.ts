@@ -572,11 +572,11 @@ export class WebGPURenderer {
     if (w === 0 || h === 0) return;
 
     const MARGIN = 40;
-    const FONT_SIZE = 11;
-    const PAD_X = 8;
-    const PAD_Y = 4;
-    const ARROW_SIZE = 12;
-    const GAP = 4;
+    const FONT_SIZE = 14;
+    const PAD_X = 12;
+    const PAD_Y = 8;
+    const ARROW_SIZE = 16;
+    const GAP = 6;
 
     // Colors matching the old ghost node style
     const bgColor = { r: 0.106, g: 0.118, b: 0.169, a: 0.9 };          // rgba(27,30,43,0.9)
