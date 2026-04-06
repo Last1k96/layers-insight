@@ -302,11 +302,28 @@ export function buildEdgeGeometry(
       );
     }
 
-    // Arrowhead at the endpoint — use end color
-    const last = points[points.length - 1];
-    const prev = points[points.length - 2];
-    const adx = last.x - prev.x;
-    const ady = last.y - prev.y;
+    // Arrowhead at the endpoint — base walks back along the curve so
+    // the arrow sits on the edge and follows its approach direction.
+    const tip = points[points.length - 1];
+    let baseX = tip.x, baseY = tip.y;
+    let remaining = ARROW_LENGTH;
+    for (let i = points.length - 1; i > 0 && remaining > 0; i--) {
+      const dx = points[i].x - points[i - 1].x;
+      const dy = points[i].y - points[i - 1].y;
+      const segLen = Math.sqrt(dx * dx + dy * dy);
+      if (segLen >= remaining) {
+        const t = remaining / segLen;
+        baseX = points[i].x - dx * t;
+        baseY = points[i].y - dy * t;
+        remaining = 0;
+      } else {
+        remaining -= segLen;
+        baseX = points[i - 1].x;
+        baseY = points[i - 1].y;
+      }
+    }
+    const adx = tip.x - baseX;
+    const ady = tip.y - baseY;
     const alen = Math.sqrt(adx * adx + ady * ady);
     if (alen > 0.001) {
       const dirX = adx / alen;
@@ -314,9 +331,8 @@ export function buildEdgeGeometry(
       const perpX = -dirY;
       const perpY = dirX;
 
-      const tip = last;
-      const base1 = { x: tip.x - dirX * ARROW_LENGTH + perpX * ARROW_HALF_WIDTH, y: tip.y - dirY * ARROW_LENGTH + perpY * ARROW_HALF_WIDTH };
-      const base2 = { x: tip.x - dirX * ARROW_LENGTH - perpX * ARROW_HALF_WIDTH, y: tip.y - dirY * ARROW_LENGTH - perpY * ARROW_HALF_WIDTH };
+      const base1 = { x: baseX + perpX * ARROW_HALF_WIDTH, y: baseY + perpY * ARROW_HALF_WIDTH };
+      const base2 = { x: baseX - perpX * ARROW_HALF_WIDTH, y: baseY - perpY * ARROW_HALF_WIDTH };
 
       setColorAtT(color.start, color.end, 1.0);
       pushVertex(tip.x, tip.y, 0, 0);
@@ -463,21 +479,36 @@ export function buildPathGeometry(
       );
     }
 
-    // Arrowhead at the end
-    const last = allPoints[allPoints.length - 1];
-    const prev = allPoints[allPoints.length - 2];
-    const adx = last.x - prev.x;
-    const ady = last.y - prev.y;
-    const alen = Math.sqrt(adx * adx + ady * ady);
-    if (alen > 0.001) {
-      const dirX = adx / alen;
-      const dirY = ady / alen;
+    // Arrowhead at the end — base walks back along the curve
+    const pathTip = allPoints[allPoints.length - 1];
+    let pathBaseX = pathTip.x, pathBaseY = pathTip.y;
+    let pathRemaining = PATH_ARROW_LENGTH;
+    for (let i = allPoints.length - 1; i > 0 && pathRemaining > 0; i--) {
+      const dx = allPoints[i].x - allPoints[i - 1].x;
+      const dy = allPoints[i].y - allPoints[i - 1].y;
+      const segLen = Math.sqrt(dx * dx + dy * dy);
+      if (segLen >= pathRemaining) {
+        const t = pathRemaining / segLen;
+        pathBaseX = allPoints[i].x - dx * t;
+        pathBaseY = allPoints[i].y - dy * t;
+        pathRemaining = 0;
+      } else {
+        pathRemaining -= segLen;
+        pathBaseX = allPoints[i - 1].x;
+        pathBaseY = allPoints[i - 1].y;
+      }
+    }
+    const padx = pathTip.x - pathBaseX;
+    const pady = pathTip.y - pathBaseY;
+    const palen = Math.sqrt(padx * padx + pady * pady);
+    if (palen > 0.001) {
+      const dirX = padx / palen;
+      const dirY = pady / palen;
       const perpX = -dirY;
       const perpY = dirX;
-      const tip = last;
-      const b1 = { x: tip.x - dirX * PATH_ARROW_LENGTH + perpX * PATH_ARROW_HALF_WIDTH, y: tip.y - dirY * PATH_ARROW_LENGTH + perpY * PATH_ARROW_HALF_WIDTH };
-      const b2 = { x: tip.x - dirX * PATH_ARROW_LENGTH - perpX * PATH_ARROW_HALF_WIDTH, y: tip.y - dirY * PATH_ARROW_LENGTH - perpY * PATH_ARROW_HALF_WIDTH };
-      pushVertex(tip.x, tip.y, 0, 0);
+      const b1 = { x: pathBaseX + perpX * PATH_ARROW_HALF_WIDTH, y: pathBaseY + perpY * PATH_ARROW_HALF_WIDTH };
+      const b2 = { x: pathBaseX - perpX * PATH_ARROW_HALF_WIDTH, y: pathBaseY - perpY * PATH_ARROW_HALF_WIDTH };
+      pushVertex(pathTip.x, pathTip.y, 0, 0);
       pushVertex(b1.x, b1.y, 0, 0);
       pushVertex(b2.x, b2.y, 0, 0);
     }
