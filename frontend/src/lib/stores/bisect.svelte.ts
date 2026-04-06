@@ -1,5 +1,6 @@
 import type { BisectQueueItem, BisectJobStatus } from './types';
 import { queueStore } from './queue.svelte';
+import { graphStore } from './graph.svelte';
 
 export type BisectSearchFor = 'accuracy_drop' | 'compilation_failure';
 export type BisectMetric = 'cosine_similarity' | 'mse' | 'max_abs_diff';
@@ -21,12 +22,18 @@ class BisectStore {
    */
   busy = $state(false);
 
+  /** Jobs matching the currently active sub-session. */
+  get visibleJobs(): BisectQueueItem[] {
+    const activeSubId = graphStore.activeSubSessionId ?? null;
+    return this.jobs.filter(j => (j.sub_session_id ?? null) === activeSubId);
+  }
+
   get activeJobs(): BisectQueueItem[] {
-    return this.jobs.filter(j => j.status === 'running' || j.status === 'paused');
+    return this.visibleJobs.filter(j => j.status === 'running' || j.status === 'paused');
   }
 
   get finishedJobs(): BisectQueueItem[] {
-    return this.jobs.filter(j => j.status === 'done' || j.status === 'error' || j.status === 'stopped');
+    return this.visibleJobs.filter(j => j.status === 'done' || j.status === 'error' || j.status === 'stopped');
   }
 
   get isActive(): boolean {
@@ -34,7 +41,7 @@ class BisectStore {
   }
 
   get hasJobs(): boolean {
-    return this.jobs.length > 0;
+    return this.visibleJobs.length > 0;
   }
 
   async start(sessionId: string, subSessionId?: string | null): Promise<boolean> {
