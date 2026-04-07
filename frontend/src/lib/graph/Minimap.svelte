@@ -264,17 +264,10 @@
   });
 </script>
 
-<div class="absolute bottom-4 right-4 z-20">
-  <button
-    class="absolute -top-7 right-0 px-2 py-0.5 text-xs text-gray-400 bg-[--bg-panel] border border-[--border-color] rounded-t hover:bg-[--bg-menu] transition-colors"
-    onclick={() => { collapsed = !collapsed; localStorage.setItem('minimap-collapsed', String(collapsed)); }}
-  >
-    {collapsed ? 'Map' : 'Hide'}
-  </button>
-
+<div class="absolute bottom-4 right-4 z-20 flex flex-col items-end">
   {#if !collapsed}
     <div
-      class="relative border border-[--border-color] rounded bg-[--bg-primary] overflow-hidden shadow-lg"
+      class="relative border border-[--border-color] rounded-t bg-[--bg-primary] overflow-hidden shadow-lg"
       style="width: {mmWidth}px; height: {mmHeight}px;"
     >
       <!-- Resize handle (top-left corner) -->
@@ -298,4 +291,10 @@
       ></canvas>
     </div>
   {/if}
+  <button
+    class="px-2 py-0.5 text-xs text-gray-400 bg-[--bg-panel] border border-[--border-color] {collapsed ? 'rounded' : 'rounded-b border-t-0'} hover:bg-[--bg-menu] transition-colors"
+    onclick={() => { collapsed = !collapsed; localStorage.setItem('minimap-collapsed', String(collapsed)); }}
+  >
+    {collapsed ? 'Map' : 'Hide'}
+  </button>
 </div>
