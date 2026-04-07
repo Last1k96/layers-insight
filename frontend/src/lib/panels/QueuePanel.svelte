@@ -171,16 +171,16 @@
   <!-- Action buttons -->
   <div class="flex items-center gap-1.5 px-3 py-1.5 shrink-0 border-b border-content-secondary/8">
     <button
-      class="flex-1 py-1.5 text-xs font-medium text-gray-300 hover:text-gray-100 hover:bg-surface-elevated rounded-md transition-all duration-100 active:scale-[0.98]"
-      onclick={onbatchinfer}
-    >
-      Batch Infer
-    </button>
-    <button
       class="flex-1 py-1.5 text-xs font-medium hover:bg-surface-elevated rounded-md transition-all duration-100 active:scale-[0.98] {bisectStore.isActive ? 'text-blue-400' : 'text-gray-300 hover:text-gray-100'}"
       onclick={onbisect}
     >
       Bisect{bisectStore.isActive ? ' \u25CF' : ''}
+    </button>
+    <button
+      class="flex-1 py-1.5 text-xs font-medium text-gray-300 hover:text-gray-100 hover:bg-surface-elevated rounded-md transition-all duration-100 active:scale-[0.98]"
+      onclick={onbatchinfer}
+    >
+      Batch Infer
     </button>
     <button
       class="flex-1 py-1.5 text-xs font-medium hover:bg-surface-elevated rounded-md transition-all duration-100 active:scale-[0.98] {logStore.visible ? 'text-blue-400' : 'text-gray-300 hover:text-gray-100'}"
