@@ -143,10 +143,20 @@
         <button
           class="flex-1 min-w-0 py-2 text-xs rounded-lg border border-dashed border-content-secondary/10 text-content-secondary/30 hover:text-accent hover:border-accent/30 transition-colors"
           onclick={() => advancedFilterStore.addRule()}
-        >+ Add Rule</button>
+        >+ Add Filter</button>
       </div>
     {:else}
       <div class="relative" bind:this={listEl}>
+        <!-- Add Filter button (max 10 rules) -->
+        <div class="flex mb-1.5">
+          <div class="{CONN_COL_W} shrink-0"></div>
+          <button
+            class="flex-1 min-w-0 py-2 text-xs rounded-lg border border-dashed transition-colors {advancedFilterStore.rules.length >= 10 ? 'text-content-secondary/20 border-content-secondary/5 cursor-not-allowed' : 'text-content-secondary/30 border-content-secondary/10 hover:text-accent hover:border-accent/30'}"
+            disabled={advancedFilterStore.rules.length >= 10}
+            onclick={() => advancedFilterStore.addRule()}
+          >+ Add Filter{advancedFilterStore.rules.length >= 10 ? ' (max 10)' : ''}</button>
+        </div>
+
         <!-- AND/OR connectors: separate layer, not inside row divs -->
         {#each connectorTops as top, i (i)}
           {@const conn = advancedFilterStore.connectors[i] ?? 'AND'}
@@ -185,15 +195,6 @@
           {/each}
         </div>
 
-        <!-- Add Rule button (max 10 rules) -->
-        <div class="flex mt-1.5">
-          <div class="{CONN_COL_W} shrink-0"></div>
-          <button
-            class="flex-1 min-w-0 py-2 text-xs rounded-lg border border-dashed transition-colors {advancedFilterStore.rules.length >= 10 ? 'text-content-secondary/20 border-content-secondary/5 cursor-not-allowed' : 'text-content-secondary/30 border-content-secondary/10 hover:text-accent hover:border-accent/30'}"
-            disabled={advancedFilterStore.rules.length >= 10}
-            onclick={() => advancedFilterStore.addRule()}
-          >+ Add Rule{advancedFilterStore.rules.length >= 10 ? ' (max 10)' : ''}</button>
-        </div>
       </div>
     {/if}
   </div>

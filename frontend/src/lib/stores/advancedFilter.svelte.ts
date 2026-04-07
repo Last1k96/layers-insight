@@ -69,9 +69,9 @@ class AdvancedFilterStore {
       value: '',
     };
     if (this.rules.length > 0) {
-      this.connectors = ['AND', ...this.connectors];
+      this.connectors = [...this.connectors, 'AND'];
     }
-    this.rules = [rule, ...this.rules];
+    this.rules = [...this.rules, rule];
     this.persist();
   }
 
