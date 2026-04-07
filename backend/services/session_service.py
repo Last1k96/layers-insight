@@ -94,14 +94,14 @@ class SessionService:
                     shutil.move(str(f), str(session_path / f.name))
             rel_model_path = "model.xml"
         else:
-            # Copy model .xml into session, symlink .bin weights
+            # Copy model .xml and .bin into session (self-contained)
             local_xml = session_path / original_xml.name
             shutil.copy2(str(original_xml), str(local_xml))
 
             original_bin = original_xml.with_suffix(".bin")
             if original_bin.exists():
                 local_bin = session_path / original_bin.name
-                local_bin.symlink_to(original_bin.resolve())
+                shutil.copy2(str(original_bin), str(local_bin))
 
             # Store session-relative model path (just the filename)
             rel_model_path = original_xml.name
@@ -304,6 +304,21 @@ class SessionService:
             for f in src.iterdir():
                 if f.is_file():
                     shutil.move(str(f), str(task_dir / f.name))
+
+            # Replace cut_model.bin with symlink to root session model.bin to save disk space.
+            # Inference works fine with the full .bin paired with a cut .xml.
+            cut_bin = task_dir / "cut_model.bin"
+            if cut_bin.exists() and not cut_bin.is_symlink():
+                model_xml_rel = meta["config"]["model_path"]
+                model_bin = self._session_path(session_id) / Path(model_xml_rel).with_suffix(".bin")
+
+                if model_bin.exists():
+                    cut_bin.unlink()
+                    cut_bin.symlink_to(model_bin.resolve())
+
+            # Remove fp16 model variants — only needed during inference
+            for fp16_file in task_dir.glob("cut_model_fp16.*"):
+                fp16_file.unlink()
 
     def load_task_result(self, session_id: str, task_id: str) -> dict:
         """Load task result metadata."""

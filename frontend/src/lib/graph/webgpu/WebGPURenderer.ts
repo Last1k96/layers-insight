@@ -355,17 +355,20 @@ export class WebGPURenderer {
     if (!accuracyViewActive) {
       // Only rebuild when edge coloring actually changes — not every frame
       const hasGrayed = grayedNodes.size > 0;
-      const isColored = searchActive || highlightEdge !== null || hasGrayed;
+      const hasOverrides = nodeOverrides !== undefined && nodeOverrides.size > 0;
+      const isColored = searchActive || highlightEdge !== null || hasGrayed || hasOverrides;
       const wasColored = this._lastEdgeMode !== 'default';
       const needsRebuild = edgeHighlightChanged || grayedChanged || (isColored !== wasColored);
 
       if (needsRebuild) {
         const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 }; // #4C8DFF
         const dim = { r: 0.184, g: 0.200, b: 0.255, a: 0.3 };
-        const grayDim = { r: 0.137, g: 0.149, b: 0.212, a: 0.25 };
+        const grayDim = { r: 0.353, g: 0.376, b: 0.502, a: 0.35 };
         const edgeVerts = buildEdgeGeometry(this.graphData.edges, this.graphData.nodes, this.nodeSizeFn!, (edge, idx) => {
           if (idx === highlightEdge) return { start: hl, end: hl };
           if (grayedNodes.has(edge.source) || grayedNodes.has(edge.target)) return { start: grayDim, end: grayDim };
+          // Gray incoming edges to Parameter nodes (cut-as-input overrides)
+          if (hasOverrides && nodeOverrides!.has(edge.target)) return { start: grayDim, end: grayDim };
           if (searchActive) return { start: dim, end: dim };
           return undefined as any; // use default
         });

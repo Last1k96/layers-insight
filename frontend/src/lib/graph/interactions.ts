@@ -26,7 +26,8 @@ export function setupInteractions(): void {
     const edges = graphStore.graphData?.edges;
     if (!edges || edgeIndex >= edges.length) return false;
     const edge = edges[edgeIndex];
-    return graphStore.grayedNodes.has(edge.source) || graphStore.grayedNodes.has(edge.target);
+    return graphStore.grayedNodes.has(edge.source) || graphStore.grayedNodes.has(edge.target)
+      || graphStore.nodeOverrides.has(edge.target);
   }
 
   function hitTestNode(e: MouseEvent): string | null {
