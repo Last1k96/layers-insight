@@ -316,10 +316,6 @@ class SessionService:
                     cut_bin.unlink()
                     cut_bin.symlink_to(model_bin.resolve())
 
-            # Remove fp16 model variants — only needed during inference
-            for fp16_file in task_dir.glob("cut_model_fp16.*"):
-                fp16_file.unlink()
-
     def load_task_result(self, session_id: str, task_id: str) -> dict:
         """Load task result metadata."""
         meta = self._read_metadata(session_id)
