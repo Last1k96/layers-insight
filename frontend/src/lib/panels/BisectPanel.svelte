@@ -5,9 +5,29 @@
 
   let {
     onclose,
+    endNodeId = null,
+    endNodeName = null,
+    initialSearchFor = null,
   }: {
     onclose: () => void;
+    endNodeId?: string | null;
+    endNodeName?: string | null;
+    initialSearchFor?: 'accuracy_drop' | 'compilation_failure' | null;
   } = $props();
+
+  type BisectTab = 'full-model' | 'from-node';
+  const TAB_LABELS: Record<BisectTab, string> = {
+    'full-model': 'Full Model',
+    'from-node': 'From Node',
+  };
+
+  let activeTab = $state<BisectTab>(endNodeId ? 'from-node' : 'full-model');
+
+  // Auto-detect search_for when opened from a node
+  if (initialSearchFor) {
+    bisectStore.searchFor = initialSearchFor;
+    bisectStore.threshold = defaultThreshold(bisectStore.metric, initialSearchFor);
+  }
 
   const metricLabels: Record<string, string> = {
     cosine_similarity: 'Cosine similarity',
@@ -43,7 +63,8 @@
     const session = sessionStore.currentSession;
     if (!session) return;
     bisectStore.error = null;
-    const ok = await bisectStore.start(session.id, graphStore.activeSubSessionId);
+    const endNode = activeTab === 'from-node' ? endNodeId : null;
+    const ok = await bisectStore.start(session.id, graphStore.activeSubSessionId, endNode);
     if (ok) {
       onclose();
     }
@@ -67,7 +88,26 @@
       <button class="text-gray-400 hover:text-gray-200 text-xs" onclick={onclose}>Close</button>
     </div>
 
+    <!-- Tabs -->
+    <div class="flex bg-surface-base/50">
+      {#each (['full-model', 'from-node'] as const) as tab (tab)}
+        <button
+          class="flex-1 px-2 py-2.5 text-xs text-center transition-all duration-100 {activeTab === tab ? 'text-accent border-b-2 border-accent' : 'text-content-secondary/40 hover:text-content-secondary'}"
+          disabled={tab === 'from-node' && !endNodeId}
+          onclick={() => { activeTab = tab; }}
+        >
+          {TAB_LABELS[tab]}
+        </button>
+      {/each}
+    </div>
+
       <div class="p-4 space-y-3">
+        {#if activeTab === 'from-node' && endNodeName}
+          <div class="text-xs text-gray-400">
+            End node: <span class="text-gray-200 font-mono">{endNodeName}</span>
+          </div>
+        {/if}
+
         <label class="block text-xs">
           <span class="text-gray-400">Search for:</span>
           <select
@@ -113,7 +153,11 @@
         {/if}
 
         <div class="text-xs text-gray-500">
-          Range: {graphStore.activeSubSessionId ? 'sub-model' : 'full model'} (auto)
+          {#if activeTab === 'from-node' && endNodeName}
+            Range: start &rarr; {endNodeName}
+          {:else}
+            Range: {graphStore.activeSubSessionId ? 'sub-model' : 'full model'} (auto)
+          {/if}
         </div>
 
         <button

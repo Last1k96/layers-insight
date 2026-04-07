@@ -31,6 +31,9 @@
   let accuracyOutputIndex = $state(0);
   let showBatchQueue = $state(false);
   let showBisectPanel = $state(false);
+  let bisectEndNodeId = $state<string | null>(null);
+  let bisectEndNodeName = $state<string | null>(null);
+  let bisectInitialSearchFor = $state<'accuracy_drop' | 'compilation_failure' | null>(null);
   let batchQueueInitialMode = $state<'all' | 'by-type' | 'uninferred' | 'from-selection'>('all');
   let loadingPct = $state(0);
 
@@ -258,7 +261,7 @@
     {/snippet}
     <QueuePanel
       onbatchinfer={() => { batchQueueInitialMode = 'all'; showBatchQueue = true; }}
-      onbisect={() => showBisectPanel = !showBisectPanel}
+      onbisect={() => { bisectEndNodeId = null; bisectEndNodeName = null; bisectInitialSearchFor = null; showBisectPanel = !showBisectPanel; }}
       ontogglelog={() => logStore.toggle()}
     />
   </FloatingPanel>
@@ -267,6 +270,15 @@
     <NodeStatus
       onshowaccuracy={(outputIdx?: number) => { accuracyOutputIndex = outputIdx ?? 0; showAccuracyView = true; }}
       onshowbatchqueue={() => { batchQueueInitialMode = 'from-selection'; showBatchQueue = true; }}
+      onbisect={() => {
+        const node = graphStore.selectedNode;
+        const status = graphStore.selectedNodeStatus;
+        if (!node) return;
+        bisectEndNodeId = node.id;
+        bisectEndNodeName = node.name;
+        bisectInitialSearchFor = status?.status === 'failed' ? 'compilation_failure' : 'accuracy_drop';
+        showBisectPanel = true;
+      }}
     />
   </FloatingPanel>
 
@@ -361,5 +373,10 @@
 </style>
 
 {#if showBisectPanel}
-  <BisectPanel onclose={() => showBisectPanel = false} />
+  <BisectPanel
+    onclose={() => { showBisectPanel = false; bisectEndNodeId = null; bisectEndNodeName = null; bisectInitialSearchFor = null; }}
+    endNodeId={bisectEndNodeId}
+    endNodeName={bisectEndNodeName}
+    initialSearchFor={bisectInitialSearchFor}
+  />
 {/if}

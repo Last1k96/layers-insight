@@ -111,9 +111,11 @@
   let {
     onshowaccuracy = (_outputIdx?: number) => {},
     onshowbatchqueue = () => {},
+    onbisect = () => {},
   }: {
     onshowaccuracy?: (outputIdx?: number) => void;
     onshowbatchqueue?: () => void;
+    onbisect?: () => void;
   } = $props();
 
   function handleDeepAccuracy(outputIdx?: number) {
@@ -423,6 +425,12 @@
           </button>
           <button
             class="w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
+            onclick={onbisect}
+          >
+            Bisect from Node
+          </button>
+          <button
+            class="w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
             onclick={onshowbatchqueue}
           >
             Batch Queue
@@ -545,6 +553,12 @@
         <div class="mt-4 space-y-2">
           <button
             class="w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
+            onclick={onbisect}
+          >
+            Bisect from Node
+          </button>
+          <button
+            class="w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
             onclick={onshowbatchqueue}
           >
             Batch Queue
@@ -604,7 +618,13 @@
         <pre class="bg-surface-base rounded-lg p-3 text-xs text-red-300/80 overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{nodeStatus.errorDetail}</pre>
       {/if}
       <button
-        class="mt-3 w-full py-2 rounded-lg text-xs transition-all duration-100 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 active:scale-[0.98]"
+        class="mt-3 w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
+        onclick={onbisect}
+      >
+        Bisect from Node
+      </button>
+      <button
+        class="mt-2 w-full py-2 rounded-lg text-xs transition-all duration-100 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 active:scale-[0.98]"
         onclick={handleDelete}
       >
         Delete
