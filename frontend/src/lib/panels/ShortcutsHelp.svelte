@@ -57,10 +57,6 @@
           </div>
         {/each}
         <div class="shortcut-row">
-          <kbd class="shortcut-key">Ctrl+F</kbd>
-          <span class="shortcut-desc">Open search (also works in interactions)</span>
-        </div>
-        <div class="shortcut-row">
           <kbd class="shortcut-key">Alt (hold)</kbd>
           <span class="shortcut-desc">Accuracy view mode</span>
         </div>

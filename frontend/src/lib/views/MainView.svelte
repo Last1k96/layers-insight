@@ -24,6 +24,8 @@
   import { installShortcuts, uninstallShortcuts, registerShortcut, toggleHelp, setHelpVisible } from '../shortcuts';
   import { onMount, onDestroy } from 'svelte';
 
+  let { onback = () => {} }: { onback?: () => void } = $props();
+
   let wsDisconnected = $state(false);
   let renamingSession = $state(false);
   let renameValue = $state('');
@@ -197,8 +199,9 @@
     });
 
     registerShortcut({
-      key: 'F',
+      key: 'Ctrl+F',
       description: 'Open search',
+      allowInInput: true,
       handler(e) {
         e.preventDefault();
         graphStore.searchVisible = !graphStore.searchVisible;
@@ -226,6 +229,7 @@
   <!-- Minimap -->
   <Minimap />
 
+
   <!-- Accuracy toggle (top-right of graph canvas) -->
   <AccuracyToggle />
 
@@ -238,6 +242,15 @@
   <!-- Floating panels -->
   <FloatingPanel side="left" title="Queue">
     {#snippet header()}
+      <button
+        class="back-btn"
+        onclick={onback}
+        title="Back to sessions"
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10 12L6 8l4-4" />
+        </svg>
+      </button>
       {#if renamingSession}
         <!-- svelte-ignore a11y_autofocus -->
         <input
@@ -321,6 +334,27 @@
 <ShortcutsHelp />
 
 <style>
+  .back-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    cursor: pointer;
+    padding: 0.3rem;
+    margin-right: 0.25rem;
+    border-radius: 0.375rem;
+    color: var(--text-secondary);
+    opacity: 0.5;
+    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+  }
+
+  .back-btn:hover {
+    opacity: 1;
+    color: var(--text-primary);
+    background: rgba(76, 141, 255, 0.1);
+  }
+
   .session-name-header {
     overflow: hidden;
     white-space: nowrap;
