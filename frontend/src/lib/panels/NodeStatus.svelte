@@ -180,6 +180,32 @@
     if (a == null || b == null) return null;
     return a - b;
   }
+
+  // Accuracy quality classification for color-coding
+  function metricQuality(cosine: number | undefined | null): 'good' | 'warn' | 'bad' {
+    if (cosine == null) return 'warn';
+    if (cosine >= 0.9999) return 'good';
+    if (cosine >= 0.999) return 'warn';
+    return 'bad';
+  }
+
+  const QUALITY_TEXT_CLS: Record<string, string> = {
+    good: 'text-emerald-400',
+    warn: 'text-amber-400',
+    bad: 'text-red-400',
+  };
+
+  const QUALITY_BG_CLS: Record<string, string> = {
+    good: 'bg-emerald-500',
+    warn: 'bg-amber-500',
+    bad: 'bg-red-500',
+  };
+
+  const QUALITY_GLOW: Record<string, string> = {
+    good: 'shadow-[0_0_8px_rgba(16,185,129,0.3)]',
+    warn: 'shadow-[0_0_8px_rgba(245,158,11,0.3)]',
+    bad: 'shadow-[0_0_8px_rgba(239,68,68,0.3)]',
+  };
 </script>
 
 <div class="p-3 overflow-y-auto h-full text-sm">
@@ -257,7 +283,7 @@
       >{selectedNode.name}</span>
       <div
         class="block w-fit text-xs font-medium mt-1 px-2 py-0.5 rounded-md"
-        style="background-color: {selectedNode.color}; border: 2px solid {chipBorderColor}; color: {chipTextDark ? '#1B1E2B' : '#E1E4ED'};"
+        style="background-color: {selectedNode.color}; color: {chipTextDark ? '#1B1E2B' : '#E1E4ED'};"
       >{selectedNode.type}</div>
       {#if (selectedNode.inputs && selectedNode.inputs.length > 0) || selectedNode.shape}
         <div class="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs items-baseline">
@@ -294,7 +320,7 @@
     {#if !nodeStatus}
       <div class="space-y-2">
         <button
-          class="w-full py-2 bg-accent hover:bg-accent-hover rounded-lg text-xs font-medium transition-all duration-100 active:scale-[0.98]"
+          class="w-full py-2.5 bg-accent hover:bg-accent-hover rounded-lg text-xs font-medium transition-all duration-100 active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(76,141,255,0.2)]"
           onclick={() => {
             const session = sessionStore.currentSession;
             if (session && selectedNode) {
@@ -302,6 +328,9 @@
             }
           }}
         >
+          <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M4 2.5a.5.5 0 0 1 .77-.42l9 5.5a.5.5 0 0 1 0 .84l-9 5.5A.5.5 0 0 1 4 13.5v-11z"/>
+          </svg>
           Infer
         </button>
         <button
@@ -327,9 +356,11 @@
       </div>
 
     {:else if nodeStatus.status === 'waiting'}
-      <div class="flex items-center gap-2.5 text-amber-400">
-        <div class="w-2.5 h-2.5 rounded-full bg-amber-400"></div>
-        <span class="text-xs">Waiting in queue</span>
+      <div class="rounded-lg bg-amber-500/[0.06] border border-amber-500/10 p-3 mb-1">
+        <div class="flex items-center gap-2.5 text-amber-400">
+          <div class="w-2.5 h-2.5 rounded-full bg-amber-400 status-glow"></div>
+          <span class="text-xs font-medium">Waiting in queue</span>
+        </div>
       </div>
       <button
         class="mt-3 w-full py-2 rounded-lg text-xs transition-all duration-100 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 active:scale-[0.98]"
@@ -339,13 +370,15 @@
       </button>
 
     {:else if nodeStatus.status === 'executing'}
-      <div class="flex items-center gap-2.5 text-blue-400">
-        <div class="w-2.5 h-2.5 rounded-full bg-blue-400 pulse-ring status-glow"></div>
-        <span class="text-xs">Executing</span>
+      <div class="rounded-lg bg-blue-500/[0.06] border border-blue-500/10 p-3 mb-1">
+        <div class="flex items-center gap-2.5 text-blue-400">
+          <div class="w-2.5 h-2.5 rounded-full bg-blue-400 pulse-ring status-glow"></div>
+          <span class="text-xs font-medium">Executing</span>
+        </div>
+        {#if nodeStatus.stage}
+          <div class="text-blue-300/40 text-xs mt-1.5 ml-5">{nodeStatus.stage}</div>
+        {/if}
       </div>
-      {#if nodeStatus.stage}
-        <div class="text-content-secondary/40 text-xs mt-1">{nodeStatus.stage}</div>
-      {/if}
       <button
         class="mt-3 w-full py-2 rounded-lg text-xs transition-all duration-100 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 active:scale-[0.98]"
         onclick={handleDelete}
@@ -354,14 +387,19 @@
       </button>
 
     {:else if nodeStatus.status === 'success'}
-      <div class="flex items-center gap-2.5 text-green-400 mb-4">
-        <div class="w-2.5 h-2.5 rounded-full bg-green-400"></div>
-        <span class="text-xs font-medium">Success</span>
+      <div class="rounded-lg bg-emerald-500/[0.06] border border-emerald-500/10 p-3 mb-4">
+        <div class="flex items-center gap-2.5 text-emerald-400">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3.5 8.5l3 3 6-7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span class="text-xs font-medium">Success</span>
+        </div>
       </div>
 
       {#if outputCount <= 1}
         <!-- Single output -->
         {#if nodeStatus.metrics}
+          {@const q = metricQuality(nodeStatus.metrics.cosine_similarity)}
           <div class="space-y-2">
             <h4 class="text-[10px] font-medium text-content-secondary/40 uppercase tracking-wider">Accuracy</h4>
             <table class="w-full text-xs">
@@ -376,10 +414,19 @@
                 </tr>
                 <tr>
                   <td class="py-1.5 text-content-secondary/50">Cosine Sim</td>
-                  <td class="py-1.5 text-right font-mono tabular-nums">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums {QUALITY_TEXT_CLS[q]}">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
                 </tr>
               </tbody>
             </table>
+            <!-- Cosine similarity bar -->
+            <div class="pt-1">
+              <div class="h-1.5 w-full bg-surface-base rounded-full overflow-hidden">
+                <div
+                  class="h-full rounded-full transition-all duration-500 {QUALITY_BG_CLS[q]} {QUALITY_GLOW[q]}"
+                  style="width: {Math.max(2, (nodeStatus.metrics.cosine_similarity ?? 0) * 100)}%"
+                ></div>
+              </div>
+            </div>
           </div>
         {/if}
 
@@ -464,6 +511,7 @@
       {:else}
         <!-- Multi-output: aggregate worst-case header -->
         {#if nodeStatus.metrics}
+          {@const q = metricQuality(nodeStatus.metrics.cosine_similarity)}
           <div class="space-y-2 mb-4">
             <h4 class="text-[10px] font-medium text-content-secondary/40 uppercase tracking-wider">Worst-Case Accuracy ({outputCount} outputs)</h4>
             <table class="w-full text-xs">
@@ -478,10 +526,18 @@
                 </tr>
                 <tr>
                   <td class="py-1.5 text-content-secondary/50">Cosine Sim</td>
-                  <td class="py-1.5 text-right font-mono tabular-nums">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums {QUALITY_TEXT_CLS[q]}">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
                 </tr>
               </tbody>
             </table>
+            <div class="pt-1">
+              <div class="h-1.5 w-full bg-surface-base rounded-full overflow-hidden">
+                <div
+                  class="h-full rounded-full transition-all duration-500 {QUALITY_BG_CLS[q]} {QUALITY_GLOW[q]}"
+                  style="width: {Math.max(2, (nodeStatus.metrics.cosine_similarity ?? 0) * 100)}%"
+                ></div>
+              </div>
+            </div>
           </div>
         {/if}
 
@@ -489,13 +545,17 @@
         {#each nodeStatus.perOutputMetrics! as outMetrics, outIdx}
           {@const outMain = nodeStatus.perOutputMainResults?.[outIdx]}
           {@const outRef = nodeStatus.perOutputRefResults?.[outIdx]}
+          {@const outQ = metricQuality(outMetrics.cosine_similarity)}
           <div class="border-t border-content-secondary/8 pt-3 mt-3">
-            <h4 class="text-xs font-medium text-content-primary/80 mb-1.5">
-              Output {outIdx}
-              {#if outMain?.dtype}
-                <span class="text-content-secondary/30 font-normal ml-1">[{outMain.dtype}, {outMain.output_shapes?.[0]?.join('x') ?? '?'}]</span>
-              {/if}
-            </h4>
+            <div class="flex items-center gap-2 mb-1.5">
+              <div class="w-1.5 h-1.5 rounded-full {QUALITY_BG_CLS[outQ]}"></div>
+              <h4 class="text-xs font-medium text-content-primary/80">
+                Output {outIdx}
+                {#if outMain?.dtype}
+                  <span class="text-content-secondary/30 font-normal ml-1">[{outMain.dtype}, {outMain.output_shapes?.[0]?.join('x') ?? '?'}]</span>
+                {/if}
+              </h4>
+            </div>
 
             <table class="w-full text-xs mb-1.5">
               <tbody>
@@ -509,7 +569,7 @@
                 </tr>
                 <tr>
                   <td class="py-1 text-content-secondary/50">Cosine Sim</td>
-                  <td class="py-1 text-right font-mono tabular-nums">{formatValue(outMetrics.cosine_similarity)}</td>
+                  <td class="py-1 text-right font-mono tabular-nums {QUALITY_TEXT_CLS[outQ]}">{formatValue(outMetrics.cosine_similarity)}</td>
                 </tr>
               </tbody>
             </table>
@@ -617,15 +677,19 @@
       </button>
 
     {:else if nodeStatus.status === 'failed'}
-      <div class="flex items-center gap-2.5 text-red-400 mb-4">
-        <div class="w-2.5 h-2.5 rounded-full bg-red-400"></div>
-        <span class="text-xs font-medium">Failed</span>
+      <div class="rounded-lg bg-red-500/[0.06] border border-red-500/10 p-3 mb-4">
+        <div class="flex items-center gap-2.5 text-red-400">
+          <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M5 5l6 6M11 5l-6 6" stroke-linecap="round"/>
+          </svg>
+          <span class="text-xs font-medium">Failed</span>
+        </div>
+        {#if nodeStatus.stage}
+          <div class="text-red-300/40 text-xs mt-1.5 ml-6">Stage: {nodeStatus.stage}</div>
+        {/if}
       </div>
-      {#if nodeStatus.stage}
-        <div class="text-content-secondary/40 text-xs mb-2">Stage: {nodeStatus.stage}</div>
-      {/if}
       {#if nodeStatus.errorDetail}
-        <pre class="bg-surface-base rounded-lg p-3 text-xs text-red-300/80 overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{nodeStatus.errorDetail}</pre>
+        <pre class="bg-red-950/30 border border-red-500/10 rounded-lg p-3 text-xs text-red-300/80 overflow-x-auto max-h-48 whitespace-pre-wrap font-mono">{nodeStatus.errorDetail}</pre>
       {/if}
       <button
         class="mt-3 w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
@@ -782,11 +846,14 @@
     {/if}
   {:else}
     <div class="flex flex-col items-center justify-center py-16 px-4">
-      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-content-secondary/15 mb-3">
-        <rect x="3" y="3" width="18" height="18" rx="3" />
-        <path d="M9 12h6M12 9v6" stroke-linecap="round" />
-      </svg>
-      <span class="text-content-secondary/30 text-xs">Select a node or edge to view details</span>
+      <div class="relative mb-4">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" class="text-content-secondary/12">
+          <rect x="3" y="3" width="18" height="18" rx="3" />
+          <path d="M9 12h6M12 9v6" stroke-linecap="round" />
+        </svg>
+        <div class="absolute inset-0 rounded-full" style="animation: node-breathe 3s ease-in-out infinite; background: radial-gradient(circle, rgba(76,141,255,0.15) 0%, transparent 70%);"></div>
+      </div>
+      <span class="text-content-secondary/25 text-xs">Select a node or edge</span>
     </div>
   {/if}
 </div>
