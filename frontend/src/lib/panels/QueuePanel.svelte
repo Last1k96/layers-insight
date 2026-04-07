@@ -8,6 +8,26 @@
   import { advancedFilterStore } from '../stores/advancedFilter.svelte';
   import AdvancedFilter from '../components/AdvancedFilter.svelte';
   import type { InferenceTask } from '../stores/types';
+  import { tick } from 'svelte';
+
+  let listEl = $state<HTMLDivElement | null>(null);
+  let atBottom = $state(true);
+
+  function onListScroll() {
+    if (!listEl) return;
+    atBottom = listEl.scrollTop + listEl.clientHeight >= listEl.scrollHeight - 8;
+  }
+
+  $effect(() => {
+    // Track task list length to trigger auto-scroll
+    queueStore.filteredTasks.length;
+    bisectStore.hasJobs;
+    if (atBottom && listEl) {
+      tick().then(() => {
+        if (listEl) listEl.scrollTop = listEl.scrollHeight;
+      });
+    }
+  });
 
   let {
     onbatchinfer = () => {},
@@ -225,7 +245,7 @@
   </div>
 
   <!-- Task list -->
-  <div class="flex-1 overflow-y-auto">
+  <div class="flex-1 overflow-y-auto" bind:this={listEl} onscroll={onListScroll}>
     {#if queueStore.filteredTasks.length === 0 && !bisectStore.hasJobs && queueStore.bisectTasks.length === 0}
       <div class="flex flex-col items-center justify-center py-12 px-4">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-content-secondary/20 mb-3">
