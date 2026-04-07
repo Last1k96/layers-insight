@@ -101,7 +101,7 @@ async def export_reproducer(
     session_id: str,
     task_id: str,
     request: Request,
-    minimal_model: bool = Query(False, description="Re-cut the model to include only needed weights (smaller download)"),
+    minimal_model: bool = Query(True, description="Re-cut the model to include only needed weights (smaller download)"),
 ) -> StreamingResponse:
     """Export a reproducer ZIP package for filing bug reports.
 
