@@ -44,7 +44,7 @@ class BisectStore {
     return this.visibleJobs.length > 0;
   }
 
-  async start(sessionId: string, subSessionId?: string | null): Promise<boolean> {
+  async start(sessionId: string, subSessionId?: string | null, endNode?: string | null): Promise<boolean> {
     if (this.busy) return false;
     this.busy = true;
     try {
@@ -55,6 +55,7 @@ class BisectStore {
         search_for: this.searchFor,
       };
       if (subSessionId) body.sub_session_id = subSessionId;
+      if (endNode) body.end_node = endNode;
 
       const res = await fetch('/api/inference/bisect', {
         method: 'POST',
