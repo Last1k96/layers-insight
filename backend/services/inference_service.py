@@ -16,17 +16,6 @@ from backend.schemas.inference import AccuracyMetrics, DeviceResult, InferenceTa
 _WORKER_SCRIPT = str(Path(__file__).parent.parent / "utils" / "inference_worker.py")
 
 
-# Map subprocess log messages to stage names for progress tracking
-_STAGE_MAP: list[tuple[str, str]] = [
-    ("Loading OpenVINO", "loading_model"),
-    ("Reading model", "loading_model"),
-    ("Cutting model", "cutting_graph"),
-    ("Preparing inputs", "preparing_inputs"),
-    ("Compiling model for", "compiling"),
-    ("Running inference on", "inferring"),
-    ("Computing accuracy", "computing_metrics"),
-    ("Done", "done"),
-]
 
 
 class InferenceService:
@@ -90,15 +79,12 @@ class InferenceService:
             if log_callback:
                 log_callback(task.task_id, level, msg)
 
-        def _update_stage(msg: str) -> None:
-            """Check log message against stage map and update task stage."""
-            for prefix, stage in _STAGE_MAP:
-                if prefix in msg:
-                    if task.stage != stage:
-                        task.stage = stage
-                        if stage_callback:
-                            stage_callback(stage)
-                    break
+        def _update_stage(stage: str) -> None:
+            """Update task stage and notify via callback."""
+            if task.stage != stage:
+                task.stage = stage
+                if stage_callback:
+                    stage_callback(stage)
 
         # Use session's runtime/ dir if provided, otherwise fall back to temp dir
         if runtime_dir:
@@ -132,7 +118,6 @@ class InferenceService:
 
             stderr_lines: list[str] = []      # all lines
             raw_stderr_lines: list[str] = []  # non-JSON lines only (for error reporting)
-            last_log_msg: str = ""            # last structured log message (for crash diagnostics)
 
             try:
                 proc = subprocess.Popen(
@@ -166,11 +151,11 @@ class InferenceService:
                             continue
                         stderr_lines.append(line)
                         try:
-                            log_entry = json.loads(line)
-                            log_msg = log_entry.get("msg", line)
-                            last_log_msg = log_msg
-                            _log(log_entry.get("level", "info"), log_msg)
-                            _update_stage(log_msg)
+                            entry = json.loads(line)
+                            if entry.get("type") == "stage":
+                                _update_stage(entry["stage"])
+                            else:
+                                _log(entry.get("level", "info"), entry.get("msg", line))
                         except json.JSONDecodeError:
                             # Raw OV output or other stderr — keep for error reporting
                             # Filter out "already registered" noise from LD_LIBRARY_PATH overlap
@@ -208,7 +193,7 @@ class InferenceService:
                     import signal
                     sig_name = signal.Signals(-proc.returncode).name
                     task.status = TaskStatus.FAILED
-                    last_stage_info = f" Last stage: {last_log_msg}" if last_log_msg else ""
+                    last_stage_info = f" Last stage: {task.stage}" if task.stage else ""
                     task.error_detail = (
                         f"OpenVINO crashed with {sig_name} (signal {-proc.returncode}) "
                         f"while processing node '{target_node_name}'.{last_stage_info} "
@@ -255,11 +240,10 @@ class InferenceService:
                     _log("error", task.error_detail)
                     return task
 
-            # Check for error from the worker
+            # Check for error from the worker (already logged via stderr)
             if "error" in result:
                 task.status = TaskStatus.FAILED
                 task.error_detail = result["error"]
-                _log("error", task.error_detail)
                 return task
 
             # Success — populate task

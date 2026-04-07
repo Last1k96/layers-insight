@@ -29,6 +29,13 @@ def _log(level: str, msg: str) -> None:
     sys.stderr.flush()
 
 
+def _stage(name: str) -> None:
+    """Write a stage update to stderr (parsed by inference_service, not shown in logs)."""
+    json.dump({"type": "stage", "stage": name}, sys.stderr)
+    sys.stderr.write("\n")
+    sys.stderr.flush()
+
+
 def _load_and_cut_model(cfg: dict) -> tuple:
     """Phase 1: Load model, find target op, cut to subgraph, save cut model.
 
@@ -46,10 +53,7 @@ def _load_and_cut_model(cfg: dict) -> tuple:
 
     # Dedicated Core for reading — avoids state leaks into compile phase
     read_core = ov.Core()
-
-    _log("info", f"Reading model: {Path(model_path).name}")
     model = read_core.read_model(model_path)
-    _log("info", f"Model loaded: {len(list(model.get_ordered_ops()))} ops")
 
     # Find target op
     target_op = None
@@ -61,21 +65,17 @@ def _load_and_cut_model(cfg: dict) -> tuple:
     if target_op is None:
         raise ValueError(f"Node '{node_name}' not found in model")
 
-    _log("info", f"Target node found: {node_name} (type: {target_op.get_type_name()})")
-
     # Cut model — only include parameters reachable from the target outputs
-    _log("info", "Cutting model at target node...")
+    _stage("cutting_graph")
     new_outputs = target_op.outputs()
     reachable_params = get_reachable_params(model, new_outputs)
     cut_model = ov.Model(new_outputs, reachable_params, f"cut_at_{node_name}")
     cut_model.validate_nodes_and_infer_types()
-    _log("info", f"Cut model created: {len(reachable_params)} parameters, {len(new_outputs)} outputs")
 
     # Serialize cut model to out_dir (self-contained reproducer)
     tmp_xml = str(Path(out_dir) / "cut_model.xml")
     ov.save_model(cut_model, tmp_xml)
     model_params = _extract_params(cut_model)
-    _log("info", f"Serialized cut model to {tmp_xml}")
 
     # Prune input_configs to only include parameters in the cut model
     if input_configs:
@@ -104,10 +104,8 @@ def _prepare_inputs(cfg: dict, tmp_xml: str, input_configs: list[dict] | None):
 
     core = ov.Core()
     register_plugins(core, ov_path)
-    _log("info", f"Fresh core devices: {core.available_devices}")
 
     cut_model = core.read_model(tmp_xml)
-    _log("info", f"Reloaded cut model: {len(list(cut_model.get_ordered_ops()))} ops")
 
     # Apply bounded reshape if input_configs have bounds (dynamic shapes)
     _apply_bounded_reshape(cut_model, input_configs)
@@ -115,9 +113,8 @@ def _prepare_inputs(cfg: dict, tmp_xml: str, input_configs: list[dict] | None):
     # Re-extract params after reshape (shapes may now be bounded/static)
     model_params = _extract_params(cut_model)
 
-    _log("info", "Preparing inputs...")
+    _stage("preparing_inputs")
     inputs = prepare_inputs(model_params, input_path, precision, input_configs)
-    _log("info", f"Inputs prepared: {len(inputs)} tensors")
 
     # Save input tensors to out_dir for reproducibility
     for name, tensor in inputs.items():
@@ -137,20 +134,17 @@ def _run_inference(cfg: dict, core, cut_model, inputs: dict):
     ref_device = cfg["ref_device"]
 
     # Infer on main device
-    _log("info", f"Compiling model for {main_device}...")
+    _stage("compiling")
     main_plugin_config = cfg.get("plugin_config") or None
     main_outs, main_results, main_err = _run_on_device(core, cut_model, main_device, inputs, main_plugin_config)
     if main_err:
         raise RuntimeError(main_err)
-    _log("info", f"Inference on {main_device} complete ({len(main_outs)} output(s))")
 
     # Infer on reference device
-    _log("info", f"Compiling model for {ref_device}...")
     ref_plugin_config = cfg.get("ref_plugin_config") or None
     ref_outs, ref_results, ref_err = _run_on_device(core, cut_model, ref_device, inputs, ref_plugin_config)
     if ref_err:
         raise RuntimeError(ref_err)
-    _log("info", f"Inference on {ref_device} complete ({len(ref_outs)} output(s))")
 
     return main_outs, main_results, ref_outs, ref_results
 
@@ -183,7 +177,7 @@ def main() -> None:
     os.environ["OPENVINO_LOG_LEVEL"] = cfg.get("ov_log_level", "WARNING")
 
     try:
-        _log("info", "Loading OpenVINO runtime...")
+        _stage("loading_model")
 
         # Phase 1: Load model, cut subgraph, serialize
         tmp_xml, model_params, input_configs = _load_and_cut_model(cfg)
@@ -199,29 +193,31 @@ def main() -> None:
         )
 
         # Phase 4: Compute per-output accuracy metrics
-        _log("info", "Computing accuracy metrics...")
+        _stage("computing_metrics")
         num_outputs = len(main_outs)
         per_output_metrics: list[dict] = []
         for i in range(num_outputs):
             m = _compute_metrics(main_outs[i], ref_outs[i])
             per_output_metrics.append(m)
-            _log("info", f"Output {i}: MSE={m['mse']:.6e}, cosine={m['cosine_similarity']:.6f}, max_diff={m['max_abs_diff']:.6e}")
 
         # Aggregate: worst across outputs (highest MSE, highest max_abs_diff, lowest cosine)
         if num_outputs == 1:
             agg_metrics = per_output_metrics[0]
+            _log("info", f"MSE={agg_metrics['mse']:.6e}  cosine={agg_metrics['cosine_similarity']:.6f}  max_diff={agg_metrics['max_abs_diff']:.6e}")
         else:
+            for i, m in enumerate(per_output_metrics):
+                _log("info", f"Output {i}: MSE={m['mse']:.6e}  cosine={m['cosine_similarity']:.6f}  max_diff={m['max_abs_diff']:.6e}")
             agg_metrics = {
                 "mse": max(m["mse"] for m in per_output_metrics),
                 "max_abs_diff": max(m["max_abs_diff"] for m in per_output_metrics),
                 "cosine_similarity": min(m["cosine_similarity"] for m in per_output_metrics),
             }
-        _log("info", f"Aggregate: MSE={agg_metrics['mse']:.6e}, cosine={agg_metrics['cosine_similarity']:.6f}, max_diff={agg_metrics['max_abs_diff']:.6e}")
+            _log("info", f"Worst: MSE={agg_metrics['mse']:.6e}  cosine={agg_metrics['cosine_similarity']:.6f}  max_diff={agg_metrics['max_abs_diff']:.6e}")
 
         # Phase 5: Save outputs
         _save_outputs(cfg, main_outs, ref_outs)
 
-        _log("info", "Done — results ready")
+        _stage("done")
         result_payload: dict = {
             "main_result": main_results[0],
             "ref_result": ref_results[0],
@@ -300,13 +296,10 @@ def _run_on_device(core, model, device: str, inputs: dict, plugin_config: dict[s
     """
     config = plugin_config or {}
     try:
-        _log("info", f"Compiling on {device}...")
         compiled = core.compile_model(model, device, config)
-        _log("info", f"Compilation on {device} succeeded")
     except Exception as e:
         return None, None, f"Compilation on {device} failed: {e}"
     try:
-        _log("info", f"Running inference on {device}...")
         req = compiled.create_infer_request()
         # Pass inputs by parameter order to avoid tensor-name vs friendly-name
         # mismatches that can occur after save_model/read_model cycles.
