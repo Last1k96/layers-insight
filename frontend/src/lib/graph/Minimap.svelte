@@ -143,6 +143,8 @@
   onMount(() => {
     const unwatch = $effect.root(() => {
       $effect(() => {
+        // Read cameraVersion so the effect re-runs when the renderer initializes
+        const _cv = graphStore.cameraVersion;
         if (graphStore.graphData && canvas && !collapsed) {
           // Clean up previous listener before setting up new one
           if (cleanupFn) {
