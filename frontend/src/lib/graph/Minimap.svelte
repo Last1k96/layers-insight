@@ -7,8 +7,50 @@
   let collapsed = $state(localStorage.getItem('minimap-collapsed') === 'true');
   let cleanupFn: (() => void) | null = null;
 
-  const MINIMAP_WIDTH = 200;
-  const MINIMAP_HEIGHT = 150;
+  const MIN_W = 150, MIN_H = 100, MAX_W = 600, MAX_H = 500;
+  let mmWidth = $state(parseInt(localStorage.getItem('minimap-w') ?? '200') || 200);
+  let mmHeight = $state(parseInt(localStorage.getItem('minimap-h') ?? '150') || 150);
+
+  // Resize drag state
+  let isResizing = false;
+  let resizeStartX = 0;
+  let resizeStartY = 0;
+  let resizeStartW = 0;
+  let resizeStartH = 0;
+
+  function handleResizeDown(e: MouseEvent) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    isResizing = true;
+    resizeStartX = e.clientX;
+    resizeStartY = e.clientY;
+    resizeStartW = mmWidth;
+    resizeStartH = mmHeight;
+    window.addEventListener('mousemove', handleResizeMove);
+    window.addEventListener('mouseup', handleResizeUp);
+  }
+
+  function handleResizeMove(e: MouseEvent) {
+    if (!isResizing) return;
+    // Dragging left/up increases size (anchored bottom-right)
+    mmWidth = Math.max(MIN_W, Math.min(MAX_W, resizeStartW + (resizeStartX - e.clientX)));
+    mmHeight = Math.max(MIN_H, Math.min(MAX_H, resizeStartH + (resizeStartY - e.clientY)));
+    // Update canvas buffer to match new size
+    if (canvas) {
+      canvas.width = mmWidth;
+      canvas.height = mmHeight;
+    }
+    scheduleDraw();
+  }
+
+  function handleResizeUp() {
+    isResizing = false;
+    localStorage.setItem('minimap-w', String(mmWidth));
+    localStorage.setItem('minimap-h', String(mmHeight));
+    window.removeEventListener('mousemove', handleResizeMove);
+    window.removeEventListener('mouseup', handleResizeUp);
+  }
 
   // Cached bounds/scale from last draw — reused by handleClick
   let cachedScale = 1;
@@ -39,7 +81,7 @@
     const gpu = getGPURenderer();
     if (!graphData || !panZoom || !gpu) return;
 
-    ctx.clearRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
+    ctx.clearRect(0, 0, mmWidth, mmHeight);
 
     // Build node lookup map and cache sizes in one pass
     const nodeMap = new Map<string, typeof graphData.nodes[0]>();
@@ -60,9 +102,9 @@
 
     const gw = maxX - minX + 40;
     const gh = maxY - minY + 40;
-    const scale = Math.min(MINIMAP_WIDTH / gw, MINIMAP_HEIGHT / gh);
-    const offsetX = (MINIMAP_WIDTH - gw * scale) / 2 - minX * scale + 20 * scale;
-    const offsetY = (MINIMAP_HEIGHT - gh * scale) / 2 - minY * scale + 20 * scale;
+    const scale = Math.min(mmWidth / gw, mmHeight / gh);
+    const offsetX = (mmWidth - gw * scale) / 2 - minX * scale + 20 * scale;
+    const offsetY = (mmHeight - gh * scale) / 2 - minY * scale + 20 * scale;
 
     // Cache for handleClick
     cachedScale = scale;
@@ -116,28 +158,72 @@
     ctx.fillRect(vx, vy, vw, vh);
   }
 
-  function handleClick(e: MouseEvent) {
+  // Drag state
+  let isDragging = false;
+
+  function minimapToGraph(e: MouseEvent): { x: number; y: number } | null {
+    if (!hasCachedBounds) return null;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    return {
+      x: (mx - cachedOffsetX) / cachedScale,
+      y: (my - cachedOffsetY) / cachedScale,
+    };
+  }
+
+  function moveCameraTo(graphX: number, graphY: number) {
     const panZoom = getCamera();
     const gpu = getGPURenderer();
-    if (!panZoom || !gpu || !hasCachedBounds) return;
-
-    const scale = cachedScale;
-    const offsetX = cachedOffsetX;
-    const offsetY = cachedOffsetY;
-
-    const rect = canvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
-
-    const graphX = (clickX - offsetX) / scale;
-    const graphY = (clickY - offsetY) / scale;
-
+    if (!panZoom || !gpu) return;
     const viewW = gpu.canvas.clientWidth || 800;
     const viewH = gpu.canvas.clientHeight || 600;
     const tx = viewW / 2 - graphX * panZoom.ratio;
     const ty = viewH / 2 - graphY * panZoom.ratio;
+    panZoom.setState({ tx, ty, scale: panZoom.ratio });
+  }
 
-    panZoom.animate({ tx, ty }, 200);
+  function handleMouseDown(e: MouseEvent) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    isDragging = true;
+    const pt = minimapToGraph(e);
+    if (pt) moveCameraTo(pt.x, pt.y);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }
+
+  function handleMouseMove(e: MouseEvent) {
+    if (!isDragging) return;
+    const pt = minimapToGraph(e);
+    if (pt) moveCameraTo(pt.x, pt.y);
+  }
+
+  function handleMouseUp() {
+    isDragging = false;
+    window.removeEventListener('mousemove', handleMouseMove);
+    window.removeEventListener('mouseup', handleMouseUp);
+  }
+
+  function handleWheel(e: WheelEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const panZoom = getCamera();
+    const gpu = getGPURenderer();
+    if (!panZoom || !gpu || !hasCachedBounds) return;
+
+    const pt = minimapToGraph(e as unknown as MouseEvent);
+    if (!pt) return;
+
+    const factor = e.deltaY < 0 ? 1.25 : 1 / 1.25;
+    const newScale = Math.max(0.01, Math.min(50, panZoom.ratio * factor));
+
+    // Zoom centered on the graph point under the minimap cursor
+    const viewW = gpu.canvas.clientWidth || 800;
+    const viewH = gpu.canvas.clientHeight || 600;
+    const tx = viewW / 2 - pt.x * newScale;
+    const ty = viewH / 2 - pt.y * newScale;
+    panZoom.setState({ tx, ty, scale: newScale });
   }
 
   onMount(() => {
@@ -171,6 +257,10 @@
       cleanupFn();
       cleanupFn = null;
     }
+    window.removeEventListener('mousemove', handleMouseMove);
+    window.removeEventListener('mouseup', handleMouseUp);
+    window.removeEventListener('mousemove', handleResizeMove);
+    window.removeEventListener('mouseup', handleResizeUp);
   });
 </script>
 
@@ -185,14 +275,26 @@
   {#if !collapsed}
     <div
       class="relative border border-[--border-color] rounded bg-[--bg-primary] overflow-hidden shadow-lg"
-      style="width: {MINIMAP_WIDTH}px; height: {MINIMAP_HEIGHT}px;"
+      style="width: {mmWidth}px; height: {mmHeight}px;"
     >
+      <!-- Resize handle (top-left corner) -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div
+        class="absolute top-0 left-0 w-3 h-3 z-10 cursor-nw-resize"
+        onmousedown={handleResizeDown}
+      >
+        <svg class="w-3 h-3 text-gray-500 rotate-180" viewBox="0 0 12 12">
+          <path d="M2 10L10 10L10 2" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M5 10L10 10L10 5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        </svg>
+      </div>
       <canvas
         bind:this={canvas}
         class="absolute inset-0 cursor-crosshair"
-        width={MINIMAP_WIDTH}
-        height={MINIMAP_HEIGHT}
-        onclick={handleClick}
+        width={mmWidth}
+        height={mmHeight}
+        onmousedown={handleMouseDown}
+        onwheel={handleWheel}
       ></canvas>
     </div>
   {/if}
