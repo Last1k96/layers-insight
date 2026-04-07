@@ -10,6 +10,25 @@
   const MINIMAP_WIDTH = 200;
   const MINIMAP_HEIGHT = 150;
 
+  // Cached bounds/scale from last draw — reused by handleClick
+  let cachedScale = 1;
+  let cachedOffsetX = 0;
+  let cachedOffsetY = 0;
+  let hasCachedBounds = false;
+
+  // RAF coalescing
+  let rafPending = false;
+
+  function scheduleDraw() {
+    if (!rafPending) {
+      rafPending = true;
+      requestAnimationFrame(() => {
+        rafPending = false;
+        draw();
+      });
+    }
+  }
+
   function draw() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -20,21 +39,24 @@
     const gpu = getGPURenderer();
     if (!graphData || !panZoom || !gpu) return;
 
-    canvas.width = MINIMAP_WIDTH;
-    canvas.height = MINIMAP_HEIGHT;
     ctx.clearRect(0, 0, MINIMAP_WIDTH, MINIMAP_HEIGHT);
 
-    // Compute graph bounds
+    // Build node lookup map and cache sizes in one pass
+    const nodeMap = new Map<string, typeof graphData.nodes[0]>();
+    const sizeMap = new Map<string, { width: number; height: number }>();
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
     for (const node of graphData.nodes) {
+      nodeMap.set(node.id, node);
       const size = getNodeSize(node.id);
+      sizeMap.set(node.id, size);
       minX = Math.min(minX, node.x);
       minY = Math.min(minY, node.y);
       maxX = Math.max(maxX, node.x + size.width);
       maxY = Math.max(maxY, node.y + size.height);
     }
 
-    if (!isFinite(minX)) return;
+    if (!isFinite(minX)) { hasCachedBounds = false; return; }
 
     const gw = maxX - minX + 40;
     const gh = maxY - minY + 40;
@@ -42,15 +64,21 @@
     const offsetX = (MINIMAP_WIDTH - gw * scale) / 2 - minX * scale + 20 * scale;
     const offsetY = (MINIMAP_HEIGHT - gh * scale) / 2 - minY * scale + 20 * scale;
 
+    // Cache for handleClick
+    cachedScale = scale;
+    cachedOffsetX = offsetX;
+    cachedOffsetY = offsetY;
+    hasCachedBounds = true;
+
     // Draw edges
     ctx.strokeStyle = '#3A3F56';
     ctx.lineWidth = 0.5;
     for (const edge of graphData.edges) {
-      const sn = graphData.nodes.find(n => n.id === edge.source);
-      const tn = graphData.nodes.find(n => n.id === edge.target);
+      const sn = nodeMap.get(edge.source);
+      const tn = nodeMap.get(edge.target);
       if (!sn || !tn) continue;
-      const ss = getNodeSize(edge.source);
-      const ts = getNodeSize(edge.target);
+      const ss = sizeMap.get(edge.source)!;
+      const ts = sizeMap.get(edge.target)!;
       ctx.beginPath();
       ctx.moveTo((sn.x + ss.width / 2) * scale + offsetX, (sn.y + ss.height / 2) * scale + offsetY);
       ctx.lineTo((tn.x + ts.width / 2) * scale + offsetX, (tn.y + ts.height / 2) * scale + offsetY);
@@ -59,7 +87,7 @@
 
     // Draw nodes
     for (const node of graphData.nodes) {
-      const size = getNodeSize(node.id);
+      const size = sizeMap.get(node.id)!;
       const x = node.x * scale + offsetX;
       const y = node.y * scale + offsetY;
       const w = Math.max(2, size.width * scale);
@@ -91,25 +119,11 @@
   function handleClick(e: MouseEvent) {
     const panZoom = getCamera();
     const gpu = getGPURenderer();
-    const graphData = graphStore.graphData;
-    if (!panZoom || !gpu || !graphData) return;
+    if (!panZoom || !gpu || !hasCachedBounds) return;
 
-    // Compute same bounds/scale as draw()
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const node of graphData.nodes) {
-      const size = getNodeSize(node.id);
-      minX = Math.min(minX, node.x);
-      minY = Math.min(minY, node.y);
-      maxX = Math.max(maxX, node.x + size.width);
-      maxY = Math.max(maxY, node.y + size.height);
-    }
-    if (!isFinite(minX)) return;
-
-    const gw = maxX - minX + 40;
-    const gh = maxY - minY + 40;
-    const scale = Math.min(MINIMAP_WIDTH / gw, MINIMAP_HEIGHT / gh);
-    const offsetX = (MINIMAP_WIDTH - gw * scale) / 2 - minX * scale + 20 * scale;
-    const offsetY = (MINIMAP_HEIGHT - gh * scale) / 2 - minY * scale + 20 * scale;
+    const scale = cachedScale;
+    const offsetX = cachedOffsetX;
+    const offsetY = cachedOffsetY;
 
     const rect = canvas.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
@@ -130,11 +144,15 @@
     const unwatch = $effect.root(() => {
       $effect(() => {
         if (graphStore.graphData && canvas && !collapsed) {
+          // Clean up previous listener before setting up new one
+          if (cleanupFn) {
+            cleanupFn();
+            cleanupFn = null;
+          }
           const cam = getCamera();
           if (cam) {
-            const handler = () => draw();
-            cam.on('updated', handler);
-            cleanupFn = () => cam.off('updated', handler);
+            cam.on('updated', scheduleDraw);
+            cleanupFn = () => cam.off('updated', scheduleDraw);
           }
           requestAnimationFrame(() => draw());
         }
