@@ -78,6 +78,7 @@
 
   // Plugin configuration -- separate state for main and reference devices
   let pluginConfigExpanded = $state(false);
+  let activePluginTab = $state<'main' | 'ref'>('main');
 
   let mainPluginProperties = $state<DeviceProperty[]>([]);
   let mainPluginConfigValues = $state<Record<string, string>>({});
@@ -131,6 +132,9 @@
   function getRefPluginConfigPayload(): Record<string, string> {
     return getChangedValues(refPluginConfigValues, refPluginProperties);
   }
+
+  let mainChangedCount = $derived(Object.keys(getPluginConfigPayload()).length);
+  let refChangedCount = $derived(Object.keys(getRefPluginConfigPayload()).length);
 
   // File browser state
   let showBrowser = $state(false);
@@ -955,31 +959,64 @@
             <line x1="4.5" y1="7.5" x2="7.5" y2="7.5" />
           </svg>
           Plugin Configuration
-          {#if Object.keys(getPluginConfigPayload()).length + Object.keys(getRefPluginConfigPayload()).length > 0}
-            <span class="plugin-changed-count">{Object.keys(getPluginConfigPayload()).length + Object.keys(getRefPluginConfigPayload()).length} changed</span>
+          {#if mainChangedCount + refChangedCount > 0}
+            <span class="plugin-changed-count">{mainChangedCount + refChangedCount} changed</span>
           {/if}
         </summary>
         <div class="plugin-body">
           <div class="plugin-hint">
             Only changed values will be sent to the inference engine.
           </div>
-          <div class="plugin-grid">
-            {@render pluginConfigPanel(
-              `Main: ${mainDevice}`,
-              mainPluginProperties,
-              mainPluginConfigValues,
-              loadingMainPluginConfig,
-              'main-plugin',
-              (key, val) => { mainPluginConfigValues = { ...mainPluginConfigValues, [key]: val }; }
-            )}
-            {@render pluginConfigPanel(
-              `Reference: ${refDevice}`,
-              refPluginProperties,
-              refPluginConfigValues,
-              loadingRefPluginConfig,
-              'ref-plugin',
-              (key, val) => { refPluginConfigValues = { ...refPluginConfigValues, [key]: val }; }
-            )}
+
+          <!-- Tab switcher -->
+          <div class="plugin-tabs">
+            <button
+              type="button"
+              class="plugin-tab"
+              class:active={activePluginTab === 'main'}
+              onclick={() => activePluginTab = 'main'}
+            >
+              <span class="plugin-tab-role">Main</span>
+              <span class="plugin-tab-device">{mainDevice}</span>
+              {#if mainChangedCount > 0}
+                <span class="plugin-tab-badge">{mainChangedCount}</span>
+              {/if}
+            </button>
+            <button
+              type="button"
+              class="plugin-tab"
+              class:active={activePluginTab === 'ref'}
+              onclick={() => activePluginTab = 'ref'}
+            >
+              <span class="plugin-tab-role">Reference</span>
+              <span class="plugin-tab-device">{refDevice}</span>
+              {#if refChangedCount > 0}
+                <span class="plugin-tab-badge">{refChangedCount}</span>
+              {/if}
+            </button>
+          </div>
+
+          <!-- Tab content -->
+          <div class="plugin-tab-content">
+            {#if activePluginTab === 'main'}
+              {@render pluginConfigPanel(
+                `Main: ${mainDevice}`,
+                mainPluginProperties,
+                mainPluginConfigValues,
+                loadingMainPluginConfig,
+                'main-plugin',
+                (key, val) => { mainPluginConfigValues = { ...mainPluginConfigValues, [key]: val }; }
+              )}
+            {:else}
+              {@render pluginConfigPanel(
+                `Reference: ${refDevice}`,
+                refPluginProperties,
+                refPluginConfigValues,
+                loadingRefPluginConfig,
+                'ref-plugin',
+                (key, val) => { refPluginConfigValues = { ...refPluginConfigValues, [key]: val }; }
+              )}
+            {/if}
           </div>
         </div>
       </details>
@@ -1495,10 +1532,90 @@
     margin-bottom: 0.75rem;
   }
 
-  .plugin-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
+  /* ── Plugin Tabs ── */
+  .plugin-tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 0.75rem;
+    background: var(--bg-primary);
+    border-radius: 0.5rem;
+    padding: 0.2rem;
+  }
+
+  .plugin-tab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    padding: 0.5rem 0.6rem;
+    border: 1px solid transparent;
+    border-radius: 0.375rem;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+  }
+
+  .plugin-tab:hover:not(.active) {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  .plugin-tab.active {
+    background: var(--bg-panel);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  }
+
+  .plugin-tab-role {
+    font-weight: 500;
+    opacity: 0.6;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .plugin-tab.active .plugin-tab-role {
+    opacity: 0.8;
+  }
+
+  .plugin-tab-device {
+    font-weight: 600;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    letter-spacing: -0.01em;
+  }
+
+  .plugin-tab.active .plugin-tab-device {
+    color: #4C8DFF;
+  }
+
+  .plugin-tab-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.1rem;
+    height: 1.1rem;
+    padding: 0 0.3rem;
+    border-radius: 99px;
+    background: rgba(76, 141, 255, 0.15);
+    color: #4C8DFF;
+    font-size: 0.6rem;
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .plugin-tab-content {
+    animation: plugin-fade-in 0.15s ease-out;
+  }
+
+  @keyframes plugin-fade-in {
+    from { opacity: 0; transform: translateY(2px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
   .plugin-panel {
@@ -1506,36 +1623,44 @@
   }
 
   .plugin-panel-label {
-    font-size: 0.7rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-    margin-bottom: 0.5rem;
+    display: none;
   }
 
   .plugin-loading {
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
     opacity: 0.5;
-    padding: 0.5rem 0;
+    padding: 0.75rem 0;
   }
 
   .plugin-list {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
-    max-height: 12rem;
+    gap: 0.3rem;
+    max-height: 18rem;
     overflow-y: auto;
   }
+
+  .plugin-list::-webkit-scrollbar { width: 4px; }
+  .plugin-list::-webkit-scrollbar-track { background: transparent; }
+  .plugin-list::-webkit-scrollbar-thumb { background: #3A3F56; border-radius: 99px; }
 
   .plugin-prop {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: 0.75rem;
+    padding: 0.25rem 0.4rem;
+    border-radius: 0.3rem;
+    transition: background 0.1s ease;
+  }
+
+  .plugin-prop:hover {
+    background: rgba(255, 255, 255, 0.02);
   }
 
   .plugin-prop-name {
     flex: 1;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     font-family: var(--font-mono);
     color: var(--text-secondary);
     overflow: hidden;
@@ -1544,14 +1669,15 @@
   }
 
   .plugin-prop-input {
-    width: 6rem;
-    padding: 0.25rem 0.4rem;
+    width: 10rem;
+    padding: 0.3rem 0.5rem;
     background: var(--bg-input);
     border: 1px solid var(--border-color);
     border-radius: 0.3rem;
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     color: var(--text-primary);
     flex-shrink: 0;
+    transition: border-color 0.15s ease;
   }
 
   .plugin-prop-input:focus {
