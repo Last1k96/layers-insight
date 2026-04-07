@@ -51,6 +51,7 @@ export class WebGPURenderer {
   private _lastHoveredEdge: number | null = null;
   private _lastSelectedEdge: number | null = null;
   private _lastGrayedNodes: Set<string> = new Set();
+  private _lastInferredCount = 0;
 
   // Store last camera params so we can re-apply on resize
   private lastCameraTx = 0;
@@ -205,13 +206,34 @@ export class WebGPURenderer {
     if (!this.graphData) return;
     this.currentZoom = zoomRatio;
 
-    // Rebuild edge geometry when accuracy view toggles
+    // Rebuild edge geometry when accuracy view toggles or new inferred nodes arrive
     if (accuracyViewActive !== this._accuracyViewActive) {
       this._accuracyViewActive = accuracyViewActive;
       this.rebuildEdges(accuracyViewActive, nodeStatusMap);
+      if (accuracyViewActive) {
+        let count = 0;
+        for (const [, status] of nodeStatusMap) {
+          if (status.status === 'success' && status.metrics) count++;
+        }
+        this._lastInferredCount = count;
+      } else {
+        this._lastInferredCount = 0;
+      }
       // Force edge highlight re-eval after accuracy toggle
       this._lastHoveredEdge = -1;
       this._lastSelectedEdge = -1;
+    } else if (accuracyViewActive) {
+      // Accuracy view already active — rebuild edges only when new metrics arrive
+      let count = 0;
+      for (const [, status] of nodeStatusMap) {
+        if (status.status === 'success' && status.metrics) count++;
+      }
+      if (count !== this._lastInferredCount) {
+        this._lastInferredCount = count;
+        this.rebuildEdges(true, nodeStatusMap);
+        this._lastHoveredEdge = -1;
+        this._lastSelectedEdge = -1;
+      }
     }
 
     // Track which edge is highlighted (hovered or selected)
