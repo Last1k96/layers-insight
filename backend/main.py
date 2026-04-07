@@ -146,8 +146,6 @@ async def lifespan(app: FastAPI):
         else:
             runtime_dir = str(session_path / "runtime")
 
-        log_callback(task.task_id, "info", f"Task started for node '{task.node_name}'")
-
         result = await asyncio.to_thread(
             inference_service.cut_and_infer,
             model=model,
@@ -184,7 +182,6 @@ async def lifespan(app: FastAPI):
                 artifacts_dir=artifacts_dir,
                 sub_session_id=task.sub_session_id,
             )
-            log_callback(task.task_id, "info", f"Task completed for node '{task.node_name}'")
             return updated_task
         else:
             # Error case — result is just the task
@@ -193,7 +190,6 @@ async def lifespan(app: FastAPI):
                 task_id=task.task_id,
                 task_data=result.model_dump(),
             )
-            log_callback(task.task_id, "error", f"Task failed for node '{task.node_name}': {result.error_detail}")
             return result
 
     queue_service.set_callbacks(notify=on_task_notify, infer=on_infer)
