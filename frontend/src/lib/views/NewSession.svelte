@@ -918,7 +918,7 @@
                   oninput={(e) => onFilterChange((e.target as HTMLInputElement).value)}
                 />
                 {#if filterText}
-                  <button type="button" class="plugin-filter-clear" onclick={() => onFilterChange('')}>
+                  <button type="button" class="plugin-filter-clear" aria-label="Clear filter" onclick={() => onFilterChange('')}>
                     <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
                       <line x1="2" y1="2" x2="8" y2="8" /><line x1="8" y1="2" x2="2" y2="8" />
                     </svg>

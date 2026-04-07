@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { bisectStore } from '../stores/bisect.svelte';
   import { graphStore } from '../stores/graph.svelte';
   import { sessionStore } from '../stores/session.svelte';
@@ -21,13 +22,22 @@
     'from-node': 'From Node',
   };
 
-  let activeTab = $state<BisectTab>(endNodeId ? 'from-node' : 'full-model');
+  let activeTab = $state<BisectTab>('full-model');
+
+  // Set initial tab based on how the panel was opened
+  $effect.pre(() => {
+    if (endNodeId) {
+      activeTab = 'from-node';
+    }
+  });
 
   // Auto-detect search_for when opened from a node
-  if (initialSearchFor) {
-    bisectStore.searchFor = initialSearchFor;
-    bisectStore.threshold = defaultThreshold(bisectStore.metric, initialSearchFor);
-  }
+  $effect.pre(() => {
+    if (initialSearchFor) {
+      bisectStore.searchFor = initialSearchFor;
+      bisectStore.threshold = defaultThreshold(untrack(() => bisectStore.metric), initialSearchFor);
+    }
+  });
 
   const metricLabels: Record<string, string> = {
     cosine_similarity: 'Cosine similarity',
