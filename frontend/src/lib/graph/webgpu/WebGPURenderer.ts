@@ -455,9 +455,10 @@ export class WebGPURenderer {
     // Estimate glyph count
     let totalGlyphs = 0;
     for (const node of nodes) {
-      if (haloMode && !accuracyInferredIds.has(node.id)) continue;
       const ov = nodeOverrides?.get(node.id);
-      totalGlyphs += (ov ? ov.type.length : node.type.length) * glyphsPerChar;
+      const charCount = ov ? ov.type.length : node.type.length;
+      const perChar = (haloMode && accuracyInferredIds.has(node.id)) ? 5 : 1;
+      totalGlyphs += charCount * perChar;
     }
 
     const glyphData = new Float32Array(totalGlyphs * 12);
@@ -471,8 +472,6 @@ export class WebGPURenderer {
     ];
 
     for (const node of nodes) {
-      // In accuracy view, hide text on non-inferred nodes
-      if (accuracyInferredIds && !accuracyInferredIds.has(node.id)) continue;
 
       const override = nodeOverrides?.get(node.id);
       const isGrayed = grayedNodes.has(node.id);
