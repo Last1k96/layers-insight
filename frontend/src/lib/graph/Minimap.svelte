@@ -4,7 +4,7 @@
   import { getCamera, getGPURenderer, getNodeSize } from './renderer';
 
   let canvas: HTMLCanvasElement = $state()!;
-  let collapsed = $state(false);
+  let collapsed = $state(localStorage.getItem('minimap-collapsed') === 'true');
   let cleanupFn: (() => void) | null = null;
 
   const MINIMAP_WIDTH = 200;
@@ -177,7 +177,7 @@
 <div class="absolute bottom-4 right-4 z-20">
   <button
     class="absolute -top-7 right-0 px-2 py-0.5 text-xs text-gray-400 bg-[--bg-panel] border border-[--border-color] rounded-t hover:bg-[--bg-menu] transition-colors"
-    onclick={() => collapsed = !collapsed}
+    onclick={() => { collapsed = !collapsed; localStorage.setItem('minimap-collapsed', String(collapsed)); }}
   >
     {collapsed ? 'Map' : 'Hide'}
   </button>
