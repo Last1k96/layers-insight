@@ -433,7 +433,7 @@
             class="w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
             onclick={onshowbatchqueue}
           >
-            Batch Queue
+            Batch Infer
           </button>
           <div class="flex gap-2">
             <button
@@ -561,7 +561,7 @@
             class="w-full py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
             onclick={onshowbatchqueue}
           >
-            Batch Queue
+            Batch Infer
           </button>
           <div class="flex gap-2">
             <button
