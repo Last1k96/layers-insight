@@ -12,6 +12,45 @@ from backend.services.graph_service import _normalize_element_type
 
 router = APIRouter(prefix="/api", tags=["devices"])
 
+# Map OV's long element-type names to the short form accepted by compile_model
+_OV_TYPE_SHORT: dict[str, str] = {
+    "float32": "f32", "float16": "f16", "bfloat16": "bf16",
+    "int8": "i8", "int16": "i16", "int32": "i32", "int64": "i64",
+    "uint8": "u8", "uint16": "u16", "uint32": "u32", "uint64": "u64",
+}
+
+
+def _normalize_ov_value(raw: object) -> str:
+    """Normalize any OV property value to its shortest plain-string form.
+
+    Handles all known representations:
+      - pybind wrappers:  ``<Type: 'bfloat16'>``  → ``bf16``
+                          ``<PerformanceMode: 'LATENCY'>``  → ``LATENCY``
+      - Python enums:     ``PerformanceMode.LATENCY``  → ``LATENCY``
+      - OV type names:    ``bfloat16``  → ``bf16``
+      - plain strings:    ``LATENCY``  → ``LATENCY``  (passthrough)
+    """
+    s = str(raw)
+
+    # 1) pybind wrapper: <ClassName: 'value'>
+    m = re.search(r"<(\w+):\s*'([^']+)'>", s)
+    if m:
+        cls, inner = m.group(1), m.group(2)
+        return _OV_TYPE_SHORT.get(inner, inner) if cls == "Type" else inner
+
+    # 2) Python enum: ClassName.MEMBER
+    if "." in s and not s.startswith("/") and not s.startswith("."):
+        parts = s.rsplit(".", 1)
+        # Enum class names are CamelCase — plain dotted paths (file paths) are not
+        if parts[0] and parts[0][0].isupper() and parts[0].isidentifier():
+            return _OV_TYPE_SHORT.get(parts[1], parts[1])
+
+    # 3) Bare OV type name (e.g. value already stringified elsewhere)
+    if s in _OV_TYPE_SHORT:
+        return _OV_TYPE_SHORT[s]
+
+    return s
+
 
 @router.get("/devices")
 async def list_devices(request: Request) -> list[str]:
@@ -45,6 +84,18 @@ async def get_device_config(device_name: str, request: Request) -> list[DevicePr
     except Exception:
         return []
 
+    # Known enum-like properties and their valid option values.
+    # Source: OpenVINO 2024+ documentation / ov::hint, ov::log, ov::affinity enums.
+    known_enum_options: dict[str, list[str]] = {
+        "LOG_LEVEL": ["LOG_NONE", "LOG_ERROR", "LOG_WARNING", "LOG_INFO", "LOG_DEBUG", "LOG_TRACE"],
+        "PERFORMANCE_HINT": ["", "LATENCY", "THROUGHPUT", "CUMULATIVE_THROUGHPUT"],
+        "INFERENCE_PRECISION_HINT": ["f32", "f16", "bf16", "i8"],
+        "SCHEDULING_CORE_TYPE": ["ANY_CORE", "PCORE_ONLY", "ECORE_ONLY"],
+        "HINT_EXECUTION_MODE": ["PERFORMANCE", "ACCURACY"],
+        "CACHE_MODE": ["OPTIMIZE_SIZE", "OPTIMIZE_SPEED"],
+        "AFFINITY": ["CORE", "NUMA", "HYBRID_AWARE"],
+    }
+
     # Properties to skip (internal, read-only, or cause issues)
     skip_props = {
         "SUPPORTED_PROPERTIES", "SUPPORTED_CONFIG_KEYS", "OPTIMIZATION_CAPABILITIES",
@@ -63,22 +114,33 @@ async def get_device_config(device_name: str, request: Request) -> list[DevicePr
         except Exception:
             continue
 
-        # Determine type from value
-        str_value = str(value)
-        if isinstance(value, bool):
+        # Normalize OV wrappers / enums / type names to shortest plain string
+        str_value = _normalize_ov_value(value)
+
+        if prop_name in known_enum_options:
+            prop_type = "enum"
+            options = list(known_enum_options[prop_name])
+            # Ensure current value is selectable even if not in known list
+            if str_value not in options:
+                options.insert(0, str_value)
+        elif isinstance(value, bool):
             prop_type = "bool"
+            options = []
         elif isinstance(value, int):
             prop_type = "int"
+            options = []
         elif str_value.lower() in ("yes", "no", "true", "false"):
             prop_type = "bool"
+            options = []
         else:
             prop_type = "string"
+            options = []
 
         properties.append(DeviceProperty(
             name=prop_name,
             value=str_value,
             type=prop_type,
-            options=[],
+            options=options,
         ))
 
     return properties
