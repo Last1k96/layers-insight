@@ -91,16 +91,12 @@ def _compute_propagated_shapes(ov_core, model_path: str, config) -> dict[str, li
 @router.get("")
 async def get_graph(session_id: str, request: Request) -> JSONResponse:
     """Get full graph data with positions and colors."""
-    import time
-
     from backend.ws.handler import ws_manager
 
     session_svc = request.app.state.session_service
     session = session_svc.get_session(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
-
-    t0 = time.perf_counter()
 
     async def _progress(stage: str, detail: str = "", **extra) -> None:
         msg = {"type": "graph_progress", "stage": stage, "detail": detail}
@@ -116,7 +112,6 @@ async def get_graph(session_id: str, request: Request) -> JSONResponse:
             request.app.state.models[session_id] = model
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Failed to load model: {e}")
-        print(f"[graph] load_model: {time.perf_counter() - t0:.3f}s")
 
     # Check for cached graph
     cached = session_svc.load_graph_cache(session_id)
@@ -130,40 +125,26 @@ async def get_graph(session_id: str, request: Request) -> JSONResponse:
     if model is None:
         raise HTTPException(status_code=400, detail="Failed to load model")
 
-    t1 = time.perf_counter()
     await _progress("extracting", "Extracting graph structure…")
     graph_data = extract_graph(model)
     node_count = len(graph_data.nodes)
     edge_count = len(graph_data.edges)
-    print(f"[graph] extract_graph: {time.perf_counter() - t1:.3f}s ({node_count} nodes, {edge_count} edges)")
 
-    t2 = time.perf_counter()
     await _progress("layout", f"Computing layout for {node_count} nodes…", node_count=node_count)
     positions = await compute_layout(graph_data)
-    print(f"[graph] compute_layout: {time.perf_counter() - t2:.3f}s ({node_count} nodes, {edge_count} edges)")
 
-    t3 = time.perf_counter()
     graph_data = apply_layout(graph_data, positions)
-    print(f"[graph] apply_layout: {time.perf_counter() - t3:.3f}s")
 
     # Cache for future requests
-    t4 = time.perf_counter()
     graph_dict = graph_data.model_dump()
-    print(f"[graph] model_dump: {time.perf_counter() - t4:.3f}s")
 
     # Compute propagated shapes from resolved input dims (on a model copy)
-    t5 = time.perf_counter()
     await _progress("shapes", "Propagating shapes…")
     propagated = _compute_propagated_shapes(ov_core, session.config.model_path, session.config)
     if propagated:
         graph_dict["propagated_shapes"] = propagated
-    print(f"[graph] propagated_shapes: {time.perf_counter() - t5:.3f}s")
 
-    t6 = time.perf_counter()
     session_svc.save_graph_cache(session_id, graph_dict)
-    print(f"[graph] save_cache: {time.perf_counter() - t6:.3f}s")
-
-    print(f"[graph] TOTAL: {time.perf_counter() - t0:.3f}s ({node_count} nodes, {edge_count} edges)")
 
     return JSONResponse(content=graph_dict)
 
