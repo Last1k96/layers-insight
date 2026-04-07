@@ -125,12 +125,6 @@
       <div class="flex items-center gap-2">
         <button
           class="text-xs text-content-secondary/40 hover:text-content-secondary transition-colors"
-          onclick={() => logStore.clear()}
-        >
-          Clear
-        </button>
-        <button
-          class="text-xs text-content-secondary/40 hover:text-content-secondary transition-colors"
           onclick={() => logStore.toggle()}
           title="Close logs"
         >
