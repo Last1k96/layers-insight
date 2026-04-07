@@ -13,13 +13,6 @@ from backend.services.graph_service import _normalize_element_type
 router = APIRouter(prefix="/api", tags=["devices"])
 
 
-def _add_virtual_devices(devices: list[str]) -> list[str]:
-    """Append virtual device names derived from real devices."""
-    if "CPU" in devices and "CPU_fp16" not in devices:
-        devices.append("CPU_fp16")
-    return devices
-
-
 @router.get("/devices")
 async def list_devices(request: Request) -> list[str]:
     """List available OpenVINO devices."""
@@ -30,7 +23,7 @@ async def list_devices(request: Request) -> list[str]:
         devices = list(ov_core.available_devices)
     except Exception:
         return ["CPU"]
-    return _add_virtual_devices(devices)
+    return devices
 
 
 class DeviceProperty(BaseModel):
@@ -47,11 +40,8 @@ async def get_device_config(device_name: str, request: Request) -> list[DevicePr
     if ov_core is None:
         return []
 
-    # Strip virtual device suffixes (e.g. CPU_fp16 -> CPU)
-    actual_device = device_name.split("_")[0] if "_" in device_name else device_name
-
     try:
-        supported = ov_core.get_property(actual_device, "SUPPORTED_PROPERTIES")
+        supported = ov_core.get_property(device_name, "SUPPORTED_PROPERTIES")
     except Exception:
         return []
 
@@ -69,7 +59,7 @@ async def get_device_config(device_name: str, request: Request) -> list[DevicePr
         if prop_name in skip_props:
             continue
         try:
-            value = ov_core.get_property(actual_device, prop_name)
+            value = ov_core.get_property(device_name, prop_name)
         except Exception:
             continue
 
@@ -147,7 +137,7 @@ async def validate_ov_path(
 
         core = ov.Core()
         devices = register_plugins(core, ov_path)
-        return OvValidationResult(valid=True, devices=_add_virtual_devices(devices), error=None)
+        return OvValidationResult(valid=True, devices=devices, error=None)
     except ImportError:
         return OvValidationResult(valid=False, devices=["CPU"], error="OpenVINO not installed")
     except Exception as e:

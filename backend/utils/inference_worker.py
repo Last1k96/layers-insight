@@ -32,7 +32,7 @@ def _log(level: str, msg: str) -> None:
 def _load_and_cut_model(cfg: dict) -> tuple:
     """Phase 1: Load model, find target op, cut to subgraph, save cut model.
 
-    Returns (tmp_xml, fp16_xml_or_None, model_params, input_configs).
+    Returns (tmp_xml, model_params, input_configs).
     """
     import gc
     import openvino as ov
@@ -82,23 +82,16 @@ def _load_and_cut_model(cfg: dict) -> tuple:
         cut_param_names = {p["name"] for p in model_params}
         input_configs = [c for c in input_configs if c["name"] in cut_param_names]
 
-    # Save fp16-compressed copy if needed for virtual fp16 devices
-    fp16_xml = None
-    if _is_fp16_device(main_device) or _is_fp16_device(ref_device):
-        fp16_xml = str(Path(out_dir) / "cut_model_fp16.xml")
-        ov.save_model(cut_model, fp16_xml, compress_to_fp16=True)
-        _log("info", "Saved fp16-compressed cut model")
-
     del cut_model, model, target_op, read_core
     gc.collect()
 
-    return tmp_xml, fp16_xml, model_params, input_configs
+    return tmp_xml, model_params, input_configs
 
 
-def _prepare_inputs(cfg: dict, tmp_xml: str, fp16_xml: str | None, input_configs: list[dict] | None):
+def _prepare_inputs(cfg: dict, tmp_xml: str, input_configs: list[dict] | None):
     """Phase 2: Reload model with fresh Core, prepare input tensors.
 
-    Returns (core, cut_model, fp16_cut_model_or_None, inputs, model_params).
+    Returns (core, cut_model, inputs).
     """
     import openvino as ov
     from backend.utils.ov_helpers import register_plugins
@@ -116,15 +109,8 @@ def _prepare_inputs(cfg: dict, tmp_xml: str, fp16_xml: str | None, input_configs
     cut_model = core.read_model(tmp_xml)
     _log("info", f"Reloaded cut model: {len(list(cut_model.get_ordered_ops()))} ops")
 
-    fp16_cut_model = None
-    if fp16_xml:
-        fp16_cut_model = core.read_model(fp16_xml)
-        _log("info", f"Reloaded fp16 cut model: {len(list(fp16_cut_model.get_ordered_ops()))} ops")
-
     # Apply bounded reshape if input_configs have bounds (dynamic shapes)
     _apply_bounded_reshape(cut_model, input_configs)
-    if fp16_cut_model:
-        _apply_bounded_reshape(fp16_cut_model, input_configs)
 
     # Re-extract params after reshape (shapes may now be bounded/static)
     model_params = _extract_params(cut_model)
@@ -138,10 +124,10 @@ def _prepare_inputs(cfg: dict, tmp_xml: str, fp16_xml: str | None, input_configs
         safe_name = name.replace("/", "_").replace("(", "_").replace(")", "_")
         np.save(str(Path(out_dir) / f"input_{safe_name}.npy"), tensor)
 
-    return core, cut_model, fp16_cut_model, inputs
+    return core, cut_model, inputs
 
 
-def _run_inference(cfg: dict, core, cut_model, fp16_cut_model, inputs: dict):
+def _run_inference(cfg: dict, core, cut_model, inputs: dict):
     """Phase 3: Compile on both devices, execute, collect ALL outputs.
 
     Returns (main_outs, main_results, ref_outs, ref_results) where each is a list
@@ -152,18 +138,16 @@ def _run_inference(cfg: dict, core, cut_model, fp16_cut_model, inputs: dict):
 
     # Infer on main device
     _log("info", f"Compiling model for {main_device}...")
-    main_model = fp16_cut_model if _is_fp16_device(main_device) else cut_model
     main_plugin_config = cfg.get("plugin_config") or None
-    main_outs, main_results, main_err = _run_on_device(core, main_model, main_device, inputs, main_plugin_config)
+    main_outs, main_results, main_err = _run_on_device(core, cut_model, main_device, inputs, main_plugin_config)
     if main_err:
         raise RuntimeError(main_err)
     _log("info", f"Inference on {main_device} complete ({len(main_outs)} output(s))")
 
     # Infer on reference device
     _log("info", f"Compiling model for {ref_device}...")
-    ref_model = fp16_cut_model if _is_fp16_device(ref_device) else cut_model
     ref_plugin_config = cfg.get("ref_plugin_config") or None
-    ref_outs, ref_results, ref_err = _run_on_device(core, ref_model, ref_device, inputs, ref_plugin_config)
+    ref_outs, ref_results, ref_err = _run_on_device(core, cut_model, ref_device, inputs, ref_plugin_config)
     if ref_err:
         raise RuntimeError(ref_err)
     _log("info", f"Inference on {ref_device} complete ({len(ref_outs)} output(s))")
@@ -202,16 +186,16 @@ def main() -> None:
         _log("info", "Loading OpenVINO runtime...")
 
         # Phase 1: Load model, cut subgraph, serialize
-        tmp_xml, fp16_xml, model_params, input_configs = _load_and_cut_model(cfg)
+        tmp_xml, model_params, input_configs = _load_and_cut_model(cfg)
 
         # Phase 2: Reload with fresh Core, prepare inputs
-        core, cut_model, fp16_cut_model, inputs = _prepare_inputs(
-            cfg, tmp_xml, fp16_xml, input_configs,
+        core, cut_model, inputs = _prepare_inputs(
+            cfg, tmp_xml, input_configs,
         )
 
         # Phase 3: Run inference on both devices (returns lists for multi-output)
         main_outs, main_results, ref_outs, ref_results = _run_inference(
-            cfg, core, cut_model, fp16_cut_model, inputs,
+            cfg, core, cut_model, inputs,
         )
 
         # Phase 4: Compute per-output accuracy metrics
@@ -305,25 +289,6 @@ def _apply_bounded_reshape(model, input_configs):
         model.reshape(reshape_map)
 
 
-_FP16_DEVICES = {"CPU_fp16"}
-
-
-def _is_fp16_device(device: str) -> bool:
-    """Check if device is a virtual fp16 device that uses weight compression."""
-    return device in _FP16_DEVICES
-
-
-def _parse_virtual_device(device: str) -> tuple[str, dict]:
-    """Parse virtual device names into (actual_device, config).
-
-    Supported virtual devices:
-      CPU_fp16 → CPU with fp16-compressed weights (model-level, not runtime hint)
-    """
-    if device in _FP16_DEVICES:
-        return ("CPU", {})
-    return (device, {})
-
-
 def _run_on_device(core, model, device: str, inputs: dict, plugin_config: dict[str, str] | None = None):
     """Run inference and return ALL outputs.
 
@@ -333,13 +298,10 @@ def _run_on_device(core, model, device: str, inputs: dict, plugin_config: dict[s
         - per_output_results: list[dict] — per-output device stats
         - error: str | None
     """
-    actual_device, config = _parse_virtual_device(device)
-    # Merge user plugin_config into device config
-    if plugin_config:
-        config.update(plugin_config)
+    config = plugin_config or {}
     try:
         _log("info", f"Compiling on {device}...")
-        compiled = core.compile_model(model, actual_device, config)
+        compiled = core.compile_model(model, device, config)
         _log("info", f"Compilation on {device} succeeded")
     except Exception as e:
         return None, None, f"Compilation on {device} failed: {e}"
