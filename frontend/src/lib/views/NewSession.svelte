@@ -136,6 +136,9 @@
   let mainChangedCount = $derived(Object.keys(getPluginConfigPayload()).length);
   let refChangedCount = $derived(Object.keys(getRefPluginConfigPayload()).length);
 
+  let mainPluginFilter = $state('');
+  let refPluginFilter = $state('');
+
   // File browser state
   let showBrowser = $state(false);
   let browserMode = $state<'directory' | 'file'>('directory');
@@ -222,6 +225,14 @@
     const delta = e.deltaY < 0 ? 1 : -1;
     const step = e.shiftKey ? 10 : 1;
     setValue(Math.max(min, getValue() + delta * step));
+  }
+
+  function handlePluginWheel(e: WheelEvent, currentValue: string, propName: string, onValueChange: (k: string, v: string) => void) {
+    e.preventDefault();
+    const cur = parseInt(currentValue) || 0;
+    const delta = e.deltaY < 0 ? 1 : -1;
+    const step = e.shiftKey ? 10 : 1;
+    onValueChange(propName, String(Math.max(0, cur + delta * step)));
   }
 
   // --- Debounce utility ---
@@ -885,7 +896,7 @@
       </div>
 
       <!-- Plugin Configuration -->
-      {#snippet pluginConfigPanel(label: string, properties: DeviceProperty[], configValues: Record<string, string>, loading: boolean, prefix: string, onValueChange: (key: string, val: string) => void)}
+      {#snippet pluginConfigPanel(label: string, properties: DeviceProperty[], configValues: Record<string, string>, loading: boolean, prefix: string, onValueChange: (key: string, val: string) => void, filterText: string, onFilterChange: (v: string) => void)}
         <div class="plugin-panel">
           <div class="plugin-panel-label">{label}</div>
           {#if loading}
@@ -893,48 +904,101 @@
           {:else if properties.length === 0}
             <div class="plugin-loading">No configurable properties.</div>
           {:else}
+            {#if properties.length > 8}
+              <div class="plugin-filter-row">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+                  <circle cx="5" cy="5" r="3.5" />
+                  <line x1="7.5" y1="7.5" x2="10" y2="10" />
+                </svg>
+                <input
+                  type="text"
+                  class="plugin-filter-input"
+                  placeholder="Filter properties..."
+                  value={filterText}
+                  oninput={(e) => onFilterChange((e.target as HTMLInputElement).value)}
+                />
+                {#if filterText}
+                  <button type="button" class="plugin-filter-clear" onclick={() => onFilterChange('')}>
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+                      <line x1="2" y1="2" x2="8" y2="8" /><line x1="8" y1="2" x2="2" y2="8" />
+                    </svg>
+                  </button>
+                {/if}
+              </div>
+            {/if}
+            {@const filtered = filterText
+              ? properties.filter(p => p.name.toLowerCase().includes(filterText.toLowerCase()))
+              : properties}
             <div class="plugin-list">
-              {#each properties as prop (prop.name)}
-                <div class="plugin-prop">
+              {#each filtered as prop (prop.name)}
+                {@const currentVal = configValues[prop.name] ?? prop.value}
+                {@const isModified = configValues[prop.name] != null && configValues[prop.name] !== prop.value}
+                <div class="plugin-prop" class:modified={isModified}>
                   <label for="{prefix}-{prop.name}" class="plugin-prop-name" title={prop.name}>
                     {prop.name}
                   </label>
-                  {#if prop.type === 'bool'}
-                    <select
-                      id="{prefix}-{prop.name}"
-                      value={configValues[prop.name] ?? prop.value}
-                      onchange={(e) => onValueChange(prop.name, (e.target as HTMLSelectElement).value)}
-                      class="plugin-prop-input"
-                    >
-                      <option value="True">True</option>
-                      <option value="true">true</option>
-                      <option value="False">False</option>
-                      <option value="false">false</option>
-                      <option value="YES">YES</option>
-                      <option value="NO">NO</option>
-                    </select>
-                  {:else if prop.type === 'enum' && prop.options.length > 0}
-                    <select
-                      id="{prefix}-{prop.name}"
-                      value={configValues[prop.name] ?? prop.value}
-                      onchange={(e) => onValueChange(prop.name, (e.target as HTMLSelectElement).value)}
-                      class="plugin-prop-input"
-                    >
-                      {#each prop.options as opt (opt)}
-                        <option value={opt}>{opt}</option>
-                      {/each}
-                    </select>
-                  {:else}
-                    <input
-                      id="{prefix}-{prop.name}"
-                      type={prop.type === 'int' ? 'number' : 'text'}
-                      value={configValues[prop.name] ?? prop.value}
-                      oninput={(e) => onValueChange(prop.name, (e.target as HTMLInputElement).value)}
-                      class="plugin-prop-input"
-                    />
-                  {/if}
+                  <div class="plugin-prop-field" class:has-reset={isModified}>
+                    {#if prop.type === 'bool'}
+                      {@const isCaps = prop.value === 'YES' || prop.value === 'NO'}
+                      {@const isPython = prop.value === 'True' || prop.value === 'False'}
+                      {@const trueVal = isCaps ? 'YES' : isPython ? 'True' : 'true'}
+                      {@const falseVal = isCaps ? 'NO' : isPython ? 'False' : 'false'}
+                      <select
+                        id="{prefix}-{prop.name}"
+                        value={currentVal}
+                        onchange={(e) => onValueChange(prop.name, (e.target as HTMLSelectElement).value)}
+                        class="plugin-prop-input"
+                      >
+                        <option value={trueVal}>{trueVal}</option>
+                        <option value={falseVal}>{falseVal}</option>
+                      </select>
+                    {:else if prop.type === 'enum' && prop.options.length > 0}
+                      <select
+                        id="{prefix}-{prop.name}"
+                        value={currentVal}
+                        onchange={(e) => onValueChange(prop.name, (e.target as HTMLSelectElement).value)}
+                        class="plugin-prop-input"
+                      >
+                        {#each prop.options as opt (opt)}
+                          <option value={opt}>{opt || '(default)'}</option>
+                        {/each}
+                      </select>
+                    {:else if prop.type === 'int'}
+                      <input
+                        id="{prefix}-{prop.name}"
+                        type="number"
+                        value={currentVal}
+                        oninput={(e) => onValueChange(prop.name, (e.target as HTMLInputElement).value)}
+                        onwheel={(e) => handlePluginWheel(e, currentVal, prop.name, onValueChange)}
+                        class="plugin-prop-input"
+                      />
+                    {:else}
+                      <input
+                        id="{prefix}-{prop.name}"
+                        type="text"
+                        value={currentVal}
+                        oninput={(e) => onValueChange(prop.name, (e.target as HTMLInputElement).value)}
+                        class="plugin-prop-input"
+                      />
+                    {/if}
+                    {#if isModified}
+                      <button
+                        type="button"
+                        class="plugin-prop-reset"
+                        title="Reset to default ({prop.value})"
+                        onclick={() => onValueChange(prop.name, prop.value)}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                          <line x1="2" y1="2" x2="8" y2="8" /><line x1="8" y1="2" x2="2" y2="8" />
+                        </svg>
+                      </button>
+                    {/if}
+                  </div>
                 </div>
               {/each}
+              {#if filterText && filtered.length === 0}
+                <div class="plugin-loading">No matching properties.</div>
+              {/if}
             </div>
           {/if}
         </div>
@@ -1005,7 +1069,9 @@
                 mainPluginConfigValues,
                 loadingMainPluginConfig,
                 'main-plugin',
-                (key, val) => { mainPluginConfigValues = { ...mainPluginConfigValues, [key]: val }; }
+                (key, val) => { mainPluginConfigValues = { ...mainPluginConfigValues, [key]: val }; },
+                mainPluginFilter,
+                (v) => { mainPluginFilter = v; }
               )}
             {:else}
               {@render pluginConfigPanel(
@@ -1014,7 +1080,9 @@
                 refPluginConfigValues,
                 loadingRefPluginConfig,
                 'ref-plugin',
-                (key, val) => { refPluginConfigValues = { ...refPluginConfigValues, [key]: val }; }
+                (key, val) => { refPluginConfigValues = { ...refPluginConfigValues, [key]: val }; },
+                refPluginFilter,
+                (v) => { refPluginFilter = v; }
               )}
             {/if}
           </div>
@@ -1669,20 +1737,117 @@
   }
 
   .plugin-prop-input {
-    width: 10rem;
+    width: 100%;
     padding: 0.3rem 0.5rem;
     background: var(--bg-input);
     border: 1px solid var(--border-color);
     border-radius: 0.3rem;
     font-size: 0.75rem;
     color: var(--text-primary);
-    flex-shrink: 0;
     transition: border-color 0.15s ease;
   }
 
   .plugin-prop-input:focus {
     border-color: #4C8DFF;
     outline: none;
+  }
+
+  .plugin-prop.modified {
+    background: rgba(76, 141, 255, 0.04);
+    border-left: 2px solid rgba(76, 141, 255, 0.4);
+    padding-left: calc(0.4rem - 2px);
+  }
+
+  .plugin-prop-field {
+    position: relative;
+    flex-shrink: 0;
+    width: 10rem;
+  }
+
+  .plugin-prop-field .plugin-prop-input {
+    width: 100%;
+  }
+
+  .plugin-prop-field.has-reset .plugin-prop-input {
+    padding-right: 1.5rem;
+  }
+
+  .plugin-prop-reset {
+    position: absolute;
+    right: 0.25rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1rem;
+    height: 1rem;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    opacity: 0.35;
+    cursor: pointer;
+    border-radius: 0.2rem;
+    transition: all 0.15s ease;
+  }
+
+  .plugin-prop-reset:hover {
+    opacity: 1;
+    color: #4C8DFF;
+    background: rgba(76, 141, 255, 0.12);
+  }
+
+  .plugin-filter-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+    padding: 0.35rem 0.5rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    transition: opacity 0.15s ease, border-color 0.15s ease;
+  }
+
+  .plugin-filter-row:focus-within {
+    opacity: 1;
+    border-color: rgba(76, 141, 255, 0.3);
+  }
+
+  .plugin-filter-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    color: var(--text-primary);
+  }
+
+  .plugin-filter-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.5;
+  }
+
+  .plugin-filter-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.15rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 0.2rem;
+    opacity: 0.5;
+    transition: opacity 0.1s ease;
+  }
+
+  .plugin-filter-clear:hover {
+    opacity: 1;
   }
 
   /* ── Error ── */
