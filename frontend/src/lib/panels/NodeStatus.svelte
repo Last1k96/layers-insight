@@ -3,12 +3,20 @@
   import { queueStore } from '../stores/queue.svelte';
   import { sessionStore } from '../stores/session.svelte';
   import { refreshRenderer, centerOnNode, setHoveredNode, setHoveredEdge } from '../graph/renderer';
+  import { isLightNodeColor, getStatusColor } from '../graph/opColors';
   import type { ConstantData } from '../stores/types';
 
   let selectedNode = $derived(graphStore.selectedNode);
   let nodeStatus = $derived(graphStore.selectedNodeStatus);
   let selectedEdge = $derived(graphStore.selectedEdge);
   let nodeOverride = $derived(selectedNode ? graphStore.nodeOverrides.get(selectedNode.name) : undefined);
+
+  let chipBorderColor = $derived.by(() => {
+    if (!nodeStatus) return '#333333';
+    if (nodeStatus.status === 'success') return '#BFBFC7';
+    return getStatusColor(nodeStatus.status);
+  });
+  let chipTextDark = $derived(selectedNode ? isLightNodeColor(selectedNode.color) : false);
 
   /** Propagated (concrete) shape for the selected node, if available */
   let propagatedShape = $derived(
@@ -248,7 +256,10 @@
         class="font-mono font-medium text-[13px] text-content-primary break-all leading-snug text-left"
         onclick={() => centerOnNode(selectedNode!.id)}
       >{selectedNode.name}</button>
-      <div class="text-content-secondary/50 text-xs mt-1">{selectedNode.type}</div>
+      <div
+        class="inline-block text-xs font-medium mt-1 px-2 py-0.5 rounded-md"
+        style="background-color: {selectedNode.color}; border: 2px solid {chipBorderColor}; color: {chipTextDark ? '#1B1E2B' : '#E1E4ED'};"
+      >{selectedNode.type}</div>
       {#if (selectedNode.inputs && selectedNode.inputs.length > 0) || selectedNode.shape}
         <div class="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs items-baseline">
           {#if selectedNode.inputs}
