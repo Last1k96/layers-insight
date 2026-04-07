@@ -2,7 +2,7 @@
   import { queueStore, type SortColumn } from '../stores/queue.svelte';
   import { graphStore } from '../stores/graph.svelte';
   import { bisectStore } from '../stores/bisect.svelte';
-  import { centerOnNode, refreshRenderer } from '../graph/renderer';
+  import { centerOnNode, refreshRenderer, setHoveredNode } from '../graph/renderer';
   import { getStatusColor } from '../graph/opColors';
   import { logStore } from '../stores/log.svelte';
   import { advancedFilterStore } from '../stores/advancedFilter.svelte';
@@ -266,11 +266,13 @@
         {/if}
         <div
           class="w-full text-left px-3 py-2 text-sm flex items-center gap-2 cursor-pointer outline-none row-hover"
-          style:background-color={i === queueStore.selectedIndex ? 'rgba(76, 141, 255, 0.06)' : undefined}
+          style:background-color={i === queueStore.selectedIndex ? 'rgba(76, 141, 255, 0.06)' : graphStore.hoveredNodeId === task.node_id ? 'rgba(76, 141, 255, 0.04)' : undefined}
           role="button"
           tabindex="-1"
           onclick={() => { queueStore.selectedIndex = i; selectTask(task); }}
           onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedIndex = i; selectTask(task); }}}
+          onmouseenter={() => { setHoveredNode(task.node_id); }}
+          onmouseleave={() => { setHoveredNode(null); }}
         >
           <div
             class="w-2.5 h-2.5 rounded-full shrink-0"
@@ -352,10 +354,12 @@
         {#if !isBisectCollapsed(bj.job_id)}
           {#each jobTasks as task (task.task_id)}
             <div class="w-full text-left pl-8 pr-3 py-2 text-sm flex items-center gap-2 cursor-pointer outline-none row-hover"
-              style:background-color={queueStore.selectedTaskId === task.task_id ? 'rgba(76, 141, 255, 0.06)' : undefined}
+              style:background-color={queueStore.selectedTaskId === task.task_id ? 'rgba(76, 141, 255, 0.06)' : graphStore.hoveredNodeId === task.node_id ? 'rgba(76, 141, 255, 0.04)' : undefined}
               role="button" tabindex="-1"
               onclick={() => { queueStore.selectedTaskId = task.task_id; selectTask(task); }}
               onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedTaskId = task.task_id; selectTask(task); }}}
+              onmouseenter={() => { setHoveredNode(task.node_id); }}
+              onmouseleave={() => { setHoveredNode(null); }}
             >
               <div class="w-2.5 h-2.5 rounded-full shrink-0" class:pulse-ring={task.status === 'executing'} class:status-glow={task.status === 'executing'}
                 style:background-color={getStatusColor(task.status)}></div>
@@ -424,10 +428,12 @@
         {#if !isBisectCollapsed(bj.job_id)}
           {#each jobTasks as task (task.task_id)}
             <div class="w-full text-left pl-8 pr-3 py-2 text-sm flex items-center gap-2 cursor-pointer outline-none row-hover"
-              style:background-color={queueStore.selectedTaskId === task.task_id ? 'rgba(76, 141, 255, 0.06)' : undefined}
+              style:background-color={queueStore.selectedTaskId === task.task_id ? 'rgba(76, 141, 255, 0.06)' : graphStore.hoveredNodeId === task.node_id ? 'rgba(76, 141, 255, 0.04)' : undefined}
               role="button" tabindex="-1"
               onclick={() => { queueStore.selectedTaskId = task.task_id; selectTask(task); }}
               onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedTaskId = task.task_id; selectTask(task); }}}
+              onmouseenter={() => { setHoveredNode(task.node_id); }}
+              onmouseleave={() => { setHoveredNode(null); }}
             >
               <div class="w-2.5 h-2.5 rounded-full shrink-0" class:pulse-ring={task.status === 'executing'} class:status-glow={task.status === 'executing'}
                 style:background-color={getStatusColor(task.status)}></div>

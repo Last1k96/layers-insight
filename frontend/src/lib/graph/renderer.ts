@@ -37,6 +37,7 @@ export function getGPURenderer(): WebGPURenderer | null {
 export function setHoveredNode(nodeId: string | null): void {
   if (hoveredNodeId !== nodeId) {
     hoveredNodeId = nodeId;
+    graphStore.hoveredNodeId = nodeId;
     scheduleRefresh();
   }
 }
@@ -166,6 +167,7 @@ export function destroyRenderer(): void {
   currentGraphData = null;
   hoveredNodeId = null;
   hoveredEdgeIndex = null;
+  graphStore.hoveredNodeId = null;
   nodeSizes.clear();
 }
 
