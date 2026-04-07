@@ -18,6 +18,7 @@
   import { queueStore } from '../stores/queue.svelte';
   import { bisectStore } from '../stores/bisect.svelte';
   import { logStore } from '../stores/log.svelte';
+  import { configStore } from '../stores/config.svelte';
   import { cacheMetrics } from '../stores/metrics.svelte';
   import { connect, disconnect, setConnectionCallbacks } from '../ws/client';
   import { refreshRenderer } from '../graph/renderer';
@@ -150,7 +151,9 @@
       description: 'Toggle accuracy view',
       handler(e) {
         e.preventDefault();
-        graphStore.accuracyViewActive = !graphStore.accuracyViewActive;
+        const next = !configStore.accuracyEnabled;
+        configStore.setAccuracyEnabled(next);
+        graphStore.accuracyViewActive = next;
         refreshRenderer();
       },
     });
@@ -186,15 +189,6 @@
           refreshRenderer();
           return;
         }
-      },
-    });
-
-    registerShortcut({
-      key: '?',
-      description: 'Show keyboard shortcuts help',
-      handler(e) {
-        e.preventDefault();
-        toggleHelp();
       },
     });
 
