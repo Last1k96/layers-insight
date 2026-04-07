@@ -252,12 +252,11 @@
   {:else if selectedNode}
     <!-- Node Info -->
     <div class="mb-4">
-      <button
-        class="font-mono font-medium text-[13px] text-content-primary break-all leading-snug text-left"
-        onclick={() => centerOnNode(selectedNode!.id)}
-      >{selectedNode.name}</button>
+      <span
+        class="font-mono font-medium text-[13px] text-content-primary break-all leading-snug"
+      >{selectedNode.name}</span>
       <div
-        class="inline-block text-xs font-medium mt-1 px-2 py-0.5 rounded-md"
+        class="block w-fit text-xs font-medium mt-1 px-2 py-0.5 rounded-md"
         style="background-color: {selectedNode.color}; border: 2px solid {chipBorderColor}; color: {chipTextDark ? '#1B1E2B' : '#E1E4ED'};"
       >{selectedNode.type}</div>
       {#if (selectedNode.inputs && selectedNode.inputs.length > 0) || selectedNode.shape}
