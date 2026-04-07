@@ -82,6 +82,7 @@
 
   let cutting = $state(false);
   let exporting = $state(false);
+  let minimalModel = $state(true);
 
   async function handleExport() {
     const session = sessionStore.currentSession;
@@ -89,7 +90,8 @@
 
     exporting = true;
     try {
-      const url = `/api/tensors/${session.id}/${nodeStatus.taskId}/export`;
+      let url = `/api/tensors/${session.id}/${nodeStatus.taskId}/export`;
+      if (minimalModel) url += '?minimal_model=true';
       const a = document.createElement('a');
       a.href = url;
       a.download = '';
@@ -585,6 +587,10 @@
           Export Reproducer
         {/if}
       </button>
+      <label class="mt-1 flex items-center gap-1.5 text-xs text-muted cursor-pointer select-none">
+        <input type="checkbox" bind:checked={minimalModel} class="accent-accent w-3 h-3" />
+        Minimal reproducer (cut model weights)
+      </label>
       <button
         class="mt-2 w-full py-2 rounded-lg text-xs transition-all duration-100 text-red-400/70 hover:text-red-400 hover:bg-red-500/10 active:scale-[0.98]"
         onclick={handleDelete}

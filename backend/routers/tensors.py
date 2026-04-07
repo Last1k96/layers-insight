@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import io
 import json
+import shutil
+import tempfile
 import zipfile
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Optional
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response, StreamingResponse
 
 router = APIRouter(prefix="/api/tensors", tags=["tensors"])
@@ -43,11 +45,64 @@ class _ZipStreamBuffer:
         return data
 
 
+def _regenerate_cut_model(
+    request: Request,
+    svc: "object",
+    session_id: str,
+    session_detail: "object",
+    task_data: dict,
+    node_name: str,
+    out_dir: Path,
+) -> None:
+    """Re-cut the model to produce a minimal .bin with only the needed weights."""
+    import openvino as ov
+    from backend.utils.ov_graph_utils import get_reachable_params
+
+    ov_core = request.app.state.ov_core
+    models_cache = request.app.state.models
+    session_path = svc._session_path(session_id)
+
+    sub_session_id = task_data.get("sub_session_id")
+    if sub_session_id:
+        sub_meta = svc.get_sub_session_meta_resolved(session_id, sub_session_id)
+        if sub_meta and sub_meta.get("model_path"):
+            model_xml = str(session_path / sub_meta["model_path"])
+        else:
+            model_xml = str(session_path / session_detail.config.model_path)
+        model = ov_core.read_model(model_xml)
+    else:
+        model = models_cache.get(session_id)
+        if model is None:
+            model_xml = str(session_path / session_detail.config.model_path)
+            model = ov_core.read_model(model_xml)
+
+    target_op = None
+    for op in model.get_ordered_ops():
+        if op.get_friendly_name() == node_name:
+            target_op = op
+            break
+
+    if target_op is None:
+        raise ValueError(f"Node '{node_name}' not found in model")
+
+    new_outputs = target_op.outputs()
+    reachable_params = get_reachable_params(model, new_outputs)
+    cut_model = ov.Model(new_outputs, reachable_params, f"cut_at_{node_name}")
+    cut_model.validate_nodes_and_infer_types()
+    ov.save_model(cut_model, str(out_dir / "cut_model.xml"))
+    del cut_model
+
+
 # --- Export route MUST be registered before the wildcard {output_name} routes
 #     so that "/export" is matched as a fixed segment, not as output_name. ---
 
 @router.get("/{session_id}/{task_id}/export")
-async def export_reproducer(session_id: str, task_id: str, request: Request) -> StreamingResponse:
+async def export_reproducer(
+    session_id: str,
+    task_id: str,
+    request: Request,
+    minimal_model: bool = Query(False, description="Re-cut the model to include only needed weights (smaller download)"),
+) -> StreamingResponse:
     """Export a reproducer ZIP package for filing bug reports.
 
     The ZIP contains the cut model, raw binary input/output tensors,
@@ -117,72 +172,91 @@ async def export_reproducer(session_id: str, task_id: str, request: Request) -> 
 
     safe_name = node_name.replace("/", "_").replace("\\", "_").replace(" ", "_")
 
+    # When minimal_model is requested and .bin is a symlink, regenerate
+    # a proper cut model with only the needed weights.
+    regen_dir: Optional[Path] = None
+    cut_model_bin = tensor_dir / "cut_model.bin"
+    if minimal_model and cut_model_bin.is_symlink():
+        regen_dir = Path(tempfile.mkdtemp(prefix="li_regen_"))
+        try:
+            _regenerate_cut_model(request, svc, session_id, session_detail, task_data, node_name, regen_dir)
+        except Exception:
+            shutil.rmtree(regen_dir, ignore_errors=True)
+            regen_dir = None
+
+    model_src_dir = regen_dir if regen_dir else tensor_dir
+
     def _generate() -> Iterator[bytes]:
         buf = _ZipStreamBuffer()
         prefix = "reproducer/"
 
-        with zipfile.ZipFile(buf, "w") as zf:
-            # Model files — .bin stored (weights don't compress), .xml deflated
-            for suffix in (".xml", ".bin"):
-                model_file = tensor_dir / f"cut_model{suffix}"
-                if model_file.exists():
-                    compress = zipfile.ZIP_DEFLATED if suffix == ".xml" else zipfile.ZIP_STORED
-                    zf.writestr(f"{prefix}cut_model{suffix}", model_file.read_bytes(), compress_type=compress)
+        try:
+            with zipfile.ZipFile(buf, "w") as zf:
+                # Model files — .bin stored (weights don't compress), .xml deflated.
+                # model_src_dir points to regen_dir (minimal cut) or tensor_dir (full .bin via symlink).
+                for suffix in (".xml", ".bin"):
+                    model_file = model_src_dir / f"cut_model{suffix}"
+                    if model_file.exists():
+                        compress = zipfile.ZIP_DEFLATED if suffix == ".xml" else zipfile.ZIP_STORED
+                        zf.writestr(f"{prefix}cut_model{suffix}", model_file.read_bytes(), compress_type=compress)
+                        yield buf.drain()
+
+                # Input tensors (input_*.npy -> input_*.bin) — stored uncompressed
+                for npy_path in sorted(tensor_dir.glob("input_*.npy")):
+                    arr = np.load(str(npy_path))
+                    bin_name = npy_path.stem + ".bin"
+                    zf.writestr(f"{prefix}{bin_name}", arr.tobytes(), compress_type=zipfile.ZIP_STORED)
+                    info["inputs"].append({
+                        "name": npy_path.stem,
+                        "shape": list(arr.shape),
+                        "dtype": str(arr.dtype),
+                        "file": bin_name,
+                    })
                     yield buf.drain()
 
-            # Input tensors (input_*.npy -> input_*.bin) — stored uncompressed
-            for npy_path in sorted(tensor_dir.glob("input_*.npy")):
-                arr = np.load(str(npy_path))
-                bin_name = npy_path.stem + ".bin"
-                zf.writestr(f"{prefix}{bin_name}", arr.tobytes(), compress_type=zipfile.ZIP_STORED)
-                info["inputs"].append({
-                    "name": npy_path.stem,
-                    "shape": list(arr.shape),
-                    "dtype": str(arr.dtype),
-                    "file": bin_name,
-                })
+                # Output tensors — stored uncompressed (float tensors don't compress).
+                # Handle both single-output (main_output.npy) and multi-output
+                # (main_output_0.npy, ...) patterns.  Skip unnumbered file when
+                # indexed files exist to avoid duplicates.
+                for side in ("main_output", "ref_output"):
+                    indexed = sorted(tensor_dir.glob(f"{side}_[0-9]*.npy"))
+                    if indexed:
+                        for npy_path in indexed:
+                            arr = np.load(str(npy_path))
+                            bin_name = npy_path.stem + ".bin"
+                            zf.writestr(f"{prefix}{bin_name}", arr.tobytes(), compress_type=zipfile.ZIP_STORED)
+                            info["outputs"].append({
+                                "name": npy_path.stem,
+                                "shape": list(arr.shape),
+                                "dtype": str(arr.dtype),
+                                "file": bin_name,
+                            })
+                            yield buf.drain()
+                    else:
+                        npy_path = tensor_dir / f"{side}.npy"
+                        if npy_path.exists():
+                            arr = np.load(str(npy_path))
+                            bin_name = f"{side}.bin"
+                            zf.writestr(f"{prefix}{bin_name}", arr.tobytes(), compress_type=zipfile.ZIP_STORED)
+                            info["outputs"].append({
+                                "name": side,
+                                "shape": list(arr.shape),
+                                "dtype": str(arr.dtype),
+                                "file": bin_name,
+                            })
+                            yield buf.drain()
+
+                # info.json last (needs accumulated inputs/outputs lists)
+                zf.writestr(f"{prefix}info.json", json.dumps(info, indent=2), compress_type=zipfile.ZIP_DEFLATED)
                 yield buf.drain()
 
-            # Output tensors — stored uncompressed (float tensors don't compress).
-            # Handle both single-output (main_output.npy) and multi-output
-            # (main_output_0.npy, ...) patterns.  Skip unnumbered file when
-            # indexed files exist to avoid duplicates.
-            for side in ("main_output", "ref_output"):
-                indexed = sorted(tensor_dir.glob(f"{side}_[0-9]*.npy"))
-                if indexed:
-                    for npy_path in indexed:
-                        arr = np.load(str(npy_path))
-                        bin_name = npy_path.stem + ".bin"
-                        zf.writestr(f"{prefix}{bin_name}", arr.tobytes(), compress_type=zipfile.ZIP_STORED)
-                        info["outputs"].append({
-                            "name": npy_path.stem,
-                            "shape": list(arr.shape),
-                            "dtype": str(arr.dtype),
-                            "file": bin_name,
-                        })
-                        yield buf.drain()
-                else:
-                    npy_path = tensor_dir / f"{side}.npy"
-                    if npy_path.exists():
-                        arr = np.load(str(npy_path))
-                        bin_name = f"{side}.bin"
-                        zf.writestr(f"{prefix}{bin_name}", arr.tobytes(), compress_type=zipfile.ZIP_STORED)
-                        info["outputs"].append({
-                            "name": side,
-                            "shape": list(arr.shape),
-                            "dtype": str(arr.dtype),
-                            "file": bin_name,
-                        })
-                        yield buf.drain()
-
-            # info.json last (needs accumulated inputs/outputs lists)
-            zf.writestr(f"{prefix}info.json", json.dumps(info, indent=2), compress_type=zipfile.ZIP_DEFLATED)
-            yield buf.drain()
-
-        # ZipFile.close() writes central directory
-        tail = buf.drain()
-        if tail:
-            yield tail
+            # ZipFile.close() writes central directory
+            tail = buf.drain()
+            if tail:
+                yield tail
+        finally:
+            if regen_dir and regen_dir.exists():
+                shutil.rmtree(regen_dir, ignore_errors=True)
 
     return StreamingResponse(
         _generate(),

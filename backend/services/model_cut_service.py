@@ -241,6 +241,16 @@ class ModelCutService:
         cut_model_abs = str(sub_dir / "cut_model.xml")
         ov.save_model(cut_model_obj, cut_model_abs)
 
+        # Replace cut_model.bin with symlink to root session model.bin
+        cut_bin = sub_dir / "cut_model.bin"
+        meta = session_svc._read_metadata(session_id)
+        model_xml_rel = meta["config"]["model_path"]
+        session_path = session_svc._session_path(session_id)
+        model_bin = session_path / Path(model_xml_rel).with_suffix(".bin")
+        if cut_bin.exists() and model_bin.exists():
+            cut_bin.unlink()
+            cut_bin.symlink_to(model_bin.resolve())
+
         rel_cut_model = f"sub_sessions/{sub_session.id}/cut_model.xml"
 
         if effective_cut_type == "input":
