@@ -51,12 +51,12 @@ class TestCreateSession:
 
     @pytest.mark.asyncio
     async def test_create_session_invalid_path(self, async_client):
-        with pytest.raises(Exception):
-            await async_client.post("/api/sessions", json={
-                "model_path": "/nonexistent/model.xml",
-                "main_device": "CPU",
-                "ref_device": "CPU",
-            })
+        resp = await async_client.post("/api/sessions", json={
+            "model_path": "/nonexistent/model.xml",
+            "main_device": "CPU",
+            "ref_device": "CPU",
+        })
+        assert resp.status_code == 400
 
 
 class TestListSessions:
