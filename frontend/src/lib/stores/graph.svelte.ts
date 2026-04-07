@@ -42,6 +42,8 @@ class GraphStore {
   selectedEdgeIndex = $state<number | null>(null);
   /** Bumped on camera changes so GhostNodes can recompute positions reactively. */
   cameraVersion = $state(0);
+  /** Currently hovered node (from graph canvas or queue list). */
+  hoveredNodeId = $state<string | null>(null);
 
   /** Returns the nodeStatusMap for the active sub-session. */
   get nodeStatusMap(): Map<string, NodeStatus> {
