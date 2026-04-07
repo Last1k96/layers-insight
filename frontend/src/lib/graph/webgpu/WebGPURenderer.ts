@@ -295,12 +295,12 @@ export class WebGPURenderer {
       } else {
         fill = hexToRgb(fillColor);
 
-        // Status colors — inferred nodes get accuracy color as stroke
+        // Status colors — neutral outline for inferred, status color for others
         if (nodeStatus && !isGrayed) {
-          if (nodeStatus.status === 'success' && nodeStatus.metrics) {
-            const c = getMetricColor(nodeStatus.metrics);
-            strokeR = c.r; strokeG = c.g; strokeB = c.b;
-            strokeWidth = isSelected ? 3 : 2;
+          if (nodeStatus.status === 'success') {
+            // Neutral light gray — distinct from accuracy colors and selection blue
+            strokeR = 0.75; strokeG = 0.75; strokeB = 0.78;
+            strokeWidth = isSelected ? 4 : 3;
           } else {
             const statusColor = STATUS_COLORS[nodeStatus.status];
             if (statusColor) {
@@ -308,8 +308,8 @@ export class WebGPURenderer {
               strokeR = c.r; strokeG = c.g; strokeB = c.b;
               strokeWidth = isSelected ? 3 : 2;
             }
-            if (nodeStatus.status === 'executing') strokeWidth = 3;
           }
+          if (nodeStatus.status === 'executing') strokeWidth = 3;
         }
       }
 
