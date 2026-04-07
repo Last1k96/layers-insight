@@ -154,7 +154,7 @@
   });
 </script>
 
-<div class="absolute bottom-4 right-4 z-10">
+<div class="absolute bottom-4 right-4 z-20">
   <button
     class="absolute -top-7 right-0 px-2 py-0.5 text-xs text-gray-400 bg-[--bg-panel] border border-[--border-color] rounded-t hover:bg-[--bg-menu] transition-colors"
     onclick={() => collapsed = !collapsed}

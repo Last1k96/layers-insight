@@ -4,6 +4,7 @@
   import { graphStore } from '../stores/graph.svelte';
   import { refreshRenderer } from './renderer';
   import { DEFAULT_RANGES, type AccuracyMetricKey } from '../utils/accuracyColors';
+  import { toggleHelp } from '../shortcuts';
 
   let expanded = $state(false);
 
@@ -64,6 +65,13 @@
 </script>
 
 <div class="absolute top-3 right-3 z-30 flex items-start gap-2">
+  <!-- Keyboard shortcuts hint -->
+  <button
+    onclick={() => toggleHelp()}
+    class="px-1.5 py-1.5 rounded-md text-xs font-medium border transition-colors bg-[--bg-panel] border-[--border-color] text-gray-400 hover:text-gray-200 hover:bg-[--bg-menu]"
+    title="Keyboard shortcuts (?)"
+  >?</button>
+
   <!-- Toggle button -->
   <button
     onclick={toggleAccuracy}

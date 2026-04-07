@@ -85,10 +85,19 @@
     }
   }
 
+  let confirmingCancelAll = $state(false);
+
   function handleCancelAll() {
-    if (confirm('Cancel all waiting tasks?')) {
-      queueStore.cancelAll();
-    }
+    confirmingCancelAll = true;
+  }
+
+  function confirmCancelAll() {
+    queueStore.cancelAll();
+    confirmingCancelAll = false;
+  }
+
+  function dismissCancelAll() {
+    confirmingCancelAll = false;
   }
 
   let bisectCollapsed = $state<Record<string, boolean>>({});
@@ -165,18 +174,30 @@
         </svg>
       {/if}
     </button>
-    <button
-      class="flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-100 hover:bg-surface-elevated active:scale-95"
-      class:text-gray-600={queueStore.waitingCount === 0}
-      class:pointer-events-none={queueStore.waitingCount === 0}
-      title="Cancel all waiting tasks"
-      onclick={handleCancelAll}
-    >
-      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
-        <line x1="4" y1="4" x2="12" y2="12" />
-        <line x1="12" y1="4" x2="4" y2="12" />
-      </svg>
-    </button>
+    {#if confirmingCancelAll}
+      <span class="ml-1 text-[11px] text-red-400">Cancel all?</span>
+      <button
+        class="px-2 py-0.5 text-[10px] font-semibold rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors"
+        onclick={confirmCancelAll}
+      >Yes</button>
+      <button
+        class="px-2 py-0.5 text-[10px] font-semibold rounded bg-surface-elevated text-content-secondary hover:text-content-primary transition-colors"
+        onclick={dismissCancelAll}
+      >No</button>
+    {:else}
+      <button
+        class="flex items-center justify-center w-7 h-7 rounded-lg transition-all duration-100 hover:bg-surface-elevated active:scale-95"
+        class:text-gray-600={queueStore.waitingCount === 0}
+        class:pointer-events-none={queueStore.waitingCount === 0}
+        title="Cancel all waiting tasks"
+        onclick={handleCancelAll}
+      >
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="4" y1="4" x2="12" y2="12" />
+          <line x1="12" y1="4" x2="4" y2="12" />
+        </svg>
+      </button>
+    {/if}
     {#if queueStore.pauseTransitioning}
       <span class="ml-1 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider bg-blue-500/15 text-blue-400 rounded-full animate-pulse">
         {queueStore.paused ? 'Resuming' : 'Pausing'}
@@ -208,6 +229,42 @@
     >
       Logs{logStore.visible ? ' \u25CF' : ''}
     </button>
+  </div>
+
+  <!-- Filter -->
+  <div class="px-3 py-2 shrink-0 border-b border-content-secondary/8">
+    {#if advancedFilterStore.active}
+      <AdvancedFilter ontoggle={() => advancedFilterStore.active = false} />
+    {:else}
+      <div class="flex gap-1.5">
+        <input
+          type="text"
+          bind:value={queueStore.filterText}
+          placeholder="Filter by name or type..."
+          class="flex-1 px-2.5 py-1.5 bg-[--bg-input] rounded-lg text-xs placeholder:text-content-secondary/30 focus:outline-none focus:ring-2 focus:ring-accent/30 transition-shadow"
+        />
+        <button
+          class="px-2 py-1.5 rounded-lg hover:bg-surface-elevated transition-all duration-100 text-content-secondary/50 hover:text-content-secondary active:scale-95 shrink-0"
+          title="Advanced filter"
+          onclick={() => advancedFilterStore.active = true}
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M1 3h14M3 8h10M5 13h6" />
+          </svg>
+        </button>
+      </div>
+      <div class="flex gap-1 mt-1.5">
+        {#each ['all', 'success', 'failed'] as status (status)}
+          <button
+            class="px-2.5 py-1 text-xs rounded-md transition-all duration-100 {queueStore.filterStatus === status ? 'text-accent' : 'text-content-secondary hover:text-content-primary'}"
+            style:background-color={queueStore.filterStatus === status ? 'rgba(76, 141, 255, 0.1)' : undefined}
+            onclick={() => queueStore.filterStatus = status as any}
+          >
+            {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
+          </button>
+        {/each}
+      </div>
+    {/if}
   </div>
 
   <!-- Column headers -->
@@ -279,6 +336,7 @@
             class:pulse-ring={task.status === 'executing'}
             class:status-glow={task.status === 'executing'}
             style:background-color={getStatusColor(task.status)}
+            title={task.status.charAt(0).toUpperCase() + task.status.slice(1)}
           ></div>
           <span class="flex-1 truncate font-mono text-xs">{task.node_name}</span>
           <span class="text-content-secondary/40 text-xs shrink-0 text-right whitespace-nowrap">{task.node_type}</span>
@@ -362,7 +420,8 @@
               onmouseleave={() => { setHoveredNode(null); }}
             >
               <div class="w-2.5 h-2.5 rounded-full shrink-0" class:pulse-ring={task.status === 'executing'} class:status-glow={task.status === 'executing'}
-                style:background-color={getStatusColor(task.status)}></div>
+                style:background-color={getStatusColor(task.status)}
+                title={task.status.charAt(0).toUpperCase() + task.status.slice(1)}></div>
               <span class="flex-1 truncate font-mono text-xs">{task.node_name}</span>
               <span class="text-content-secondary/40 text-xs shrink-0 text-right whitespace-nowrap">{task.node_type}</span>
               <span class="text-xs font-mono w-14 text-right shrink-0 tabular-nums">
@@ -436,7 +495,8 @@
               onmouseleave={() => { setHoveredNode(null); }}
             >
               <div class="w-2.5 h-2.5 rounded-full shrink-0" class:pulse-ring={task.status === 'executing'} class:status-glow={task.status === 'executing'}
-                style:background-color={getStatusColor(task.status)}></div>
+                style:background-color={getStatusColor(task.status)}
+                title={task.status.charAt(0).toUpperCase() + task.status.slice(1)}></div>
               <span class="flex-1 truncate font-mono text-xs">{task.node_name}</span>
               <span class="text-content-secondary/40 text-xs shrink-0 text-right whitespace-nowrap">{task.node_type}</span>
               <span class="text-xs font-mono w-14 text-right shrink-0 tabular-nums">
@@ -450,42 +510,6 @@
           {/each}
         {/if}
       {/each}
-    {/if}
-  </div>
-
-  <!-- Filter -->
-  <div class="p-2.5 shrink-0 bg-[--bg-panel]">
-    {#if advancedFilterStore.active}
-      <AdvancedFilter ontoggle={() => advancedFilterStore.active = false} />
-    {:else}
-      <div class="flex gap-1.5">
-        <input
-          type="text"
-          bind:value={queueStore.filterText}
-          placeholder="Filter by name or type..."
-          class="flex-1 px-2.5 py-1.5 bg-[--bg-input] rounded-lg text-xs placeholder:text-content-secondary/30 focus:outline-none focus:ring-2 focus:ring-accent/30 transition-shadow"
-        />
-        <button
-          class="px-2 py-1.5 rounded-lg hover:bg-surface-elevated transition-all duration-100 text-content-secondary/50 hover:text-content-secondary active:scale-95 shrink-0"
-          title="Advanced filter"
-          onclick={() => advancedFilterStore.active = true}
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M1 3h14M3 8h10M5 13h6" />
-          </svg>
-        </button>
-      </div>
-      <div class="flex gap-1 mt-1.5">
-        {#each ['all', 'success', 'failed'] as status (status)}
-          <button
-            class="px-2.5 py-1 text-xs rounded-md transition-all duration-100 {queueStore.filterStatus === status ? 'text-accent' : 'text-content-secondary hover:text-content-primary'}"
-            style:background-color={queueStore.filterStatus === status ? 'rgba(76, 141, 255, 0.1)' : undefined}
-            onclick={() => queueStore.filterStatus = status as any}
-          >
-            {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
-          </button>
-        {/each}
-      </div>
     {/if}
   </div>
 </div>

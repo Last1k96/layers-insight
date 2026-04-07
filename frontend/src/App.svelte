@@ -102,6 +102,6 @@
       }}
     />
   {:else if currentView === 'main'}
-    <MainView />
+    <MainView onback={onBackToPicker} />
   {/if}
 </div>

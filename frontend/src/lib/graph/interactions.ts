@@ -148,12 +148,6 @@ export function setupInteractions(): void {
 
   // Keyboard navigation
   function handleKeydown(e: KeyboardEvent) {
-    if (e.ctrlKey && e.key === 'f') {
-      e.preventDefault();
-      graphStore.searchVisible = !graphStore.searchVisible;
-      return;
-    }
-
     // Plain arrow up/down: navigate queue list
     if (!e.ctrlKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
       e.preventDefault();
