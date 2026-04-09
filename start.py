@@ -46,6 +46,15 @@ def any_file_newer_than(directory: Path, marker: Path) -> bool:
     return False
 
 
+def fix_proxy_env(env: dict) -> dict:
+    """Ensure *_PROXY env vars have an http:// scheme so npm doesn't choke."""
+    for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"):
+        val = env.get(key, "")
+        if val and "://" not in val:
+            env[key] = "http://" + val
+    return env
+
+
 # ── platform-aware paths ─────────────────────────────────────────────────
 
 def venv_python() -> Path:
@@ -192,7 +201,7 @@ def main() -> None:
 
     # 1. Local Node.js
     ensure_local_node()
-    env = os.environ.copy()
+    env = fix_proxy_env(os.environ.copy())
     env["PATH"] = str(Path.cwd() / node_bin_dir()) + os.pathsep + env.get("PATH", "")
 
     # 2. Python venv
