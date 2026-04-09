@@ -18,7 +18,7 @@ export interface InputConfig {
   element_type: string;
   data_type: string;
   source: 'random' | 'file';
-  path?: string;
+  path: string;
   layout: string;
   resolved_shape?: number[];
   lower_bounds?: number[];

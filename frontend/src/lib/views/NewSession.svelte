@@ -338,7 +338,7 @@
           port_names: info.port_names,
           data_type: elementTypeToDataType(info.element_type),
           source: 'random' as const,
-          path: undefined,
+          path: '',
           layout: getDefaultLayout(info.shape),
           // Initialize dynamic shape fields
           // For dynamic dims: batch (dim 0, 4D only) = 1, channels (dim 1, >= 3D) = 3, others = 1024
@@ -862,12 +862,11 @@
                 {/if}
                 {#if input.source === 'file'}
                   <div class="path-row" style="margin-top: 0.25rem;">
-                    <input
-                      type="text"
+                    <PathInput
                       bind:value={modelInputs[i].path}
+                      mode="file"
                       placeholder="/path/to/input.npy"
-                      class="file-input"
-                      class:input-error={inputFileErrors[i]}
+                      class="flex-1 min-w-0 file-input {inputFileErrors[i] ? 'input-error' : ''}"
                       oninput={() => debounceInputFileCheck(i)}
                     />
                     <button
@@ -1521,8 +1520,7 @@
     opacity: 0.6;
   }
 
-  .file-input {
-    flex: 1;
+  :global(.file-input) :global(input) {
     padding: 0.375rem 0.5rem;
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
@@ -1530,15 +1528,22 @@
     font-size: 0.8rem;
     color: var(--text-primary);
     font-family: var(--font-mono);
+    width: 100%;
   }
 
-  .file-input:focus {
+  :global(.file-input) :global(input:focus) {
     border-color: #4C8DFF;
     outline: none;
   }
 
-  .file-input.input-error {
+  :global(.file-input.input-error) :global(input) {
     border-color: rgba(232, 168, 73, 0.5);
+  }
+
+  :global(.file-input) :global([aria-hidden]) {
+    padding: 0.375rem 0.5rem;
+    font-size: 0.8rem;
+    font-family: var(--font-mono);
   }
 
   .input-file-error {
