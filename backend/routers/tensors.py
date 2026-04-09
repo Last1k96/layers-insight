@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import shutil
 import tempfile
 import zipfile
@@ -173,11 +174,20 @@ async def export_reproducer(
     from backend.utils import sanitize_filename
     safe_name = sanitize_filename(node_name)
 
-    # When minimal_model is requested and .bin is a symlink, regenerate
-    # a proper cut model with only the needed weights.
+    # When minimal_model is requested and .bin is a link/copy of the root
+    # model (not a standalone cut), regenerate a proper cut with only the
+    # needed weights.  Detect via symlink OR same inode (hard link) OR
+    # matching file size with the root .bin.
     regen_dir: Optional[Path] = None
     cut_model_bin = tensor_dir / "cut_model.bin"
-    if minimal_model and cut_model_bin.is_symlink():
+    model_xml_rel = session_detail.config.model_path
+    root_bin = svc._session_path(session_id) / Path(model_xml_rel).with_suffix(".bin")
+    _is_shared_bin = (
+        cut_model_bin.is_symlink()
+        or (cut_model_bin.exists() and root_bin.exists()
+            and os.path.samefile(cut_model_bin, root_bin))
+    )
+    if minimal_model and _is_shared_bin:
         regen_dir = Path(tempfile.mkdtemp(prefix="li_regen_"))
         try:
             _regenerate_cut_model(request, svc, session_id, session_detail, task_data, node_name, regen_dir)

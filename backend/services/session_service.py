@@ -13,6 +13,18 @@ from typing import Any, Optional
 import numpy as np
 
 from backend.schemas.session import SessionConfig, SessionDetail, SessionInfo
+
+
+def _link_or_copy(src: Path, dst: Path) -> None:
+    """Replace *dst* with a symlink, hard link, or copy of *src* (first that works)."""
+    dst.unlink(missing_ok=True)
+    try:
+        dst.symlink_to(src.resolve())
+    except OSError:
+        try:
+            os.link(src, dst)
+        except OSError:
+            shutil.copy2(src, dst)
 from backend.utils.input_generator import (
     generate_random_input,
     has_dynamic_dims,
@@ -301,7 +313,7 @@ class SessionService:
                 if f.is_file():
                     shutil.move(str(f), str(task_dir / f.name))
 
-            # Replace cut_model.bin with symlink to root session model.bin to save disk space.
+            # Replace cut_model.bin with a link to root session model.bin to save disk space.
             # Inference works fine with the full .bin paired with a cut .xml.
             cut_bin = task_dir / "cut_model.bin"
             if cut_bin.exists() and not cut_bin.is_symlink():
@@ -309,8 +321,7 @@ class SessionService:
                 model_bin = self._session_path(session_id) / Path(model_xml_rel).with_suffix(".bin")
 
                 if model_bin.exists():
-                    cut_bin.unlink()
-                    cut_bin.symlink_to(model_bin.resolve())
+                    _link_or_copy(model_bin, cut_bin)
 
     def load_task_result(self, session_id: str, task_id: str) -> dict:
         """Load task result metadata."""
