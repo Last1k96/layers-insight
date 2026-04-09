@@ -53,12 +53,13 @@ class QueueStore {
     });
   }
 
-  /** Merge a specific bisect job's tasks into the main list by clearing their batch_id. */
+  /** Merge a specific bisect job's tasks into the main list by clearing their batch_id.
+   *  Reused (cached) tasks are removed since their originals already exist in the main list. */
   mergeBisectTasks(jobId: string): void {
     const batchId = `bisect:${jobId}`;
-    this.tasks = this.tasks.map(t =>
-      t.batch_id === batchId ? { ...t, batch_id: undefined } : t
-    );
+    this.tasks = this.tasks
+      .filter(t => !(t.batch_id === batchId && t.reused))
+      .map(t => t.batch_id === batchId ? { ...t, batch_id: undefined } : t);
   }
 
   get selectedIndex(): number {

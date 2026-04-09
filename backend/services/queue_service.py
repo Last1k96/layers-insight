@@ -72,6 +72,13 @@ class QueueService:
             status=TaskStatus.WAITING,
         )
 
+    async def add_completed_task(self, task: InferenceTask) -> InferenceTask:
+        """Register a pre-completed task in the store and notify, without enqueuing for execution."""
+        self._tasks[task.task_id] = task
+        self._task_order.append(task.task_id)
+        await self._notify(task)
+        return task
+
     async def reorder(self, task_ids: list[str]) -> None:
         """Reorder waiting tasks. Only affects waiting tasks."""
         # Rebuild queue with new order

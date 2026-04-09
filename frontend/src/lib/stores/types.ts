@@ -160,6 +160,7 @@ export interface InferenceTask {
   per_output_ref_results?: DeviceResult[];
   batch_id?: string;
   sub_session_id?: string | null;
+  reused?: boolean;
 }
 
 export type BisectJobStatus = 'running' | 'paused' | 'done' | 'stopped' | 'error' | 'idle';
@@ -198,6 +199,7 @@ export interface TaskStatusMessage {
   per_output_ref_results?: DeviceResult[];
   batch_id?: string;
   sub_session_id?: string;
+  reused?: boolean;
 }
 
 export interface SubSessionInfo {

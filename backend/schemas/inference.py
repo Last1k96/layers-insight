@@ -53,6 +53,7 @@ class InferenceTask(BaseModel):
     # Phase 2 extensibility
     batch_id: Optional[str] = None
     sub_session_id: Optional[str] = None
+    reused: bool = False
 
 
 class EnqueueRequest(BaseModel):

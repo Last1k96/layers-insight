@@ -133,6 +133,7 @@ function handleMessage(msg: any): void {
       per_output_ref_results: tsMsg.per_output_ref_results,
       batch_id: tsMsg.batch_id,
       sub_session_id: tsMsg.sub_session_id,
+      reused: tsMsg.reused,
     };
     if (queueStore.hasTask(tsMsg.task_id)) {
       queueStore.updateTask(tsMsg.task_id, taskData);
@@ -175,10 +176,13 @@ function handleMessage(msg: any): void {
 
   if (msg.type === 'task_deleted') {
     queueStore.removeTask(msg.task_id);
-    // Find the node_id from graph data by node_name
     const node = graphStore.graphData?.nodes.find(n => n.name === msg.node_name);
     if (node) {
-      graphStore.removeNodeStatus(node.id, graphStore.activeSubSessionId);
+      // Only remove node status if no other task for this node remains
+      const hasRemainingTask = queueStore.tasks.some(t => t.node_name === msg.node_name);
+      if (!hasRemainingTask) {
+        graphStore.removeNodeStatus(node.id, graphStore.activeSubSessionId);
+      }
       refreshRenderer();
     }
   }

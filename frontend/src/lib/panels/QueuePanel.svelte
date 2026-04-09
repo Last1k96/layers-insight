@@ -444,7 +444,7 @@
                 <div class="q-task-dot" class:pulse-ring={task.status === 'executing'} class:status-glow={task.status === 'executing'}
                   style:background-color={getStatusColor(task.status)}></div>
               </div>
-              <span class="q-task-name">{task.node_name}</span>
+              <span class="q-task-name">{task.node_name}{#if task.reused}<span class="q-reused-tag">(cached)</span>{/if}</span>
               <span class="q-task-type">{task.node_type}</span>
               <span class="q-task-metric q-col-cos">
                 {#if task.status === 'success' && task.metrics}<span style:color={configStore.accuracyMetric === 'cosine_similarity' ? metricColor(task.metrics.cosine_similarity, 'cosine_similarity') : ''}>{formatCosine(task.metrics.cosine_similarity)}</span>{/if}
@@ -524,7 +524,7 @@
                 <div class="q-task-dot" class:pulse-ring={task.status === 'executing'} class:status-glow={task.status === 'executing'}
                   style:background-color={getStatusColor(task.status)}></div>
               </div>
-              <span class="q-task-name">{task.node_name}</span>
+              <span class="q-task-name">{task.node_name}{#if task.reused}<span class="q-reused-tag">(cached)</span>{/if}</span>
               <span class="q-task-type">{task.node_type}</span>
               <span class="q-task-metric q-col-cos">
                 {#if task.status === 'success' && task.metrics}<span style:color={configStore.accuracyMetric === 'cosine_similarity' ? metricColor(task.metrics.cosine_similarity, 'cosine_similarity') : ''}>{formatCosine(task.metrics.cosine_similarity)}</span>{/if}
@@ -913,6 +913,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     min-width: 0;
+  }
+  .q-reused-tag {
+    opacity: 0.5;
+    font-size: 0.75em;
+    margin-left: 4px;
   }
   .q-task-type {
     font-size: 11px;

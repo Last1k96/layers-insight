@@ -136,6 +136,8 @@ class BisectService:
         """Called when an inference task finishes — routes to the correct job."""
         if not task.batch_id or not task.batch_id.startswith("bisect:"):
             return
+        if task.reused:
+            return  # Reused tasks are handled synchronously in _infer_node
         job_id = task.batch_id.split(":", 1)[1]
         state = self._jobs.get(job_id)
         if state is None:
@@ -402,10 +404,29 @@ class BisectService:
                 meta = self._session_service._read_metadata(request.session_id)
                 task_data = meta.get("tasks", {}).get(existing_task_id)
                 if task_data:
-                    result = self._build_task_from_metadata(task_data)
-                    result.node_id = node_id
-                    result.node_name = node_name
-                    return result
+                    cached = self._build_task_from_metadata(task_data)
+                    cached.node_id = node_id
+                    cached.node_name = node_name
+
+                    # Create a visible reused task entry in the bisect task list
+                    reused_task = self._queue_service.create_task(
+                        session_id=request.session_id,
+                        node_id=node_id,
+                        node_name=node_name,
+                        node_type=node_type,
+                    )
+                    reused_task.batch_id = batch_id
+                    reused_task.reused = True
+                    reused_task.status = cached.status
+                    reused_task.metrics = cached.metrics
+                    reused_task.error_detail = cached.error_detail
+                    reused_task.main_result = cached.main_result
+                    reused_task.ref_result = cached.ref_result
+                    if request.sub_session_id:
+                        reused_task.sub_session_id = request.sub_session_id
+
+                    await self._queue_service.add_completed_task(reused_task)
+                    return reused_task
 
         # Enqueue child task
         state.step_done.clear()
