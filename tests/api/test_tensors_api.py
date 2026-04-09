@@ -84,19 +84,11 @@ class TestGetTensorMeta:
 
 class TestExportReproducer:
     def _create_task_artifacts(self, svc, session_id, tmp_path):
-        """Create a successful task with full artifacts (model + inputs + outputs)."""
+        """Create a successful task with output tensors only (new storage format)."""
         artifacts_dir = tmp_path / "export_artifacts"
         artifacts_dir.mkdir()
 
-        # Simulate cut model files
-        (artifacts_dir / "cut_model.xml").write_text("<model/>")
-        (artifacts_dir / "cut_model.bin").write_bytes(b"\x00" * 32)
-
-        # Simulate input tensor
-        input_data = np.random.randn(1, 3, 224, 224).astype(np.float32)
-        np.save(str(artifacts_dir / "input_image.npy"), input_data)
-
-        # Simulate output tensors
+        # Simulate output tensors (cut model and inputs are no longer persisted)
         main_out = np.random.randn(1, 64, 112, 112).astype(np.float32)
         ref_out = np.random.randn(1, 64, 112, 112).astype(np.float32)
         np.save(str(artifacts_dir / "main_output.npy"), main_out)
@@ -111,15 +103,26 @@ class TestExportReproducer:
 
         svc.save_task_result(session_id, "t_export", task_data, artifacts_dir=str(artifacts_dir))
 
-        return input_data, main_out, ref_out
+        return main_out, ref_out
 
     @pytest.mark.asyncio
-    async def test_export_reproducer(self, async_client, test_session, test_app, tmp_path):
+    async def test_export_reproducer(self, async_client, test_session, test_app, tmp_path, monkeypatch):
         """Export endpoint returns a valid ZIP with expected contents."""
         svc = test_app.state.session_service
-        input_data, main_out, ref_out = self._create_task_artifacts(
+        main_out, ref_out = self._create_task_artifacts(
             svc, test_session.id, tmp_path
         )
+
+        # Mock _regenerate_cut_artifacts since we don't have OpenVINO in tests
+        input_data = np.random.randn(1, 3, 224, 224).astype(np.float32)
+
+        def fake_regenerate(request, svc, session_id, session_detail, task_data, node_name, out_dir):
+            (out_dir / "cut_model.xml").write_text("<model/>")
+            (out_dir / "cut_model.bin").write_bytes(b"\x00" * 32)
+            np.save(str(out_dir / "input_image.npy"), input_data)
+
+        import backend.routers.tensors as tensors_mod
+        monkeypatch.setattr(tensors_mod, "_regenerate_cut_artifacts", fake_regenerate)
 
         resp = await async_client.get(
             f"/api/tensors/{test_session.id}/t_export/export"
@@ -136,13 +139,12 @@ class TestExportReproducer:
         assert "reproducer/cut_model.xml" in names
         assert "reproducer/cut_model.bin" in names
         assert "reproducer/info.json" in names
-        assert "reproducer/convert_npy.py" not in names
 
         # Check output bins
         assert "reproducer/main_output.bin" in names
         assert "reproducer/ref_output.bin" in names
 
-        # Check at least one input bin
+        # Check at least one input bin (regenerated)
         input_bins = [n for n in names if n.startswith("reproducer/input_") and n.endswith(".bin")]
         assert len(input_bins) >= 1
 

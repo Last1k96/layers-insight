@@ -308,20 +308,12 @@ class SessionService:
 
             task_dir = tensors_base / folder_name
             task_dir.mkdir(parents=True, exist_ok=True)
+            # Only persist output tensors — cut model and inputs are
+            # regenerated on demand during export to save disk space.
             src = Path(artifacts_dir)
             for f in src.iterdir():
-                if f.is_file():
+                if f.is_file() and f.suffix == ".npy" and f.stem.startswith(("main_output", "ref_output")):
                     shutil.move(str(f), str(task_dir / f.name))
-
-            # Replace cut_model.bin with a link to root session model.bin to save disk space.
-            # Inference works fine with the full .bin paired with a cut .xml.
-            cut_bin = task_dir / "cut_model.bin"
-            if cut_bin.exists() and not cut_bin.is_symlink():
-                model_xml_rel = meta["config"]["model_path"]
-                model_bin = self._session_path(session_id) / Path(model_xml_rel).with_suffix(".bin")
-
-                if model_bin.exists():
-                    _link_or_copy(model_bin, cut_bin)
 
     def load_task_result(self, session_id: str, task_id: str) -> dict:
         """Load task result metadata."""

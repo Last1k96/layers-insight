@@ -1,17 +1,15 @@
 """Tensor data routes for deep accuracy visualization."""
 from __future__ import annotations
 
-import io
 import json
-import os
 import shutil
 import tempfile
 import zipfile
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Iterator
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
 router = APIRouter(prefix="/api/tensors", tags=["tensors"])
@@ -46,7 +44,7 @@ class _ZipStreamBuffer:
         return data
 
 
-def _regenerate_cut_model(
+def _regenerate_cut_artifacts(
     request: Request,
     svc: "object",
     session_id: str,
@@ -55,15 +53,25 @@ def _regenerate_cut_model(
     node_name: str,
     out_dir: Path,
 ) -> None:
-    """Re-cut the model to produce a minimal .bin with only the needed weights."""
+    """Re-cut the model and regenerate input tensors for export.
+
+    Produces cut_model.xml, cut_model.bin, and input_*.npy in out_dir.
+    """
     import openvino as ov
     from backend.utils.ov_graph_utils import get_reachable_params
+    from backend.utils.input_generator import prepare_inputs
+    from backend.utils import sanitize_filename
 
     ov_core = request.app.state.ov_core
     models_cache = request.app.state.models
     session_path = svc._session_path(session_id)
 
+    # Resolve model and input configs depending on root vs sub-session
     sub_session_id = task_data.get("sub_session_id")
+    input_configs = None
+    if session_detail.config.inputs:
+        input_configs = [inp.model_dump() for inp in session_detail.config.inputs]
+
     if sub_session_id:
         sub_meta = svc.get_sub_session_meta_resolved(session_id, sub_session_id)
         if sub_meta and sub_meta.get("model_path"):
@@ -71,6 +79,13 @@ def _regenerate_cut_model(
         else:
             model_xml = str(session_path / session_detail.config.model_path)
         model = ov_core.read_model(model_xml)
+        # Merge sub-session input configs (same as main.py)
+        if sub_meta and sub_meta.get("input_configs"):
+            sub_cfgs = sub_meta["input_configs"]
+            if input_configs:
+                input_configs = input_configs + sub_cfgs
+            else:
+                input_configs = sub_cfgs
     else:
         model = models_cache.get(session_id)
         if model is None:
@@ -86,12 +101,32 @@ def _regenerate_cut_model(
     if target_op is None:
         raise ValueError(f"Node '{node_name}' not found in model")
 
+    # Cut model
     new_outputs = target_op.outputs()
     reachable_params = get_reachable_params(model, new_outputs)
     cut_model = ov.Model(new_outputs, reachable_params, f"cut_at_{node_name}")
     cut_model.validate_nodes_and_infer_types()
     ov.save_model(cut_model, str(out_dir / "cut_model.xml"))
+
+    # Extract model params for input generation
+    model_params = []
+    for param in cut_model.get_parameters():
+        pshape = param.get_output_partial_shape(0)
+        shape = [d.get_length() if d.is_static else "?" for d in pshape]
+        model_params.append({
+            "name": param.get_friendly_name(),
+            "shape": shape,
+            "element_type": str(param.get_output_element_type(0)),
+        })
+
     del cut_model
+
+    # Regenerate input tensors
+    precision = session_detail.config.input_precision or "fp32"
+    inputs = prepare_inputs(model_params, None, precision, input_configs)
+    for name, tensor in inputs.items():
+        safe_name = sanitize_filename(name)
+        np.save(str(out_dir / f"input_{safe_name}.npy"), tensor)
 
 
 # --- Export route MUST be registered before the wildcard {output_name} routes
@@ -102,12 +137,11 @@ async def export_reproducer(
     session_id: str,
     task_id: str,
     request: Request,
-    minimal_model: bool = Query(True, description="Re-cut the model to include only needed weights (smaller download)"),
 ) -> StreamingResponse:
     """Export a reproducer ZIP package for filing bug reports.
 
-    The ZIP contains the cut model, raw binary input/output tensors,
-    metadata JSON, and a helper script to convert between .npy and .bin.
+    The ZIP contains the cut model (regenerated with minimal weights),
+    raw binary input/output tensors, and metadata JSON.
     """
     svc = request.app.state.session_service
     task_data = svc.load_task_result(session_id, task_id)
@@ -117,7 +151,7 @@ async def export_reproducer(
     if task_data.get("status") != "success":
         raise HTTPException(status_code=400, detail="Can only export successful tasks")
 
-    # Locate the task's tensor directory
+    # Locate the task's tensor directory (contains only output .npy files)
     tensor_dir = svc.get_task_dir(session_id, task_id)
     if tensor_dir is None or not tensor_dir.exists():
         raise HTTPException(status_code=404, detail="Task output directory not found")
@@ -174,28 +208,13 @@ async def export_reproducer(
     from backend.utils import sanitize_filename
     safe_name = sanitize_filename(node_name)
 
-    # When minimal_model is requested and .bin is a link/copy of the root
-    # model (not a standalone cut), regenerate a proper cut with only the
-    # needed weights.  Detect via symlink OR same inode (hard link) OR
-    # matching file size with the root .bin.
-    regen_dir: Optional[Path] = None
-    cut_model_bin = tensor_dir / "cut_model.bin"
-    model_xml_rel = session_detail.config.model_path
-    root_bin = svc._session_path(session_id) / Path(model_xml_rel).with_suffix(".bin")
-    _is_shared_bin = (
-        cut_model_bin.is_symlink()
-        or (cut_model_bin.exists() and root_bin.exists()
-            and os.path.samefile(cut_model_bin, root_bin))
-    )
-    if minimal_model and _is_shared_bin:
-        regen_dir = Path(tempfile.mkdtemp(prefix="li_regen_"))
-        try:
-            _regenerate_cut_model(request, svc, session_id, session_detail, task_data, node_name, regen_dir)
-        except Exception:
-            shutil.rmtree(regen_dir, ignore_errors=True)
-            regen_dir = None
-
-    model_src_dir = regen_dir if regen_dir else tensor_dir
+    # Regenerate cut model and input tensors into a temp directory
+    regen_dir = Path(tempfile.mkdtemp(prefix="li_regen_"))
+    try:
+        _regenerate_cut_artifacts(request, svc, session_id, session_detail, task_data, node_name, regen_dir)
+    except Exception as e:
+        shutil.rmtree(regen_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"Failed to regenerate cut model: {e}")
 
     def _generate() -> Iterator[bytes]:
         buf = _ZipStreamBuffer()
@@ -203,17 +222,16 @@ async def export_reproducer(
 
         try:
             with zipfile.ZipFile(buf, "w") as zf:
-                # Model files — .bin stored (weights don't compress), .xml deflated.
-                # model_src_dir points to regen_dir (minimal cut) or tensor_dir (full .bin via symlink).
+                # Model files from regen_dir — .bin stored (weights don't compress), .xml deflated.
                 for suffix in (".xml", ".bin"):
-                    model_file = model_src_dir / f"cut_model{suffix}"
+                    model_file = regen_dir / f"cut_model{suffix}"
                     if model_file.exists():
                         compress = zipfile.ZIP_DEFLATED if suffix == ".xml" else zipfile.ZIP_STORED
                         zf.writestr(f"{prefix}cut_model{suffix}", model_file.read_bytes(), compress_type=compress)
                         yield buf.drain()
 
-                # Input tensors (input_*.npy -> input_*.bin) — stored uncompressed
-                for npy_path in sorted(tensor_dir.glob("input_*.npy")):
+                # Input tensors from regen_dir (input_*.npy -> input_*.bin) — stored uncompressed
+                for npy_path in sorted(regen_dir.glob("input_*.npy")):
                     arr = np.load(str(npy_path))
                     bin_name = npy_path.stem + ".bin"
                     zf.writestr(f"{prefix}{bin_name}", arr.tobytes(), compress_type=zipfile.ZIP_STORED)
@@ -225,7 +243,7 @@ async def export_reproducer(
                     })
                     yield buf.drain()
 
-                # Output tensors — stored uncompressed (float tensors don't compress).
+                # Output tensors from tensor_dir — stored uncompressed.
                 # Handle both single-output (main_output.npy) and multi-output
                 # (main_output_0.npy, ...) patterns.  Skip unnumbered file when
                 # indexed files exist to avoid duplicates.
@@ -266,7 +284,7 @@ async def export_reproducer(
             if tail:
                 yield tail
         finally:
-            if regen_dir and regen_dir.exists():
+            if regen_dir.exists():
                 shutil.rmtree(regen_dir, ignore_errors=True)
 
     return StreamingResponse(
