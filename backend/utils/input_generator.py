@@ -68,6 +68,31 @@ def load_input_from_file(path: str, shape: list[int] | None = None, precision: s
         dtype = PRECISION_MAP.get(precision, np.float32)
         data = np.fromfile(str(p), dtype=dtype)
         if shape:
+            expected = 1
+            for d in shape:
+                expected *= d
+            if data.size != expected:
+                # Try all standard dtypes to find one that fits
+                fits = []
+                file_bytes = p.stat().st_size
+                for prec, dt in PRECISION_MAP.items():
+                    if dt == np.bool_:
+                        continue
+                    elem_count = file_bytes // np.dtype(dt).itemsize
+                    if elem_count == expected:
+                        fits.append(prec)
+                hint = ""
+                if fits:
+                    hint = f" The file matches shape {shape} when loaded as: {', '.join(fits)}."
+                else:
+                    hint = (
+                        f" File is {file_bytes} bytes; none of the standard precisions"
+                        f" produce {expected} elements for shape {shape}."
+                    )
+                raise ValueError(
+                    f"Cannot reshape {p.name} ({data.size} {precision} elements)"
+                    f" into shape {shape}.{hint}"
+                )
             data = data.reshape(shape)
         return data
     # Try loading as image via PIL

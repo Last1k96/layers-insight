@@ -555,6 +555,8 @@
       if (changedFields.has('ref_device')) overrides.ref_device = refDevice;
       if (Object.keys(pluginCfg).length > 0) overrides.plugin_config = pluginCfg;
       if (Object.keys(refPluginCfg).length > 0) overrides.ref_plugin_config = refPluginCfg;
+      // Always send inputs so user edits (source, precision, path, etc.) take effect
+      if (modelInputs.length > 0) overrides.inputs = modelInputs;
 
       const result = await sessionStore.cloneSession(cloneSourceId, overrides);
       submitting = false;

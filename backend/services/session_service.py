@@ -614,7 +614,7 @@ class SessionService:
             resolved_inputs = []
             for inp in new_config_data["inputs"]:
                 inp = dict(inp)
-                if inp.get("path") and not inp["path"].startswith("/"):
+                if inp.get("path") and not Path(inp["path"]).is_absolute():
                     inp["path"] = str(source_session_path / inp["path"])
                 resolved_inputs.append(inp)
             new_config_data["inputs"] = resolved_inputs
