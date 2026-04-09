@@ -18,9 +18,9 @@
   });
 
   const METRIC_LABELS: Record<AccuracyMetricKey, string> = {
-    cosine_similarity: 'Cosine',
     mse: 'MSE',
     max_abs_diff: 'Max Abs',
+    cosine_similarity: 'Cosine',
   };
 
   function toggleAccuracy() {

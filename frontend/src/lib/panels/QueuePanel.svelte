@@ -2,8 +2,10 @@
   import { queueStore, type SortColumn } from '../stores/queue.svelte';
   import { graphStore } from '../stores/graph.svelte';
   import { bisectStore } from '../stores/bisect.svelte';
+  import { configStore } from '../stores/config.svelte';
   import { centerOnNode, refreshRenderer, setHoveredNode } from '../graph/renderer';
   import { getStatusColor } from '../graph/opColors';
+  import { getAccuracyColor } from '../utils/accuracyColors';
   import { logStore } from '../stores/log.svelte';
   import { advancedFilterStore } from '../stores/advancedFilter.svelte';
   import AdvancedFilter from '../components/AdvancedFilter.svelte';
@@ -39,9 +41,11 @@
     ontogglelog?: () => void;
   } = $props();
 
-  function selectTask(task: InferenceTask) {
+  function selectTask(task: InferenceTask, e?: MouseEvent) {
     graphStore.selectNode(task.node_id);
-    centerOnNode(task.node_id);
+    if (e && (e.ctrlKey || e.metaKey)) {
+      centerOnNode(task.node_id);
+    }
     refreshRenderer();
   }
 
@@ -56,16 +60,8 @@
     return cos.toFixed(4);
   }
 
-  function mseColor(mse: number): string {
-    if (mse < 0.001) return '#34C77B';   // green
-    if (mse <= 0.01) return '#E5A820';   // yellow
-    return '#E54D4D';                     // red
-  }
-
-  function cosineColor(cos: number): string {
-    if (cos > 0.999) return '#34C77B';   // green
-    if (cos >= 0.99) return '#E5A820';   // yellow
-    return '#E54D4D';                     // red
+  function metricColor(value: number, metric: 'cosine_similarity' | 'mse' | 'max_abs_diff'): string {
+    return getAccuracyColor(metric, value, configStore.accuracyRanges[metric]);
   }
 
   function sortArrow(column: SortColumn): string {
@@ -348,7 +344,7 @@
           class:q-task--executing={task.status === 'executing'}
           role="button"
           tabindex="-1"
-          onclick={() => { queueStore.selectedIndex = i; selectTask(task); }}
+          onclick={(e) => { queueStore.selectedIndex = i; selectTask(task, e); }}
           onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedIndex = i; selectTask(task); }}}
           onmouseenter={() => { setHoveredNode(task.node_id); }}
           onmouseleave={() => { setHoveredNode(null); }}
@@ -365,12 +361,12 @@
           <span class="q-task-type">{task.node_type}</span>
           <span class="q-task-metric q-col-cos">
             {#if task.status === 'success' && task.metrics}
-              <span style:color={cosineColor(task.metrics.cosine_similarity)}>{formatCosine(task.metrics.cosine_similarity)}</span>
+              <span style:color={configStore.accuracyMetric === 'cosine_similarity' ? metricColor(task.metrics.cosine_similarity, 'cosine_similarity') : ''}>{formatCosine(task.metrics.cosine_similarity)}</span>
             {/if}
           </span>
           <span class="q-task-metric q-col-mse">
             {#if task.status === 'success' && task.metrics}
-              <span style:color={mseColor(task.metrics.mse)}>{formatMse(task.metrics.mse)}</span>
+              <span style:color={configStore.accuracyMetric === 'mse' ? metricColor(task.metrics.mse, 'mse') : ''}>{formatMse(task.metrics.mse)}</span>
             {/if}
           </span>
           <button
@@ -439,7 +435,7 @@
               class:q-task--selected={queueStore.selectedTaskId === task.task_id}
               class:q-task--hovered={graphStore.hoveredNodeId === task.node_id && queueStore.selectedTaskId !== task.task_id}
               role="button" tabindex="-1"
-              onclick={() => { queueStore.selectedTaskId = task.task_id; selectTask(task); }}
+              onclick={(e) => { queueStore.selectedTaskId = task.task_id; selectTask(task, e); }}
               onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedTaskId = task.task_id; selectTask(task); }}}
               onmouseenter={() => { setHoveredNode(task.node_id); }}
               onmouseleave={() => { setHoveredNode(null); }}
@@ -451,10 +447,10 @@
               <span class="q-task-name">{task.node_name}</span>
               <span class="q-task-type">{task.node_type}</span>
               <span class="q-task-metric q-col-cos">
-                {#if task.status === 'success' && task.metrics}<span style:color={cosineColor(task.metrics.cosine_similarity)}>{formatCosine(task.metrics.cosine_similarity)}</span>{/if}
+                {#if task.status === 'success' && task.metrics}<span style:color={configStore.accuracyMetric === 'cosine_similarity' ? metricColor(task.metrics.cosine_similarity, 'cosine_similarity') : ''}>{formatCosine(task.metrics.cosine_similarity)}</span>{/if}
               </span>
               <span class="q-task-metric q-col-mse">
-                {#if task.status === 'success' && task.metrics}<span style:color={mseColor(task.metrics.mse)}>{formatMse(task.metrics.mse)}</span>{/if}
+                {#if task.status === 'success' && task.metrics}<span style:color={configStore.accuracyMetric === 'mse' ? metricColor(task.metrics.mse, 'mse') : ''}>{formatMse(task.metrics.mse)}</span>{/if}
               </span>
               <div class="q-col-del"></div>
             </div>
@@ -519,7 +515,7 @@
               class:q-task--selected={queueStore.selectedTaskId === task.task_id}
               class:q-task--hovered={graphStore.hoveredNodeId === task.node_id && queueStore.selectedTaskId !== task.task_id}
               role="button" tabindex="-1"
-              onclick={() => { queueStore.selectedTaskId = task.task_id; selectTask(task); }}
+              onclick={(e) => { queueStore.selectedTaskId = task.task_id; selectTask(task, e); }}
               onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedTaskId = task.task_id; selectTask(task); }}}
               onmouseenter={() => { setHoveredNode(task.node_id); }}
               onmouseleave={() => { setHoveredNode(null); }}
@@ -531,10 +527,10 @@
               <span class="q-task-name">{task.node_name}</span>
               <span class="q-task-type">{task.node_type}</span>
               <span class="q-task-metric q-col-cos">
-                {#if task.status === 'success' && task.metrics}<span style:color={cosineColor(task.metrics.cosine_similarity)}>{formatCosine(task.metrics.cosine_similarity)}</span>{/if}
+                {#if task.status === 'success' && task.metrics}<span style:color={configStore.accuracyMetric === 'cosine_similarity' ? metricColor(task.metrics.cosine_similarity, 'cosine_similarity') : ''}>{formatCosine(task.metrics.cosine_similarity)}</span>{/if}
               </span>
               <span class="q-task-metric q-col-mse">
-                {#if task.status === 'success' && task.metrics}<span style:color={mseColor(task.metrics.mse)}>{formatMse(task.metrics.mse)}</span>{/if}
+                {#if task.status === 'success' && task.metrics}<span style:color={configStore.accuracyMetric === 'mse' ? metricColor(task.metrics.mse, 'mse') : ''}>{formatMse(task.metrics.mse)}</span>{/if}
               </span>
               <div class="q-col-del"></div>
             </div>

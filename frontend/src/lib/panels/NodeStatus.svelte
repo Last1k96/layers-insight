@@ -2,8 +2,11 @@
   import { graphStore } from '../stores/graph.svelte';
   import { queueStore } from '../stores/queue.svelte';
   import { sessionStore } from '../stores/session.svelte';
+  import { configStore } from '../stores/config.svelte';
   import { refreshRenderer, centerOnNode, setHoveredNode, setHoveredEdge } from '../graph/renderer';
   import { isLightNodeColor, getStatusColor } from '../graph/opColors';
+  import { getAccuracyColor, getAccuracyGoodness } from '../utils/accuracyColors';
+  import type { AccuracyMetrics } from '../stores/types';
   import type { ConstantData } from '../stores/types';
 
   let selectedNode = $derived(graphStore.selectedNode);
@@ -181,31 +184,17 @@
     return a - b;
   }
 
-  // Accuracy quality classification for color-coding
-  function metricQuality(cosine: number | undefined | null): 'good' | 'warn' | 'bad' {
-    if (cosine == null) return 'warn';
-    if (cosine >= 0.9999) return 'good';
-    if (cosine >= 0.999) return 'warn';
-    return 'bad';
+  /** Get the hex color for the currently-selected accuracy metric. */
+  function selectedMetricColor(metrics: AccuracyMetrics): string {
+    const metric = configStore.accuracyMetric;
+    return getAccuracyColor(metric, metrics[metric], configStore.activeRange);
   }
 
-  const QUALITY_TEXT_CLS: Record<string, string> = {
-    good: 'text-emerald-400',
-    warn: 'text-amber-400',
-    bad: 'text-red-400',
-  };
-
-  const QUALITY_BG_CLS: Record<string, string> = {
-    good: 'bg-emerald-500',
-    warn: 'bg-amber-500',
-    bad: 'bg-red-500',
-  };
-
-  const QUALITY_GLOW: Record<string, string> = {
-    good: 'shadow-[0_0_8px_rgba(16,185,129,0.3)]',
-    warn: 'shadow-[0_0_8px_rgba(245,158,11,0.3)]',
-    bad: 'shadow-[0_0_8px_rgba(239,68,68,0.3)]',
-  };
+  /** Get 0-1 goodness score for the currently-selected accuracy metric. */
+  function selectedMetricGoodness(metrics: AccuracyMetrics): number {
+    const metric = configStore.accuracyMetric;
+    return getAccuracyGoodness(metric, metrics[metric], configStore.activeRange);
+  }
 </script>
 
 <div class="p-3 overflow-y-auto h-full text-sm">
@@ -399,31 +388,33 @@
       {#if outputCount <= 1}
         <!-- Single output -->
         {#if nodeStatus.metrics}
-          {@const q = metricQuality(nodeStatus.metrics.cosine_similarity)}
+          {@const color = selectedMetricColor(nodeStatus.metrics)}
+          {@const goodness = selectedMetricGoodness(nodeStatus.metrics)}
+          {@const activeMetric = configStore.accuracyMetric}
           <div class="space-y-2">
             <h4 class="text-[10px] font-medium text-content-secondary/40 uppercase tracking-wider">Accuracy</h4>
             <table class="w-full text-xs">
               <tbody>
                 <tr>
                   <td class="py-1.5 text-content-secondary/50">MSE</td>
-                  <td class="py-1.5 text-right font-mono tabular-nums">{formatValue(nodeStatus.metrics.mse)}</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums" style={activeMetric === 'mse' ? `color: ${color}` : ''}>{formatValue(nodeStatus.metrics.mse)}</td>
                 </tr>
                 <tr>
                   <td class="py-1.5 text-content-secondary/50">Max Abs Diff</td>
-                  <td class="py-1.5 text-right font-mono tabular-nums">{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums" style={activeMetric === 'max_abs_diff' ? `color: ${color}` : ''}>{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
                 </tr>
                 <tr>
                   <td class="py-1.5 text-content-secondary/50">Cosine Sim</td>
-                  <td class="py-1.5 text-right font-mono tabular-nums {QUALITY_TEXT_CLS[q]}">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums" style={activeMetric === 'cosine_similarity' ? `color: ${color}` : ''}>{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
                 </tr>
               </tbody>
             </table>
-            <!-- Cosine similarity bar -->
+            <!-- Accuracy bar -->
             <div class="pt-1">
               <div class="h-1.5 w-full bg-surface-base rounded-full overflow-hidden">
                 <div
-                  class="h-full rounded-full transition-all duration-500 {QUALITY_BG_CLS[q]} {QUALITY_GLOW[q]}"
-                  style="width: {Math.max(2, (nodeStatus.metrics.cosine_similarity ?? 0) * 100)}%"
+                  class="h-full rounded-full transition-all duration-500"
+                  style="width: {Math.max(2, goodness * 100)}%; background-color: {color}; box-shadow: 0 0 8px {color}40;"
                 ></div>
               </div>
             </div>
@@ -511,30 +502,32 @@
       {:else}
         <!-- Multi-output: aggregate worst-case header -->
         {#if nodeStatus.metrics}
-          {@const q = metricQuality(nodeStatus.metrics.cosine_similarity)}
+          {@const color = selectedMetricColor(nodeStatus.metrics)}
+          {@const goodness = selectedMetricGoodness(nodeStatus.metrics)}
+          {@const activeMetric = configStore.accuracyMetric}
           <div class="space-y-2 mb-4">
             <h4 class="text-[10px] font-medium text-content-secondary/40 uppercase tracking-wider">Worst-Case Accuracy ({outputCount} outputs)</h4>
             <table class="w-full text-xs">
               <tbody>
                 <tr>
                   <td class="py-1.5 text-content-secondary/50">MSE</td>
-                  <td class="py-1.5 text-right font-mono tabular-nums">{formatValue(nodeStatus.metrics.mse)}</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums" style={activeMetric === 'mse' ? `color: ${color}` : ''}>{formatValue(nodeStatus.metrics.mse)}</td>
                 </tr>
                 <tr>
                   <td class="py-1.5 text-content-secondary/50">Max Abs Diff</td>
-                  <td class="py-1.5 text-right font-mono tabular-nums">{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums" style={activeMetric === 'max_abs_diff' ? `color: ${color}` : ''}>{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
                 </tr>
                 <tr>
                   <td class="py-1.5 text-content-secondary/50">Cosine Sim</td>
-                  <td class="py-1.5 text-right font-mono tabular-nums {QUALITY_TEXT_CLS[q]}">{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
+                  <td class="py-1.5 text-right font-mono tabular-nums" style={activeMetric === 'cosine_similarity' ? `color: ${color}` : ''}>{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
                 </tr>
               </tbody>
             </table>
             <div class="pt-1">
               <div class="h-1.5 w-full bg-surface-base rounded-full overflow-hidden">
                 <div
-                  class="h-full rounded-full transition-all duration-500 {QUALITY_BG_CLS[q]} {QUALITY_GLOW[q]}"
-                  style="width: {Math.max(2, (nodeStatus.metrics.cosine_similarity ?? 0) * 100)}%"
+                  class="h-full rounded-full transition-all duration-500"
+                  style="width: {Math.max(2, goodness * 100)}%; background-color: {color}; box-shadow: 0 0 8px {color}40;"
                 ></div>
               </div>
             </div>
@@ -545,10 +538,11 @@
         {#each nodeStatus.perOutputMetrics! as outMetrics, outIdx}
           {@const outMain = nodeStatus.perOutputMainResults?.[outIdx]}
           {@const outRef = nodeStatus.perOutputRefResults?.[outIdx]}
-          {@const outQ = metricQuality(outMetrics.cosine_similarity)}
+          {@const outColor = selectedMetricColor(outMetrics)}
+          {@const outActiveMetric = configStore.accuracyMetric}
           <div class="border-t border-content-secondary/8 pt-3 mt-3">
             <div class="flex items-center gap-2 mb-1.5">
-              <div class="w-1.5 h-1.5 rounded-full {QUALITY_BG_CLS[outQ]}"></div>
+              <div class="w-1.5 h-1.5 rounded-full" style="background-color: {outColor}"></div>
               <h4 class="text-xs font-medium text-content-primary/80">
                 Output {outIdx}
                 {#if outMain?.dtype}
@@ -561,15 +555,15 @@
               <tbody>
                 <tr>
                   <td class="py-1 text-content-secondary/50">MSE</td>
-                  <td class="py-1 text-right font-mono tabular-nums">{formatValue(outMetrics.mse)}</td>
+                  <td class="py-1 text-right font-mono tabular-nums" style={outActiveMetric === 'mse' ? `color: ${outColor}` : ''}>{formatValue(outMetrics.mse)}</td>
                 </tr>
                 <tr>
                   <td class="py-1 text-content-secondary/50">Max Abs Diff</td>
-                  <td class="py-1 text-right font-mono tabular-nums">{formatValue(outMetrics.max_abs_diff)}</td>
+                  <td class="py-1 text-right font-mono tabular-nums" style={outActiveMetric === 'max_abs_diff' ? `color: ${outColor}` : ''}>{formatValue(outMetrics.max_abs_diff)}</td>
                 </tr>
                 <tr>
                   <td class="py-1 text-content-secondary/50">Cosine Sim</td>
-                  <td class="py-1 text-right font-mono tabular-nums {QUALITY_TEXT_CLS[outQ]}">{formatValue(outMetrics.cosine_similarity)}</td>
+                  <td class="py-1 text-right font-mono tabular-nums" style={outActiveMetric === 'cosine_similarity' ? `color: ${outColor}` : ''}>{formatValue(outMetrics.cosine_similarity)}</td>
                 </tr>
               </tbody>
             </table>

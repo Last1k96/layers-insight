@@ -43,6 +43,25 @@ export function getAccuracyColor(
 }
 
 /**
+ * Compute a 0-1 "goodness" score for a metric value within the configured range.
+ * 0 means "bad", 1 means "good", regardless of metric directionality.
+ * Used for progress bar widths and as input to color computation.
+ */
+export function getAccuracyGoodness(
+  metric: AccuracyMetricKey,
+  value: number,
+  range: AccuracyRange,
+): number {
+  const span = range.max - range.min;
+  if (span === 0) return 0.5;
+  if (metric === 'cosine_similarity') {
+    return Math.max(0, Math.min(1, (value - range.min) / span));
+  } else {
+    return Math.max(0, Math.min(1, 1 - (value - range.min) / span));
+  }
+}
+
+/**
  * Same as getAccuracyColor but returns normalized 0-1 RGB.
  * Used by the WebGPU renderer which works in float color space.
  */
@@ -51,18 +70,7 @@ export function getAccuracyColorRgb(
   value: number,
   range: AccuracyRange,
 ): { r: number; g: number; b: number } {
-  const span = range.max - range.min;
-  if (span === 0) return { r: 0.5, g: 0.5, b: 0.0 };
-
-  // t = 0 means "bad", t = 1 means "good"
-  let t: number;
-  if (metric === 'cosine_similarity') {
-    // Higher is better
-    t = Math.max(0, Math.min(1, (value - range.min) / span));
-  } else {
-    // Lower is better (mse, max_abs_diff)
-    t = Math.max(0, Math.min(1, 1 - (value - range.min) / span));
-  }
+  const t = getAccuracyGoodness(metric, value, range);
 
   // Smooth red-to-green gradient via yellow midpoint
   //   t=0 (bad)  -> red   (0.937, 0.267, 0.267) ~ #EF4444
