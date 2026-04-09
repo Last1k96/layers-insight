@@ -44,12 +44,8 @@ class SessionService:
 
     def _sanitize_name(self, name: str) -> str:
         """Sanitize a name for use as a folder name."""
-        import re
-        safe = name.replace("/", "_").replace("\\", "_").replace(" ", "_")
-        safe = re.sub(r'[^\w\-.]', '_', safe)
-        # Collapse multiple underscores
-        safe = re.sub(r'_+', '_', safe).strip('_')
-        return safe or "unnamed"
+        from backend.utils import sanitize_filename
+        return sanitize_filename(name)
 
     def get_session_folder_size(self, session_id: str) -> int:
         """Calculate total disk usage of a session folder in bytes."""
@@ -140,7 +136,7 @@ class SessionService:
                             validate_shape_bounds(concrete, inp.lower_bounds, inp.upper_bounds)
                     else:
                         concrete = [d for d in inp.shape if isinstance(d, int)]
-                    safe_name = inp.name.replace("/", "_").replace("\\", "_")
+                    safe_name = self._sanitize_name(inp.name)
                     npy_path = inputs_dir / f"{safe_name}.npy"
                     data = generate_random_input(concrete, inp.data_type)
                     np.save(str(npy_path), data)
@@ -549,7 +545,7 @@ class SessionService:
 
     def _unique_tensor_folder_in(self, tensors_dir: Path, node_name: str) -> str:
         """Return a unique folder name under given tensors dir based on node_name."""
-        safe = node_name.replace("/", "_").replace("\\", "_")
+        safe = self._sanitize_name(node_name)
         if not (tensors_dir / safe).exists():
             return safe
         i = 2

@@ -170,7 +170,8 @@ async def export_reproducer(
     if session_detail.config.original_format:
         info["session_config"]["original_format"] = session_detail.config.original_format
 
-    safe_name = node_name.replace("/", "_").replace("\\", "_").replace(" ", "_")
+    from backend.utils import sanitize_filename
+    safe_name = sanitize_filename(node_name)
 
     # When minimal_model is requested and .bin is a symlink, regenerate
     # a proper cut model with only the needed weights.

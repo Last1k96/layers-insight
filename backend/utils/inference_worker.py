@@ -118,7 +118,8 @@ def _prepare_inputs(cfg: dict, tmp_xml: str, input_configs: list[dict] | None):
 
     # Save input tensors to out_dir for reproducibility
     for name, tensor in inputs.items():
-        safe_name = name.replace("/", "_").replace("(", "_").replace(")", "_")
+        from backend.utils import sanitize_filename
+        safe_name = sanitize_filename(name)
         np.save(str(Path(out_dir) / f"input_{safe_name}.npy"), tensor)
 
     return core, cut_model, inputs

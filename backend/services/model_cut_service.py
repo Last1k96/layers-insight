@@ -280,7 +280,8 @@ class ModelCutService:
         inputs_dir.mkdir(exist_ok=True)
 
         param_name = node_name
-        safe_filename = param_name.replace("/", "_").replace("\\", "_")
+        from backend.utils import sanitize_filename
+        safe_filename = sanitize_filename(param_name)
         npy_save_path = str(inputs_dir / f"{safe_filename}.npy")
         np.save(npy_save_path, input_data)
 
@@ -307,6 +308,7 @@ class ModelCutService:
         new_grayed_set = set(new_grayed)
         copied_configs: list[dict] = []
 
+        from backend.utils import sanitize_filename
         for cfg in parent_input_configs_rel:
             if cfg.get("source") != "file" or not cfg.get("path"):
                 copied_configs.append(cfg)
@@ -316,7 +318,7 @@ class ModelCutService:
             inputs_dir = sub_dir / "inputs"
             inputs_dir.mkdir(exist_ok=True)
             src_abs = str(session_svc._session_path(session_id) / cfg["path"])
-            safe_filename = cfg["name"].replace("/", "_").replace("\\", "_")
+            safe_filename = sanitize_filename(cfg["name"])
             dst_rel = f"sub_sessions/{sub_session.id}/inputs/{safe_filename}.npy"
             dst_abs = str(session_svc._session_path(session_id) / dst_rel)
             shutil.copy2(src_abs, dst_abs)
