@@ -206,6 +206,7 @@
   onDestroy(() => {
     disconnect();
     queueStore.clear();
+    bisectStore.reset();
     uninstallShortcuts();
   });
 </script>

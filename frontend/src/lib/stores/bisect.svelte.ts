@@ -242,9 +242,9 @@ class BisectStore {
           });
         }
       }
+      this.jobs = restored;
+      // Migrate legacy batch_id="bisect" tasks to new "bisect:{jobId}" format
       if (restored.length > 0) {
-        this.jobs = restored;
-        // Migrate legacy batch_id="bisect" tasks to new "bisect:{jobId}" format
         const legacyTasks = queueStore.tasks.filter(t => t.batch_id === 'bisect');
         if (legacyTasks.length > 0 && restored.length === 1) {
           const newBatchId = `bisect:${restored[0].job_id}`;
