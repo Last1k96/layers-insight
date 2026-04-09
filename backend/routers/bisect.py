@@ -108,6 +108,19 @@ async def get_bisection_status(request: Request, session_id: str | None = None) 
     return {"jobs": jobs}
 
 
+@router.post("/{job_id}/merge")
+async def merge_bisect_job(job_id: str, request: Request, session_id: str) -> dict:
+    """Merge bisect tasks into the main task list and clear the job.
+
+    Clears batch_id from all tasks belonging to this bisect job so they
+    become regular visible tasks, then removes the bisect job metadata.
+    """
+    session_svc = request.app.state.session_service
+    count = session_svc.merge_bisect_tasks(session_id, job_id)
+    session_svc.clear_bisect_job(session_id, job_id)
+    return {"merged": count}
+
+
 @router.delete("/{job_id}")
 async def dismiss_bisect_job(job_id: str, request: Request, session_id: str) -> dict:
     """Clear a persisted bisect job from session metadata (after merge/discard)."""

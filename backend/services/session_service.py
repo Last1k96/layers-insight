@@ -793,6 +793,22 @@ class SessionService:
             return {job["job_id"]: job} if "job_id" in job else {}
         return {}
 
+    def merge_bisect_tasks(self, session_id: str, job_id: str) -> int:
+        """Clear batch_id from tasks belonging to a bisect job so they appear as regular tasks.
+
+        Returns the number of tasks that were updated.
+        """
+        meta = self._read_metadata(session_id)
+        batch_id = f"bisect:{job_id}"
+        count = 0
+        for task_data in meta.get("tasks", {}).values():
+            if task_data.get("batch_id") == batch_id:
+                task_data.pop("batch_id", None)
+                count += 1
+        if count > 0:
+            self._write_metadata(session_id, meta)
+        return count
+
     def clear_bisect_job(self, session_id: str, job_id: str) -> None:
         """Remove a specific persisted bisect job from session metadata."""
         meta = self._read_metadata(session_id)

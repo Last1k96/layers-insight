@@ -495,3 +495,30 @@ class TestSessionService:
 
         result = session_service.compare_sessions(s1.id, s2.id)
         assert result["summary"]["unchanged"] == 1
+
+    def test_merge_bisect_tasks(self, session_service, sample_config):
+        """merge_bisect_tasks clears batch_id so tasks become visible as regular tasks."""
+        info = session_service.create_session(sample_config)
+
+        # Simulate bisect creating tasks with batch_id
+        session_service.save_task_result(info.id, "t1", {
+            "status": "success", "node_name": "conv1", "batch_id": "bisect:job1",
+        })
+        session_service.save_task_result(info.id, "t2", {
+            "status": "success", "node_name": "relu1", "batch_id": "bisect:job1",
+        })
+        session_service.save_task_result(info.id, "t3", {
+            "status": "success", "node_name": "pool1",
+        })
+
+        count = session_service.merge_bisect_tasks(info.id, "job1")
+        assert count == 2
+
+        # Verify batch_id is cleared from merged tasks
+        t1 = session_service.load_task_result(info.id, "t1")
+        assert "batch_id" not in t1
+        t2 = session_service.load_task_result(info.id, "t2")
+        assert "batch_id" not in t2
+        # Non-bisect task unaffected
+        t3 = session_service.load_task_result(info.id, "t3")
+        assert "batch_id" not in t3

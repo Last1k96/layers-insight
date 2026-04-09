@@ -135,7 +135,7 @@ class BisectStore {
     const sessionId = job?.session_id;
     queueStore.mergeBisectTasks(jobId);
     this.jobs = this.jobs.filter(j => j.job_id !== jobId);
-    if (sessionId) this._clearPersistedJob(jobId, sessionId);
+    if (sessionId) this._mergePersistedJob(jobId, sessionId);
   }
 
   /** Stop bisect, cancel in-flight tasks, merge completed ones. */
@@ -202,6 +202,10 @@ class BisectStore {
     await Promise.all(tasks.map(t => queueStore.deleteTask(t.task_id)));
     this.jobs = this.jobs.filter(j => j.job_id !== jobId);
     if (sessionId) this._clearPersistedJob(jobId, sessionId);
+  }
+
+  private _mergePersistedJob(jobId: string, sessionId: string): void {
+    fetch(`/api/inference/bisect/${jobId}/merge?session_id=${sessionId}`, { method: 'POST' }).catch(() => {});
   }
 
   private _clearPersistedJob(jobId: string, sessionId: string): void {
