@@ -58,6 +58,33 @@
   // Input file path validation
   let inputFileErrors = $state<Record<number, string | null>>({});
 
+  /** Map bytes-per-element to the precision strings used in this form. */
+  const BYTES_TO_PRECISION: Record<number, string[]> = {
+    1: ['u8', 'i8'],
+    2: ['fp16'],
+    4: ['fp32', 'i32'],
+    8: ['i64'],
+  };
+
+  /**
+   * For a .bin file, infer precision from file_size / num_elements.
+   * Returns the best matching precision from the input's allowed list, or null.
+   */
+  function inferPrecisionFromBin(input: typeof modelInputs[0], fileSize: number): string | null {
+    const shape = input.resolved_shape ?? input.shape;
+    const numElements = shape.reduce<number>((acc, d) => {
+      const n = typeof d === 'number' ? d : 0;
+      return n > 0 ? acc * n : 0;
+    }, 1);
+    if (numElements <= 0) return null;
+    const bpe = fileSize / numElements;
+    if (!Number.isInteger(bpe)) return null;
+    const candidates = BYTES_TO_PRECISION[bpe];
+    if (!candidates) return null;
+    const allowed = getAllowedPrecisions(input.element_type);
+    return candidates.find(c => allowed.includes(c)) ?? candidates[0];
+  }
+
   function debounceInputFileCheck(index: number) {
     const path = modelInputs[index]?.path?.trim();
     if (!path) {
@@ -72,6 +99,13 @@
         inputFileErrors = { ...inputFileErrors, [index]: `Not a file: ${path}` };
       } else {
         inputFileErrors = { ...inputFileErrors, [index]: null };
+        // Auto-detect precision for .bin files based on file size and shape
+        if (result.file_size != null && path.toLowerCase().endsWith('.bin')) {
+          const inferred = inferPrecisionFromBin(modelInputs[index], result.file_size);
+          if (inferred) {
+            modelInputs[index] = { ...modelInputs[index], data_type: inferred };
+          }
+        }
       }
     });
   }

@@ -319,6 +319,7 @@ class PathCheckResult(BaseModel):
     exists: bool
     is_file: bool = False
     is_dir: bool = False
+    file_size: Optional[int] = None
 
 
 @router.get("/check-path", response_model=PathCheckResult)
@@ -329,7 +330,9 @@ async def check_path(
     p = Path(path).expanduser()
     if not p.exists():
         return PathCheckResult(exists=False)
-    return PathCheckResult(exists=True, is_file=p.is_file(), is_dir=p.is_dir())
+    is_file = p.is_file()
+    file_size = p.stat().st_size if is_file else None
+    return PathCheckResult(exists=True, is_file=is_file, is_dir=p.is_dir(), file_size=file_size)
 
 
 class ModelInputInfo(BaseModel):

@@ -160,7 +160,7 @@ class ConfigStore {
     }
   }
 
-  async checkPath(path: string): Promise<{ exists: boolean; is_file: boolean }> {
+  async checkPath(path: string): Promise<{ exists: boolean; is_file: boolean; file_size?: number }> {
     try {
       const res = await fetch(`/api/check-path?path=${encodeURIComponent(path)}`);
       if (res.ok) return await res.json();
