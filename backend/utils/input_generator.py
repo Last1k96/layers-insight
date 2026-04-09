@@ -59,13 +59,14 @@ def generate_random_input(
     return rng.random(shape).astype(dtype)
 
 
-def load_input_from_file(path: str, shape: list[int] | None = None) -> np.ndarray:
+def load_input_from_file(path: str, shape: list[int] | None = None, precision: str = "fp32") -> np.ndarray:
     """Load input data from a file (.npy or raw binary)."""
     p = Path(path)
     if p.suffix == ".npy":
         return np.load(str(p))
     if p.suffix in (".bin", ".raw"):
-        data = np.fromfile(str(p), dtype=np.float32)
+        dtype = PRECISION_MAP.get(precision, np.float32)
+        data = np.fromfile(str(p), dtype=dtype)
         if shape:
             data = data.reshape(shape)
         return data
@@ -120,7 +121,7 @@ def prepare_inputs(
             if cfg.get("source") == "file" and cfg.get("path"):
                 # For file inputs, shape comes from the file itself
                 file_shape = None if has_dynamic_dims(shape) else shape
-                tensor = load_input_from_file(cfg["path"], file_shape)
+                tensor = load_input_from_file(cfg["path"], file_shape, dt)
                 # Validate file input shape against bounds if provided
                 lo = cfg.get("lower_bounds", [])
                 hi = cfg.get("upper_bounds", [])
@@ -146,12 +147,12 @@ def prepare_inputs(
                 for ext in (".npy", ".bin", ".png", ".jpg", ".jpeg", ".bmp"):
                     candidate = p / f"{name}{ext}"
                     if candidate.exists():
-                        inputs[name] = load_input_from_file(str(candidate), shape)
+                        inputs[name] = load_input_from_file(str(candidate), shape, precision)
                         break
                 else:
                     inputs[name] = generate_random_input(shape, precision)
             else:
-                inputs[name] = load_input_from_file(str(p), shape)
+                inputs[name] = load_input_from_file(str(p), shape, precision)
         else:
             inputs[name] = generate_random_input(shape, precision)
     return inputs
