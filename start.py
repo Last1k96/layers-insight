@@ -71,7 +71,7 @@ def node_bin_dir() -> Path:
 
 def npm_cmd() -> Path:
     if IS_WINDOWS:
-        return NODE_DIR / "npm.cmd"
+        return Path.cwd() / NODE_DIR / "npm.cmd"
     return NODE_DIR / "bin" / "npm"
 
 
