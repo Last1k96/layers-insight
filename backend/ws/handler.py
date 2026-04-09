@@ -53,6 +53,16 @@ class ConnectionManager:
         for ws in dead:
             self._connections[session_id].discard(ws)
 
+    async def close_all(self) -> None:
+        """Close all WebSocket connections (used during shutdown)."""
+        for session_id in list(self._connections):
+            for ws in list(self._connections.get(session_id, [])):
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
+        self._connections.clear()
+
     async def send_task_status(self, task: InferenceTask) -> None:
         """Broadcast task status update."""
         message = {

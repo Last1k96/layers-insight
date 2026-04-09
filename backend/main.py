@@ -203,6 +203,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    await ws_manager.close_all()
     await queue_service.stop_worker()
 
 

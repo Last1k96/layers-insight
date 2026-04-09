@@ -177,7 +177,9 @@ class InferenceService:
                 return task
 
             # Check if process was killed by timeout or pause
-            if proc.returncode == -9:
+            # On Windows, proc.kill() sets returncode to 1; on Linux, -9 (SIGKILL)
+            _killed_rc = 1 if sys.platform == "win32" else -9
+            if proc.returncode == _killed_rc:
                 # If pause already reset task to WAITING, don't overwrite
                 if task.status == TaskStatus.WAITING:
                     return task
@@ -186,12 +188,15 @@ class InferenceService:
                 _log("error", "Inference timed out (300s)")
                 return task
 
-            # Subprocess crashed (segfault = -11, other signals are negative)
+            # Subprocess crashed (segfault = -11, other signals are negative on Linux)
             if proc.returncode != 0:
                 stderr_tail = "\n".join(raw_stderr_lines)[-500:] if raw_stderr_lines else ""
-                if proc.returncode < 0:
-                    import signal
-                    sig_name = signal.Signals(-proc.returncode).name
+                if proc.returncode < 0 and sys.platform != "win32":
+                    import signal as _signal
+                    try:
+                        sig_name = _signal.Signals(-proc.returncode).name
+                    except (ValueError, AttributeError):
+                        sig_name = str(-proc.returncode)
                     task.status = TaskStatus.FAILED
                     last_stage_info = f" Last stage: {task.stage}" if task.stage else ""
                     task.error_detail = (
