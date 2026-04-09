@@ -177,6 +177,7 @@ export interface BisectQueueItem {
   found_node?: string;
   error?: string;
   sub_session_id?: string | null;
+  output_node?: string | null;
 }
 
 export interface TaskStatusMessage {

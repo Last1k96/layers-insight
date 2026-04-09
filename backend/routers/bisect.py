@@ -42,6 +42,37 @@ async def start_bisection(req: BisectRequest, request: Request) -> BisectJobInfo
         return job
 
 
+@router.post("/auto", response_model=list[BisectJobInfo])
+async def start_bisect_all_outputs(req: BisectRequest, request: Request) -> list[BisectJobInfo]:
+    """Start one bisect job per model output (per-output graph-aware bisect)."""
+    async with request.app.state.pause_resume_lock:
+        bisect_svc = request.app.state.bisect_service
+        if bisect_svc is None:
+            raise HTTPException(status_code=503, detail="Bisect service not available")
+
+        session_svc = request.app.state.session_service
+        cached = session_svc.load_graph_cache(req.session_id)
+        if not cached:
+            raise HTTPException(status_code=404, detail="Graph not loaded. Open the graph first.")
+
+        graph_data = GraphData(**cached)
+        queue_svc = request.app.state.queue_service
+
+        from backend.ws.handler import ws_manager
+        try:
+            jobs = await bisect_svc.start_all_outputs(
+                request=req,
+                graph_data=graph_data,
+                queue_service=queue_svc,
+                session_service=session_svc,
+                broadcast=ws_manager.broadcast,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        return jobs
+
+
 @router.post("/{job_id}/stop", response_model=BisectJobInfo)
 async def stop_bisection(job_id: str, request: Request) -> BisectJobInfo:
     """Stop a specific bisection job."""

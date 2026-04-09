@@ -1,4 +1,4 @@
-"""Bisection search service — binary search for accuracy drop or compilation failure."""
+"""Bisection search service — graph-aware binary search for accuracy drop or compilation failure."""
 from __future__ import annotations
 
 import asyncio
@@ -16,6 +16,12 @@ from backend.schemas.bisect import (
 )
 from backend.schemas.graph import GraphData
 from backend.schemas.inference import AccuracyMetrics, InferenceTask, TaskStatus
+from backend.utils.graph_utils import (
+    build_reverse_adj,
+    find_best_bisect_point,
+    find_output_nodes,
+    get_ancestors_in_set,
+)
 
 
 def _topo_order(graph_data: GraphData) -> list[str]:
@@ -23,32 +29,51 @@ def _topo_order(graph_data: GraphData) -> list[str]:
     return [n.id for n in graph_data.nodes]
 
 
-def _nodes_between(
+def _compute_search_candidates(
     graph_data: GraphData,
+    reverse_adj: dict[str, set[str]],
+    output_node: Optional[str],
     start_node: Optional[str],
     end_node: Optional[str],
-) -> list[str]:
-    """Return node IDs between start and end (inclusive) in topological order.
+) -> set[str]:
+    """Compute the set of candidate nodes to bisect.
 
-    Skips Parameter and Result nodes.
+    - output_node: ancestors of this Result node's predecessor (per-output mode)
+    - end_node: ancestors of this node (legacy from-node mode)
+    - neither: all non-Parameter/Result nodes
     """
-    topo = _topo_order(graph_data)
     node_types = {n.id: n.type for n in graph_data.nodes}
+    skip_types = {"Parameter", "Result"}
 
-    if start_node and start_node in topo:
-        start_idx = topo.index(start_node)
-    else:
-        start_idx = 0
+    if output_node:
+        # Find predecessor of the Result node
+        preds = reverse_adj.get(output_node, set())
+        if not preds:
+            raise ValueError(f"Result node {output_node} has no predecessor")
+        pred = next(iter(preds))
+        # Get all ancestors of the predecessor (including itself)
+        all_ancestors = get_ancestors_in_set(
+            pred,
+            {n.id for n in graph_data.nodes},
+            reverse_adj,
+        )
+        return {nid for nid in all_ancestors if node_types.get(nid) not in skip_types}
 
-    if end_node and end_node in topo:
-        end_idx = topo.index(end_node)
-    else:
-        end_idx = len(topo) - 1
+    if end_node:
+        all_node_ids = {n.id for n in graph_data.nodes}
+        ancestors = get_ancestors_in_set(end_node, all_node_ids, reverse_adj)
+        candidates = {nid for nid in ancestors if node_types.get(nid) not in skip_types}
+        if start_node:
+            # Also restrict to descendants of start_node
+            topo = _topo_order(graph_data)
+            if start_node in topo:
+                start_idx = topo.index(start_node)
+                allowed = set(topo[start_idx:])
+                candidates = candidates & allowed
+        return candidates
 
-    return [
-        nid for nid in topo[start_idx : end_idx + 1]
-        if node_types.get(nid) not in ("Parameter", "Result")
-    ]
+    # Full model: all non-Parameter/Result nodes
+    return {n.id for n in graph_data.nodes if n.type not in skip_types}
 
 
 @dataclass
@@ -60,10 +85,10 @@ class _JobState:
     step_done: asyncio.Event = field(default_factory=asyncio.Event)
     step_result: Optional[InferenceTask] = None
     pending_task_id: Optional[str] = None
-    lo: int = 0
-    hi: int = 0
     step: int = 0
-    nodes: list[str] = field(default_factory=list)
+    candidates: set[str] = field(default_factory=set)
+    reverse_adj: dict[str, set[str]] = field(default_factory=dict)
+    topo_order: list[str] = field(default_factory=list)
     node_map: dict[str, Any] = field(default_factory=dict)
     request: Any = None
     graph_data: Optional[GraphData] = None
@@ -129,18 +154,22 @@ class BisectService:
         broadcast: Any,
     ) -> BisectJobInfo:
         """Start a new bisection search. Returns job info."""
-        nodes = _nodes_between(graph_data, request.start_node, request.end_node)
+        reverse_adj = build_reverse_adj(graph_data.edges)
+        candidates = _compute_search_candidates(
+            graph_data, reverse_adj,
+            request.output_node, request.start_node, request.end_node,
+        )
 
-        # When running in a sub-session, exclude grayed-out nodes (not in the cut model)
+        # When running in a sub-session, exclude grayed-out nodes
         if request.sub_session_id and session_service:
             sub_meta = session_service.get_sub_session_meta(
                 request.session_id, request.sub_session_id
             )
             if sub_meta:
                 grayed = set(sub_meta.get("grayed_nodes", []))
-                nodes = [nid for nid in nodes if nid not in grayed]
+                candidates = candidates - grayed
 
-        if len(nodes) < 2:
+        if len(candidates) < 2:
             detail = "Need at least 2 nodes in range for bisection"
             if request.sub_session_id:
                 detail += " (after excluding nodes outside the sub-session model)"
@@ -151,7 +180,9 @@ class BisectService:
         self._session_service = session_service
         self._broadcast = broadcast
 
-        total_steps = max(1, math.ceil(math.log2(len(nodes))))
+        topo = _topo_order(graph_data)
+        topo_filtered = [n for n in topo if n in candidates]
+        total_steps = max(1, math.ceil(math.log2(len(candidates))))
         job_id = str(uuid.uuid4())[:8]
 
         job = BisectJobInfo(
@@ -164,14 +195,15 @@ class BisectService:
             step=0,
             total_steps=total_steps,
             sub_session_id=request.sub_session_id,
+            output_node=request.output_node,
         )
 
         state = _JobState(
             job=job,
-            lo=0,
-            hi=len(nodes) - 1,
             step=0,
-            nodes=nodes,
+            candidates=set(candidates),
+            reverse_adj=reverse_adj,
+            topo_order=topo_filtered,
             node_map={n.id: n for n in graph_data.nodes},
             request=request,
             graph_data=graph_data,
@@ -179,6 +211,37 @@ class BisectService:
         self._jobs[job_id] = state
         state.task = asyncio.create_task(self._run_loop(job_id))
         return job
+
+    async def start_all_outputs(
+        self,
+        request: Any,
+        graph_data: GraphData,
+        queue_service: Any,
+        session_service: Any,
+        broadcast: Any,
+    ) -> list[BisectJobInfo]:
+        """Start one bisect job per model output. Returns list of job infos."""
+        outputs = find_output_nodes(graph_data)
+        if not outputs:
+            raise ValueError("No output (Result) nodes found in graph")
+
+        jobs: list[BisectJobInfo] = []
+        for result_id, _pred_id in outputs:
+            # Clone request with output_node set
+            req_data = request.model_dump()
+            req_data["output_node"] = result_id
+            from backend.schemas.bisect import BisectRequest
+            per_output_req = BisectRequest(**req_data)
+
+            job = await self.start(
+                request=per_output_req,
+                graph_data=graph_data,
+                queue_service=queue_service,
+                session_service=session_service,
+                broadcast=broadcast,
+            )
+            jobs.append(job)
+        return jobs
 
     async def stop(self, job_id: str) -> Optional[BisectJobInfo]:
         """Stop a specific bisect job and clean up its child tasks."""
@@ -317,17 +380,68 @@ class BisectService:
                 **state.job.model_dump(),
             })
 
+    # ── Inference helper ──
+
+    async def _infer_node(
+        self,
+        state: _JobState,
+        node_id: str,
+        node_name: str,
+        node_type: str,
+        batch_id: str,
+    ) -> Optional[InferenceTask]:
+        """Check cache or enqueue inference for a node. Returns result task."""
+        request = state.request
+
+        # Check if node was already inferred
+        if self._session_service:
+            existing_task_id = self._session_service.find_task_for_node(
+                request.session_id, node_name, request.sub_session_id
+            )
+            if existing_task_id:
+                meta = self._session_service._read_metadata(request.session_id)
+                task_data = meta.get("tasks", {}).get(existing_task_id)
+                if task_data:
+                    result = self._build_task_from_metadata(task_data)
+                    result.node_id = node_id
+                    result.node_name = node_name
+                    return result
+
+        # Enqueue child task
+        state.step_done.clear()
+        state.step_result = None
+
+        task = self._queue_service.create_task(
+            session_id=request.session_id,
+            node_id=node_id,
+            node_name=node_name,
+            node_type=node_type,
+        )
+        if request.sub_session_id:
+            task.sub_session_id = request.sub_session_id
+        task.batch_id = batch_id
+
+        state.pending_task_id = task.task_id
+        await self._queue_service.enqueue(task)
+
+        await state.step_done.wait()
+
+        if state.cancel_event.is_set():
+            return None  # Caller checks cancel_event
+
+        state.pending_task_id = None
+        return state.step_result
+
     # ── Main loop ──
 
     async def _run_loop(self, job_id: str) -> None:
-        """Binary search loop for a specific job."""
+        """Graph-aware bisection loop for a specific job."""
         state = self._jobs.get(job_id)
         if state is None:
             return
 
         request = state.request
-        lo = state.lo
-        hi = state.hi
+        candidates = state.candidates
         step = state.step
         batch_id = f"bisect:{job_id}"
 
@@ -339,8 +453,6 @@ class BisectService:
                     await state.step_done.wait()
 
                     if state.cancel_event.is_set():
-                        state.lo = lo
-                        state.hi = hi
                         state.step = step
                         return
 
@@ -354,8 +466,7 @@ class BisectService:
                     await self._broadcast_job_status(state)
                     return
 
-                mid = (lo + hi) // 2
-                mid_node_id = state.nodes[mid]
+                mid_node_id = result.node_id
 
                 passed, metric_value, error = self._evaluate_step(
                     result, request.search_for, request.metric, request.threshold,
@@ -370,20 +481,72 @@ class BisectService:
                 ))
 
                 if passed:
-                    lo = mid + 1
+                    ancestors = get_ancestors_in_set(mid_node_id, candidates, state.reverse_adj)
+                    candidates -= ancestors
                 else:
-                    hi = mid
+                    candidates = get_ancestors_in_set(mid_node_id, candidates, state.reverse_adj)
+                state.candidates = candidates
 
-            # ── Normal binary search loop ──
-            while lo < hi:
+            # ── Step 0: per-output initial check ──
+            if request.output_node and step == 0 and len(candidates) > 0:
+                # Find the predecessor of the Result node
+                preds = state.reverse_adj.get(request.output_node, set())
+                output_pred = next(iter(preds)) if preds else None
+
+                if output_pred:
+                    pred_node = state.node_map.get(output_pred)
+                    pred_name = pred_node.name if pred_node else output_pred
+                    pred_type = pred_node.type if pred_node else ""
+
+                    step += 1
+                    state.job.step = step
+                    state.job.current_node = pred_name
+                    await self._broadcast_job_status(state)
+
+                    result = await self._infer_node(
+                        state, output_pred, pred_name, pred_type, batch_id,
+                    )
+
+                    if state.cancel_event.is_set():
+                        state.step = step
+                        return
+
+                    if result is None:
+                        state.job.status = BisectStatus.ERROR
+                        state.job.error = "Inference result was lost"
+                        await self._broadcast_job_status(state)
+                        return
+
+                    passed, metric_value, error = self._evaluate_step(
+                        result, request.search_for, request.metric, request.threshold,
+                    )
+                    state.steps_history.append(BisectStepInfo(
+                        node_name=pred_name,
+                        node_id=output_pred,
+                        task_id=result.task_id if result.task_id else None,
+                        metric_value=metric_value,
+                        passed=passed,
+                        error=error,
+                    ))
+
+                    if passed:
+                        # This output is fine — done in 1 inference
+                        state.job.status = BisectStatus.DONE
+                        state.job.found_node = None
+                        state.job.step = step
+                        await self._broadcast_job_status(state)
+                        self._persist_job(state)
+                        return
+
+            # ── Main graph-aware bisection loop ──
+            while len(candidates) > 1:
                 if state.cancel_event.is_set():
-                    state.lo = lo
-                    state.hi = hi
                     state.step = step
                     return
 
-                mid = (lo + hi) // 2
-                mid_node_id = state.nodes[mid]
+                mid_node_id = find_best_bisect_point(
+                    candidates, state.reverse_adj, state.topo_order,
+                )
                 mid_node = state.node_map.get(mid_node_id)
                 mid_name = mid_node.name if mid_node else mid_node_id
                 mid_type = mid_node.type if mid_node else ""
@@ -393,55 +556,19 @@ class BisectService:
                 state.job.current_node = mid_name
                 await self._broadcast_job_status(state)
 
-                # Check if node was already inferred
-                existing_task_id = None
-                if self._session_service:
-                    existing_task_id = self._session_service.find_task_for_node(
-                        request.session_id, mid_name, request.sub_session_id
-                    )
+                result = await self._infer_node(
+                    state, mid_node_id, mid_name, mid_type, batch_id,
+                )
 
-                result = None
-                if existing_task_id:
-                    meta = self._session_service._read_metadata(request.session_id)
-                    task_data = meta.get("tasks", {}).get(existing_task_id)
-                    if task_data:
-                        result = self._build_task_from_metadata(task_data)
-                        result.node_id = mid_node_id
-                        result.node_name = mid_name
+                if state.cancel_event.is_set():
+                    state.step = step
+                    return
 
                 if result is None:
-                    # Enqueue child task
-                    state.step_done.clear()
-                    state.step_result = None
-
-                    task = self._queue_service.create_task(
-                        session_id=request.session_id,
-                        node_id=mid_node_id,
-                        node_name=mid_name,
-                        node_type=mid_type,
-                    )
-                    if request.sub_session_id:
-                        task.sub_session_id = request.sub_session_id
-                    task.batch_id = batch_id
-
-                    state.pending_task_id = task.task_id
-                    await self._queue_service.enqueue(task)
-
-                    await state.step_done.wait()
-
-                    if state.cancel_event.is_set():
-                        state.lo = lo
-                        state.hi = hi
-                        state.step = step
-                        return
-
-                    state.pending_task_id = None
-                    result = state.step_result
-                    if result is None:
-                        state.job.status = BisectStatus.ERROR
-                        state.job.error = "Inference result was lost"
-                        await self._broadcast_job_status(state)
-                        return
+                    state.job.status = BisectStatus.ERROR
+                    state.job.error = "Inference result was lost"
+                    await self._broadcast_job_status(state)
+                    return
 
                 passed, metric_value, error = self._evaluate_step(
                     result, request.search_for, request.metric, request.threshold,
@@ -456,36 +583,38 @@ class BisectService:
                 ))
 
                 if passed:
-                    lo = mid + 1
+                    ancestors = get_ancestors_in_set(mid_node_id, candidates, state.reverse_adj)
+                    candidates -= ancestors
                 else:
-                    hi = mid
+                    candidates = get_ancestors_in_set(mid_node_id, candidates, state.reverse_adj)
+
+                state.candidates = candidates
 
             # Save final state
-            state.lo = lo
-            state.hi = hi
             state.step = step
 
             # Bisection converged
-            found_id = state.nodes[lo]
-            found_node = state.node_map.get(found_id)
-            found_name = found_node.name if found_node else found_id
+            if candidates:
+                found_id = next(iter(candidates))
+                found_node = state.node_map.get(found_id)
+                found_name = found_node.name if found_node else found_id
+                state.job.found_node = found_name
+            else:
+                state.job.found_node = None
 
             state.job.status = BisectStatus.DONE
-            state.job.found_node = found_name
             state.job.step = step
 
             await self._broadcast_job_status(state)
             self._persist_job(state)
 
         except asyncio.CancelledError:
-            state.lo = lo
-            state.hi = hi
             state.step = step
+            state.candidates = candidates
             state.job.status = BisectStatus.PAUSED
         except Exception as e:
-            state.lo = lo
-            state.hi = hi
             state.step = step
+            state.candidates = candidates
             state.job.status = BisectStatus.ERROR
             state.job.error = str(e)
             await self._broadcast_job_status(state)

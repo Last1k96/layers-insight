@@ -14,7 +14,7 @@ from backend.schemas.bisect import (
 )
 from backend.schemas.graph import GraphData, GraphEdge, GraphNode
 from backend.schemas.inference import AccuracyMetrics, InferenceTask, TaskStatus
-from backend.services.bisect_service import BisectService, _nodes_between
+from backend.services.bisect_service import BisectService
 
 
 # ---------------------------------------------------------------------------
@@ -33,6 +33,54 @@ def _make_graph(n: int = 10) -> GraphData:
         prev = nid
     nodes.append(GraphNode(id="result_0", name="result_0", type="Result"))
     edges.append(GraphEdge(source=prev, target="result_0"))
+    return GraphData(nodes=nodes, edges=edges)
+
+
+def _make_diamond_graph() -> GraphData:
+    """
+    param -> A -> B -> D -> result_0
+                  C ↗
+    param -> A -> C
+    """
+    nodes = [
+        GraphNode(id="param_0", name="param_0", type="Parameter"),
+        GraphNode(id="A", name="A", type="Convolution"),
+        GraphNode(id="B", name="B", type="Relu"),
+        GraphNode(id="C", name="C", type="Relu"),
+        GraphNode(id="D", name="D", type="Add"),
+        GraphNode(id="result_0", name="result_0", type="Result"),
+    ]
+    edges = [
+        GraphEdge(source="param_0", target="A"),
+        GraphEdge(source="A", target="B"),
+        GraphEdge(source="A", target="C"),
+        GraphEdge(source="B", target="D"),
+        GraphEdge(source="C", target="D"),
+        GraphEdge(source="D", target="result_0"),
+    ]
+    return GraphData(nodes=nodes, edges=edges)
+
+
+def _make_multi_output_graph() -> GraphData:
+    """
+    param -> A -> B -> result_0
+    param -> A -> C -> result_1
+    """
+    nodes = [
+        GraphNode(id="param_0", name="param_0", type="Parameter"),
+        GraphNode(id="A", name="A", type="Convolution"),
+        GraphNode(id="B", name="B", type="Relu"),
+        GraphNode(id="C", name="C", type="Sigmoid"),
+        GraphNode(id="result_0", name="result_0", type="Result"),
+        GraphNode(id="result_1", name="result_1", type="Result"),
+    ]
+    edges = [
+        GraphEdge(source="param_0", target="A"),
+        GraphEdge(source="A", target="B"),
+        GraphEdge(source="A", target="C"),
+        GraphEdge(source="B", target="result_0"),
+        GraphEdge(source="C", target="result_1"),
+    ]
     return GraphData(nodes=nodes, edges=edges)
 
 
@@ -85,23 +133,7 @@ async def noop_broadcast(sid, msg):
 
 
 # ---------------------------------------------------------------------------
-# _nodes_between tests
-# ---------------------------------------------------------------------------
-
-def test_nodes_between_full_range():
-    g = _make_graph(5)
-    nodes = _nodes_between(g, None, None)
-    assert nodes == [f"op_{i}" for i in range(5)]
-
-
-def test_nodes_between_partial_range():
-    g = _make_graph(5)
-    nodes = _nodes_between(g, "op_1", "op_3")
-    assert nodes == ["op_1", "op_2", "op_3"]
-
-
-# ---------------------------------------------------------------------------
-# BisectService unit tests
+# Accuracy-drop & compilation-failure (linear graph)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
@@ -179,6 +211,10 @@ async def test_bisect_finds_compilation_failure():
     assert final_job.status == BisectStatus.DONE
     assert final_job.found_node == "op_3"
 
+
+# ---------------------------------------------------------------------------
+# Stop, pause, resume
+# ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
 async def test_bisect_stop():
@@ -274,6 +310,10 @@ async def test_bisect_pause_resume_with_completed_task():
     await svc.stop(job.job_id)
 
 
+# ---------------------------------------------------------------------------
+# Multiple concurrent jobs
+# ---------------------------------------------------------------------------
+
 @pytest.mark.asyncio
 async def test_bisect_multiple_concurrent_jobs():
     """Multiple bisect jobs can run concurrently."""
@@ -364,36 +404,6 @@ async def test_bisect_too_few_nodes():
             queue_service=None, session_service=None,
             broadcast=None,
         )
-
-
-# ---------------------------------------------------------------------------
-# Router tests (via httpx)
-# ---------------------------------------------------------------------------
-
-@pytest.mark.asyncio
-async def test_bisect_status_endpoint(async_client, test_app):
-    """GET /api/inference/bisect/status returns empty jobs when nothing is running."""
-    resp = await async_client.get("/api/inference/bisect/status")
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data["jobs"] == []
-
-
-@pytest.mark.asyncio
-async def test_bisect_start_no_graph(async_client, test_app, test_session):
-    """POST /api/inference/bisect returns 404 when graph is not loaded."""
-    resp = await async_client.post("/api/inference/bisect", json={
-        "session_id": test_session.id,
-        "threshold": 0.999,
-    })
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_bisect_stop_when_not_found(async_client, test_app):
-    """POST /api/inference/bisect/{job_id}/stop returns 404 when job doesn't exist."""
-    resp = await async_client.post("/api/inference/bisect/nonexistent/stop")
-    assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -491,3 +501,256 @@ async def test_bisect_sub_session_all_grayed_raises():
             queue_service=FakeQueue(), session_service=session_svc,
             broadcast=noop_broadcast,
         )
+
+
+# ---------------------------------------------------------------------------
+# Graph-aware: diamond graph
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_bisect_diamond_graph():
+    """Graph-aware bisect on a diamond graph correctly identifies the faulty branch."""
+    svc = BisectService()
+    graph = _make_diamond_graph()
+    # param -> A -> B -> D -> result_0
+    #               C ↗
+
+    req = BisectRequest(
+        session_id="s1",
+        metric=BisectMetric.COSINE_SIMILARITY,
+        threshold=0.999,
+        search_for=BisectSearchFor.ACCURACY_DROP,
+    )
+
+    queue = FakeQueue()
+    job = await svc.start(
+        request=req, graph_data=graph,
+        queue_service=queue, session_service=None,
+        broadcast=noop_broadcast,
+    )
+
+    # Simulate: C is the faulty node. A, B pass. C and D fail.
+    while any(s.job.status == BisectStatus.RUNNING for s in svc._jobs.values()):
+        await asyncio.sleep(0.01)
+        if queue.created_tasks:
+            task = queue.created_tasks[-1]
+            if task.node_name in ("A", "B"):
+                result = _make_task(task.task_id, task.node_name, TaskStatus.SUCCESS,
+                                    cos=1.0, batch_id=task.batch_id)
+            else:  # C, D
+                result = _make_task(task.task_id, task.node_name, TaskStatus.SUCCESS,
+                                    cos=0.5, batch_id=task.batch_id)
+            svc.on_task_complete(result)
+            await asyncio.sleep(0.01)
+
+    final_job = svc.get_job(job.job_id)
+    assert final_job.status == BisectStatus.DONE
+    assert final_job.found_node == "C"
+
+
+# ---------------------------------------------------------------------------
+# Per-output bisect
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_bisect_per_output_early_termination():
+    """Per-output bisect finishes in 1 inference when the output is correct."""
+    svc = BisectService()
+    graph = _make_multi_output_graph()
+    # param -> A -> B -> result_0
+    # param -> A -> C -> result_1
+
+    req = BisectRequest(
+        session_id="s1",
+        metric=BisectMetric.COSINE_SIMILARITY,
+        threshold=0.999,
+        output_node="result_0",  # check output 0
+    )
+
+    queue = FakeQueue()
+    job = await svc.start(
+        request=req, graph_data=graph,
+        queue_service=queue, session_service=None,
+        broadcast=noop_broadcast,
+    )
+
+    # The first inference should be on B (predecessor of result_0)
+    # If it passes, the job should be done
+    while any(s.job.status == BisectStatus.RUNNING for s in svc._jobs.values()):
+        await asyncio.sleep(0.01)
+        if queue.created_tasks:
+            task = queue.created_tasks[-1]
+            assert task.node_name == "B"
+            result = _make_task(task.task_id, task.node_name, TaskStatus.SUCCESS,
+                                cos=1.0, batch_id=task.batch_id)
+            svc.on_task_complete(result)
+            await asyncio.sleep(0.01)
+
+    final_job = svc.get_job(job.job_id)
+    assert final_job.status == BisectStatus.DONE
+    assert final_job.found_node is None  # no problem found
+    assert final_job.step == 1  # only 1 inference
+
+
+@pytest.mark.asyncio
+async def test_bisect_per_output_finds_fault():
+    """Per-output bisect narrows down to the faulty node when output fails."""
+    svc = BisectService()
+    graph = _make_multi_output_graph()
+    # param -> A -> B -> result_0
+    # param -> A -> C -> result_1
+
+    req = BisectRequest(
+        session_id="s1",
+        metric=BisectMetric.COSINE_SIMILARITY,
+        threshold=0.999,
+        output_node="result_1",  # check output 1
+    )
+
+    queue = FakeQueue()
+    job = await svc.start(
+        request=req, graph_data=graph,
+        queue_service=queue, session_service=None,
+        broadcast=noop_broadcast,
+    )
+
+    # C fails (predecessor of result_1). A passes. So C is the faulty node.
+    while any(s.job.status == BisectStatus.RUNNING for s in svc._jobs.values()):
+        await asyncio.sleep(0.01)
+        if queue.created_tasks:
+            task = queue.created_tasks[-1]
+            if task.node_name == "A":
+                result = _make_task(task.task_id, task.node_name, TaskStatus.SUCCESS,
+                                    cos=1.0, batch_id=task.batch_id)
+            else:
+                result = _make_task(task.task_id, task.node_name, TaskStatus.SUCCESS,
+                                    cos=0.5, batch_id=task.batch_id)
+            svc.on_task_complete(result)
+            await asyncio.sleep(0.01)
+
+    final_job = svc.get_job(job.job_id)
+    assert final_job.status == BisectStatus.DONE
+    assert final_job.found_node == "C"
+
+
+# ---------------------------------------------------------------------------
+# start_all_outputs
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_bisect_all_outputs():
+    """start_all_outputs creates one job per output."""
+    svc = BisectService()
+    graph = _make_multi_output_graph()
+
+    req = BisectRequest(
+        session_id="s1",
+        metric=BisectMetric.COSINE_SIMILARITY,
+        threshold=0.999,
+    )
+
+    queue = FakeQueue()
+    jobs = await svc.start_all_outputs(
+        request=req, graph_data=graph,
+        queue_service=queue, session_service=None,
+        broadcast=noop_broadcast,
+    )
+
+    assert len(jobs) == 2
+    output_nodes = {j.output_node for j in jobs}
+    assert output_nodes == {"result_0", "result_1"}
+    assert all(j.status == BisectStatus.RUNNING for j in jobs)
+
+    # Clean up
+    for j in jobs:
+        await svc.stop(j.job_id)
+
+
+@pytest.mark.asyncio
+async def test_bisect_all_outputs_mixed_results():
+    """Per-output bisect: one output passes (1 inference), the other finds a fault."""
+    svc = BisectService()
+    graph = _make_multi_output_graph()
+    # param -> A -> B -> result_0  (B will pass)
+    # param -> A -> C -> result_1  (C will fail, A will pass → C is faulty)
+
+    req = BisectRequest(
+        session_id="s1",
+        metric=BisectMetric.COSINE_SIMILARITY,
+        threshold=0.999,
+    )
+
+    queue = FakeQueue()
+    jobs = await svc.start_all_outputs(
+        request=req, graph_data=graph,
+        queue_service=queue, session_service=None,
+        broadcast=noop_broadcast,
+    )
+
+    # Drive both jobs to completion — process ALL unprocessed tasks each iteration
+    processed: set[int] = set()
+    while any(s.job.status == BisectStatus.RUNNING for s in svc._jobs.values()):
+        await asyncio.sleep(0.01)
+        for idx, task in enumerate(queue.created_tasks):
+            if idx in processed:
+                continue
+            processed.add(idx)
+            if task.node_name in ("A", "B"):
+                result = _make_task(task.task_id, task.node_name, TaskStatus.SUCCESS,
+                                    cos=1.0, batch_id=task.batch_id)
+            else:  # C
+                result = _make_task(task.task_id, task.node_name, TaskStatus.SUCCESS,
+                                    cos=0.5, batch_id=task.batch_id)
+            svc.on_task_complete(result)
+        await asyncio.sleep(0.01)
+
+    # Find the jobs by output_node
+    job_map = {svc.get_job(j.job_id).output_node: svc.get_job(j.job_id) for j in jobs}
+
+    # result_0's predecessor B passes → output OK
+    assert job_map["result_0"].status == BisectStatus.DONE
+    assert job_map["result_0"].found_node is None
+
+    # result_1's predecessor C fails, A passes → C is faulty
+    assert job_map["result_1"].status == BisectStatus.DONE
+    assert job_map["result_1"].found_node == "C"
+
+
+# ---------------------------------------------------------------------------
+# Router tests (via httpx)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_bisect_status_endpoint(async_client, test_app):
+    """GET /api/inference/bisect/status returns empty jobs when nothing is running."""
+    resp = await async_client.get("/api/inference/bisect/status")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["jobs"] == []
+
+
+@pytest.mark.asyncio
+async def test_bisect_start_no_graph(async_client, test_app, test_session):
+    """POST /api/inference/bisect returns 404 when graph is not loaded."""
+    resp = await async_client.post("/api/inference/bisect", json={
+        "session_id": test_session.id,
+        "threshold": 0.999,
+    })
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_bisect_stop_when_not_found(async_client, test_app):
+    """POST /api/inference/bisect/{job_id}/stop returns 404 when job doesn't exist."""
+    resp = await async_client.post("/api/inference/bisect/nonexistent/stop")
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_bisect_auto_no_graph(async_client, test_app, test_session):
+    """POST /api/inference/bisect/auto returns 404 when graph is not loaded."""
+    resp = await async_client.post("/api/inference/bisect/auto", json={
+        "session_id": test_session.id,
+        "threshold": 0.999,
+    })
+    assert resp.status_code == 404

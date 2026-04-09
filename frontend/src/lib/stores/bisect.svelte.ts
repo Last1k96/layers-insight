@@ -79,6 +79,40 @@ class BisectStore {
     }
   }
 
+  async startAllOutputs(sessionId: string, subSessionId?: string | null): Promise<boolean> {
+    if (this.busy) return false;
+    this.busy = true;
+    try {
+      const body: Record<string, any> = {
+        session_id: sessionId,
+        metric: this.metric,
+        threshold: this.threshold,
+        search_for: this.searchFor,
+      };
+      if (subSessionId) body.sub_session_id = subSessionId;
+
+      const res = await fetch('/api/inference/bisect/auto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        this.error = err.detail || 'Failed to start per-output bisection';
+        return false;
+      }
+      const data: BisectQueueItem[] = await res.json();
+      this.jobs = [...this.jobs, ...data];
+      this.error = null;
+      return true;
+    } catch (e: any) {
+      this.error = e.message;
+      return false;
+    } finally {
+      this.busy = false;
+    }
+  }
+
   async stop(jobId: string): Promise<void> {
     if (this.busy) return;
     this.busy = true;
@@ -200,6 +234,7 @@ class BisectStore {
             found_node: j.found_node,
             error: j.error,
             sub_session_id: j.sub_session_id,
+            output_node: j.output_node,
           });
         }
       }
@@ -242,6 +277,7 @@ class BisectStore {
         found_node: msg.found_node,
         error: msg.error,
         sub_session_id: msg.sub_session_id,
+        output_node: msg.output_node,
       }];
       return;
     }

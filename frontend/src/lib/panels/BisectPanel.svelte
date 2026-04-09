@@ -16,13 +16,14 @@
     initialSearchFor?: 'accuracy_drop' | 'compilation_failure' | null;
   } = $props();
 
-  type BisectTab = 'full-model' | 'from-node';
+  type BisectTab = 'all-outputs' | 'full-model' | 'from-node';
   const TAB_LABELS: Record<BisectTab, string> = {
+    'all-outputs': 'All Outputs',
     'full-model': 'Full Model',
     'from-node': 'From Node',
   };
 
-  let activeTab = $state<BisectTab>('full-model');
+  let activeTab = $state<BisectTab>('all-outputs');
 
   // Set initial tab based on how the panel was opened
   $effect.pre(() => {
@@ -73,8 +74,14 @@
     const session = sessionStore.currentSession;
     if (!session) return;
     bisectStore.error = null;
-    const endNode = activeTab === 'from-node' ? endNodeId : null;
-    const ok = await bisectStore.start(session.id, graphStore.activeSubSessionId, endNode);
+
+    let ok = false;
+    if (activeTab === 'all-outputs') {
+      ok = await bisectStore.startAllOutputs(session.id, graphStore.activeSubSessionId);
+    } else {
+      const endNode = activeTab === 'from-node' ? endNodeId : null;
+      ok = await bisectStore.start(session.id, graphStore.activeSubSessionId, endNode);
+    }
     if (ok) {
       onclose();
     }
@@ -100,7 +107,7 @@
 
     <!-- Tabs -->
     <div class="flex bg-surface-base/50">
-      {#each (['full-model', 'from-node'] as const) as tab (tab)}
+      {#each (['all-outputs', 'full-model', 'from-node'] as const) as tab (tab)}
         <button
           class="flex-1 px-2 py-2.5 text-xs text-center transition-all duration-100 {activeTab === tab ? 'text-accent border-b-2 border-accent' : 'text-content-secondary/40 hover:text-content-secondary'}"
           disabled={tab === 'from-node' && !endNodeId}
@@ -112,7 +119,11 @@
     </div>
 
       <div class="p-4 space-y-3">
-        {#if activeTab === 'from-node' && endNodeName}
+        {#if activeTab === 'all-outputs'}
+          <div class="text-xs text-gray-400">
+            Start one bisect job per model output. Correct outputs finish in 1 inference. Graph-aware search follows actual data paths.
+          </div>
+        {:else if activeTab === 'from-node' && endNodeName}
           <div class="text-xs text-gray-400">
             End node: <span class="text-gray-200 font-mono">{endNodeName}</span>
           </div>
@@ -163,7 +174,9 @@
         {/if}
 
         <div class="text-xs text-gray-500">
-          {#if activeTab === 'from-node' && endNodeName}
+          {#if activeTab === 'all-outputs'}
+            Mode: per-output graph-aware bisect
+          {:else if activeTab === 'from-node' && endNodeName}
             Range: start &rarr; {endNodeName}
           {:else}
             Range: {graphStore.activeSubSessionId ? 'sub-model' : 'full model'} (auto)
@@ -175,7 +188,7 @@
           disabled={bisectStore.busy}
           onclick={startBisect}
         >
-          {bisectStore.busy ? 'Starting...' : 'Start Bisection'}
+          {bisectStore.busy ? 'Starting...' : activeTab === 'all-outputs' ? 'Bisect All Outputs' : 'Start Bisection'}
         </button>
 
         {#if bisectStore.error}

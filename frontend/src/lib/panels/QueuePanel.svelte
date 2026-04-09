@@ -143,7 +143,7 @@
   }
 
   function handleBisectClick(e: MouseEvent, bj: import('../stores/types').BisectQueueItem) {
-    const nodeName = bj.status === 'done' ? bj.found_node : bj.current_node;
+    const nodeName = bj.found_node || bj.current_node;
     if (!nodeName) return;
 
     const node = graphStore.graphData?.nodes.find(n => n.name === nodeName);
@@ -413,6 +413,7 @@
               <path d="M8 2v12M4 6l4-4 4 4" />
             </svg>
             <span class="q-bisect-label" style:color={bisectTextColor(bj.status)}>
+              {#if bj.output_node}<span class="q-bisect-output">[{bj.output_node}]</span>{/if}
               {#if bj.status === 'running'}
                 Bisecting... Step {bj.step}/{bj.total_steps}
                 {#if bj.current_node}<span class="q-bisect-node">{bj.current_node}</span>{/if}
@@ -489,8 +490,11 @@
               <path d="M8 2v12M4 6l4-4 4 4" />
             </svg>
             <span class="q-bisect-label" style:color={bisectTextColor(bj.status)}>
+              {#if bj.output_node}<span class="q-bisect-output">[{bj.output_node}]</span>{/if}
               {#if bj.status === 'done' && bj.found_node}
                 Found: {bj.found_node}
+              {:else if bj.status === 'done' && !bj.found_node}
+                Output OK
               {:else if bj.status === 'error'}
                 Bisect error{bj.error ? `: ${bj.error}` : ''}
               {:else}
@@ -986,6 +990,12 @@
     font-family: var(--font-mono);
     font-size: 11px;
     margin-left: 4px;
+  }
+  .q-bisect-output {
+    color: rgba(147, 197, 253, 0.6);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    margin-right: 4px;
   }
   .q-bisect-tag {
     font-size: 10px;

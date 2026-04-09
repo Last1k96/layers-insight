@@ -32,6 +32,7 @@ class BisectRequest(BaseModel):
     session_id: str
     start_node: Optional[str] = None
     end_node: Optional[str] = None
+    output_node: Optional[str] = None  # Result node ID for per-output bisect
     metric: BisectMetric = BisectMetric.COSINE_SIMILARITY
     threshold: float = 0.999
     search_for: BisectSearchFor = BisectSearchFor.ACCURACY_DROP
@@ -79,3 +80,4 @@ class BisectJobInfo(BaseModel):
     found_node: Optional[str] = None
     error: Optional[str] = None
     sub_session_id: Optional[str] = None
+    output_node: Optional[str] = None  # which model output this job investigates
