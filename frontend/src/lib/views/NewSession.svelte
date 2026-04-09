@@ -301,6 +301,7 @@
           name: info.name,
           shape: info.shape,
           element_type: info.element_type,
+          port_names: info.port_names,
           data_type: elementTypeToDataType(info.element_type),
           source: 'random' as const,
           path: undefined,
@@ -699,7 +700,9 @@
             {#each modelInputs as input, i (input.name)}
               <div class="input-card">
                 <div class="input-header">
-                  <div class="font-mono text-xs text-accent truncate">{input.name}</div>
+                  <div class="font-mono text-xs text-accent truncate">
+                    {input.name}{#if input.port_names?.length} <span class="text-content-secondary">({input.port_names.join(', ')})</span>{/if}
+                  </div>
                   <div class="input-type">
                     {input.element_type} &middot; {formatShape(input.shape)}
                   </div>

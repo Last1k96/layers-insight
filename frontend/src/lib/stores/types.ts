@@ -29,6 +29,7 @@ export interface ModelInputInfo {
   name: string;
   shape: (number | string)[];
   element_type: string;
+  port_names?: string[];
 }
 
 export interface OvValidationResult {

@@ -336,6 +336,7 @@ class ModelInputInfo(BaseModel):
     name: str
     shape: list[int | str]
     element_type: str
+    port_names: list[str] = []
 
 
 class FrontendInfo(BaseModel):
@@ -405,9 +406,14 @@ async def get_model_inputs(
             shape = [d.get_length() for d in pshape]
         else:
             shape = [d.get_length() if d.is_static else "?" for d in pshape]
+        try:
+            port_names = sorted(param.output(0).get_names())
+        except Exception:
+            port_names = []
         inputs.append(ModelInputInfo(
             name=param.get_friendly_name(),
             shape=shape,
             element_type=_normalize_element_type(param.get_output_element_type(0)),
+            port_names=port_names,
         ))
     return inputs
