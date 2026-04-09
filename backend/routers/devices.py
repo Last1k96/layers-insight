@@ -189,7 +189,8 @@ async def validate_ov_path(
     if not ov_dir.is_dir():
         return OvValidationResult(valid=False, devices=["CPU"], error=f"Not a directory: {ov_path}")
 
-    plugins = list(ov_dir.glob("libopenvino_*_plugin.so"))
+    from backend.utils.ov_helpers import _PLUGIN_GLOB
+    plugins = list(ov_dir.glob(_PLUGIN_GLOB))
     if not plugins:
         return OvValidationResult(valid=False, devices=["CPU"], error=f"No OpenVINO plugins found in {ov_path}")
 
