@@ -198,12 +198,12 @@ class TestSessionService:
         )
 
         session_service.update_sub_session_meta(info.id, sub.id, {
-            "model_path": "/tmp/cut_model.xml",
-            "input_configs": [{"name": "cut_input_conv1", "source": "file", "path": "/tmp/in.npy"}],
+            "model_path": "sub_sessions/conv1/cut_model.xml",
+            "input_configs": [{"name": "cut_input_conv1", "source": "file", "path": "sub_sessions/conv1/inputs/in.npy"}],
         })
 
         meta = session_service.get_sub_session_meta(info.id, sub.id)
-        assert meta["model_path"] == "/tmp/cut_model.xml"
+        assert meta["model_path"] == "sub_sessions/conv1/cut_model.xml"
         assert len(meta["input_configs"]) == 1
         assert meta["input_configs"][0]["name"] == "cut_input_conv1"
 
@@ -390,8 +390,8 @@ class TestSessionService:
         resolved = session_service.get_sub_session_meta_resolved(info.id, sub.id)
         assert resolved is not None
         # Paths should be absolute
-        assert resolved["model_path"].startswith("/")
-        assert resolved["input_configs"][0]["path"].startswith("/")
+        assert Path(resolved["model_path"]).is_absolute()
+        assert Path(resolved["input_configs"][0]["path"]).is_absolute()
 
     def test_clone_session_basic(self, session_service, sample_config):
         """Clone creates a new session from the source."""

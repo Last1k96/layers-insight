@@ -251,7 +251,7 @@ class ModelCutService:
         if cut_bin.exists() and model_bin.exists():
             _link_or_copy(model_bin, cut_bin)
 
-        rel_cut_model = f"sub_sessions/{sub_session.id}/cut_model.xml"
+        rel_cut_model = Path("sub_sessions", sub_session.id, "cut_model.xml").as_posix()
 
         if effective_cut_type == "input":
             self._save_input_cut_artifacts(
@@ -285,7 +285,7 @@ class ModelCutService:
         npy_save_path = str(inputs_dir / f"{safe_filename}.npy")
         np.save(npy_save_path, input_data)
 
-        rel_npy_path = f"sub_sessions/{sub_session.id}/inputs/{safe_filename}.npy"
+        rel_npy_path = Path("sub_sessions", sub_session.id, "inputs", f"{safe_filename}.npy").as_posix()
         new_config = {"name": param_name, "source": "file", "path": rel_npy_path}
         accumulated_configs = parent_input_configs_rel + [new_config]
 
@@ -319,7 +319,7 @@ class ModelCutService:
             inputs_dir.mkdir(exist_ok=True)
             src_abs = str(session_svc._session_path(session_id) / cfg["path"])
             safe_filename = sanitize_filename(cfg["name"])
-            dst_rel = f"sub_sessions/{sub_session.id}/inputs/{safe_filename}.npy"
+            dst_rel = Path("sub_sessions", sub_session.id, "inputs", f"{safe_filename}.npy").as_posix()
             dst_abs = str(session_svc._session_path(session_id) / dst_rel)
             shutil.copy2(src_abs, dst_abs)
             copied_configs.append({**cfg, "path": dst_rel})

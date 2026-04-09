@@ -47,8 +47,8 @@ class SessionService:
         return self._session_path(session_id) / "metadata.json"
 
     def _to_session_rel(self, session_id: str, abs_path: Path) -> str:
-        """Convert an absolute path to a session-relative path string."""
-        return str(abs_path.relative_to(self._session_path(session_id)))
+        """Convert an absolute path to a session-relative path string (always forward slashes)."""
+        return abs_path.relative_to(self._session_path(session_id)).as_posix()
 
     def _resolve_path(self, session_id: str, rel_path: str) -> Path:
         """Resolve a session-relative path to absolute."""
@@ -99,17 +99,17 @@ class SessionService:
             # Move pre-converted IR files from temp dir into session
             for f in converted_dir.iterdir():
                 if f.is_file() and f.suffix in (".xml", ".bin"):
-                    shutil.move(str(f), str(session_path / f.name))
+                    shutil.move(f, session_path / f.name)
             rel_model_path = "model.xml"
         else:
             # Copy model .xml and .bin into session (self-contained)
             local_xml = session_path / original_xml.name
-            shutil.copy2(str(original_xml), str(local_xml))
+            shutil.copy2(original_xml, local_xml)
 
             original_bin = original_xml.with_suffix(".bin")
             if original_bin.exists():
                 local_bin = session_path / original_bin.name
-                shutil.copy2(str(original_bin), str(local_bin))
+                shutil.copy2(original_bin, local_bin)
 
             # Store session-relative model path (just the filename)
             rel_model_path = original_xml.name
@@ -129,10 +129,10 @@ class SessionService:
                             f"Input file not found for '{inp.name}': {inp.path}"
                         )
                     dst = inputs_dir / src.name
-                    shutil.copy2(str(src), str(dst))
-                    # Store as session-relative path
+                    shutil.copy2(src, dst)
+                    # Store as session-relative path (always forward slashes)
                     updated_inputs.append(inp.model_copy(update={
-                        "path": f"inputs/{src.name}",
+                        "path": Path("inputs", src.name).as_posix(),
                     }))
                 elif inp.shape:
                     # Random source with known shape: generate and save
@@ -154,7 +154,7 @@ class SessionService:
                     np.save(str(npy_path), data)
                     updated_inputs.append(inp.model_copy(update={
                         "source": "file",
-                        "path": f"inputs/{safe_name}.npy",
+                        "path": Path("inputs", f"{safe_name}.npy").as_posix(),
                     }))
                 else:
                     # No shape yet — will be generated at inference time
@@ -302,7 +302,7 @@ class SessionService:
             folder_name = self._unique_tensor_folder_in(tensors_base, node_name)
             task_data["tensor_dir"] = folder_name
             if sub_session_id:
-                task_data["tensor_base"] = f"sub_sessions/{sub_session_id}/output"
+                task_data["tensor_base"] = Path("sub_sessions", sub_session_id, "output").as_posix()
             meta["tasks"][task_id] = task_data
             self._write_metadata(session_id, meta)
 

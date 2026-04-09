@@ -75,23 +75,23 @@ def _make_mock_popen(returncode, stdout="", stderr_lines=None):
 
 
 class TestCutAndInfer:
-    def test_subprocess_timeout(self, inference_service):
+    def test_subprocess_timeout(self, inference_service, tmp_path):
         """Test that process killed by timer returns timeout error."""
         model = MagicMock()
 
         mock_proc = _make_mock_popen(returncode=-9)
 
         with patch("backend.services.inference_service.subprocess.Popen", return_value=mock_proc), \
-             patch("backend.services.inference_service.tempfile.mkdtemp", return_value="/tmp/test_infer"):
+             patch("backend.services.inference_service.tempfile.mkdtemp", return_value=str(tmp_path / "test_infer")):
             result = inference_service.cut_and_infer(
-                model, "node1", "CPU", "CPU", model_path="/tmp/test.xml"
+                model, "node1", "CPU", "CPU", model_path=str(tmp_path / "test.xml")
             )
 
             assert isinstance(result, InferenceTask)
             assert result.status == TaskStatus.FAILED
             assert "timed out" in result.error_detail
 
-    def test_subprocess_crash(self, inference_service):
+    def test_subprocess_crash(self, inference_service, tmp_path):
         """Test that segfaults are reported as errors, not crashes."""
         model = MagicMock()
 
@@ -101,9 +101,9 @@ class TestCutAndInfer:
         )
 
         with patch("backend.services.inference_service.subprocess.Popen", return_value=mock_proc), \
-             patch("backend.services.inference_service.tempfile.mkdtemp", return_value="/tmp/test_infer"):
+             patch("backend.services.inference_service.tempfile.mkdtemp", return_value=str(tmp_path / "test_infer")):
             result = inference_service.cut_and_infer(
-                model, "node1", "CPU", "CPU", model_path="/tmp/test.xml"
+                model, "node1", "CPU", "CPU", model_path=str(tmp_path / "test.xml")
             )
 
             assert isinstance(result, InferenceTask)
@@ -152,7 +152,7 @@ class TestCutAndInfer:
         with patch("backend.services.inference_service.subprocess.Popen", return_value=mock_proc), \
              patch("backend.services.inference_service.tempfile.mkdtemp", return_value=str(tmp_path)):
             result = inference_service.cut_and_infer(
-                model, "node1", "CPU", "CPU", model_path="/tmp/test.xml"
+                model, "node1", "CPU", "CPU", model_path=str(tmp_path / "test.xml")
             )
 
             # Success returns (task, artifacts_dir)
@@ -162,7 +162,7 @@ class TestCutAndInfer:
             assert task.metrics.mse == 0.0
             assert artifacts_dir == str(tmp_path)
 
-    def test_custom_model_path_passed_to_worker(self, inference_service):
+    def test_custom_model_path_passed_to_worker(self, inference_service, tmp_path):
         """Custom model_path (e.g. sub-session) is forwarded to worker config."""
         model = MagicMock()
         captured_cfg = {}
@@ -175,14 +175,15 @@ class TestCutAndInfer:
             return original_stdin_write(data)
         mock_proc.stdin.write = capturing_write
 
+        custom_model = str(tmp_path / "sub_sessions" / "abc" / "cut_model.xml")
         with patch("backend.services.inference_service.subprocess.Popen", return_value=mock_proc), \
-             patch("backend.services.inference_service.tempfile.mkdtemp", return_value="/tmp/test_infer"):
+             patch("backend.services.inference_service.tempfile.mkdtemp", return_value=str(tmp_path / "test_infer")):
             inference_service.cut_and_infer(
                 model, "node1", "CPU", "CPU",
-                model_path="/sub_sessions/abc/cut_model.xml",
+                model_path=custom_model,
             )
 
-        assert captured_cfg["model_path"] == "/sub_sessions/abc/cut_model.xml"
+        assert captured_cfg["model_path"] == custom_model
         assert "skip_cut" not in captured_cfg
 
     def test_stray_stdout_ignored(self, inference_service, tmp_path):
@@ -234,7 +235,7 @@ class TestCutAndInfer:
         with patch("backend.services.inference_service.subprocess.Popen", return_value=mock_proc), \
              patch("backend.services.inference_service.tempfile.mkdtemp", return_value=str(tmp_path)):
             result = inference_service.cut_and_infer(
-                model, "node1", "CPU", "CPU", model_path="/tmp/test.xml"
+                model, "node1", "CPU", "CPU", model_path=str(tmp_path / "test.xml")
             )
 
             # The scan-from-end recovery in inference_service extracts the
