@@ -136,6 +136,7 @@ class InferenceService:
 
                 # Set up timeout
                 timer = threading.Timer(300, proc.kill)
+                timer.daemon = True
                 timer.start()
 
                 try:
