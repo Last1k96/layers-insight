@@ -145,22 +145,30 @@
   let browserInitialPath = $state('');
   let browserTarget = $state<'ov' | 'model' | 'input'>('ov');
   let browserInputIndex = $state(0);
+  let lastBrowsedFolder = $state('');
+
+  /** Extract the parent directory from a file path, or return '' */
+  function parentDir(p: string): string {
+    // Handle both / and \ separators
+    const i = Math.max(p.lastIndexOf('/'), p.lastIndexOf('\\'));
+    return i > 0 ? p.substring(0, i) : '';
+  }
 
   function openBrowser(target: 'ov' | 'model', inputIndex?: number) {
     if (target === 'ov') {
       browserTarget = 'ov';
       browserMode = 'directory';
-      browserInitialPath = ovPath || '';
+      browserInitialPath = ovPath || lastBrowsedFolder;
     } else {
       browserMode = 'file';
       if (inputIndex !== undefined) {
         browserTarget = 'input';
         browserInputIndex = inputIndex;
         const p = modelInputs[inputIndex]?.path || '';
-        browserInitialPath = p ? p.substring(0, p.lastIndexOf('/')) : '';
+        browserInitialPath = parentDir(p) || lastBrowsedFolder;
       } else {
         browserTarget = 'model';
-        browserInitialPath = modelPath ? modelPath.substring(0, modelPath.lastIndexOf('/')) : '';
+        browserInitialPath = parentDir(modelPath) || lastBrowsedFolder;
       }
     }
     showBrowser = true;
@@ -168,6 +176,8 @@
 
   function onBrowserSelect(path: string) {
     showBrowser = false;
+    // Remember the folder so the next browser open starts here
+    lastBrowsedFolder = browserMode === 'directory' ? path : (parentDir(path) || path);
     if (browserTarget === 'ov') {
       ovPath = path;
       onOvPathInput();
