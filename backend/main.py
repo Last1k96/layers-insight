@@ -273,5 +273,6 @@ if __name__ == "__main__":
         host=config.host,
         port=config.port,
         reload=False,
+        timeout_graceful_shutdown=3,
         **ssl_kwargs,
     )
