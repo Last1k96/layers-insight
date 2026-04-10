@@ -368,7 +368,8 @@ class SessionService:
                 for task_id, task_data in reversed(list(tasks.items())):
                     if (task_data.get("node_name") == node_name
                             and task_data.get("status") == "success"
-                            and task_data.get("sub_session_id") == current_sub_id):
+                            and task_data.get("sub_session_id") == current_sub_id
+                            and not task_data.get("reused")):
                         return task_id
                 # Walk up to parent sub-session
                 sub_meta = self.get_sub_session_meta(session_id, current_sub_id)
@@ -385,7 +386,8 @@ class SessionService:
         for task_id, task_data in reversed(list(tasks.items())):
             if (task_data.get("node_name") == node_name
                     and task_data.get("status") == "success"
-                    and not task_data.get("sub_session_id")):
+                    and not task_data.get("sub_session_id")
+                    and not task_data.get("reused")):
                 return task_id
         return None
 
@@ -794,17 +796,23 @@ class SessionService:
         return {}
 
     def merge_bisect_tasks(self, session_id: str, job_id: str) -> int:
-        """Clear batch_id from tasks belonging to a bisect job so they appear as regular tasks.
+        """Merge bisect tasks: clear batch_id on fresh tasks, delete reused ones.
 
         Returns the number of tasks that were updated.
         """
         meta = self._read_metadata(session_id)
         batch_id = f"bisect:{job_id}"
         count = 0
-        for task_data in meta.get("tasks", {}).values():
+        to_delete = []
+        for task_id, task_data in meta.get("tasks", {}).items():
             if task_data.get("batch_id") == batch_id:
-                task_data.pop("batch_id", None)
+                if task_data.get("reused"):
+                    to_delete.append(task_id)
+                else:
+                    task_data.pop("batch_id", None)
                 count += 1
+        for task_id in to_delete:
+            del meta["tasks"][task_id]
         if count > 0:
             self._write_metadata(session_id, meta)
         return count

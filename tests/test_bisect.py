@@ -148,6 +148,9 @@ class FakeSession:
             tasks[data["task_id"]] = data
         return {"tasks": tasks}
 
+    def save_task_result(self, session_id, task_id, task_data, artifacts_dir=None, sub_session_id=None):
+        pass
+
     def save_bisect_job(self, session_id, job_id, data):
         pass
 

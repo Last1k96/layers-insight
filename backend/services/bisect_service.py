@@ -442,6 +442,14 @@ class BisectService:
                         reused_task.sub_session_id = request.sub_session_id
 
                     await self._queue_service.add_completed_task(reused_task)
+
+                    # Persist so the task survives page refresh
+                    self._session_service.save_task_result(
+                        session_id=request.session_id,
+                        task_id=reused_task.task_id,
+                        task_data=reused_task.model_dump(),
+                        sub_session_id=request.sub_session_id,
+                    )
                     return reused_task
 
         # Enqueue child task
