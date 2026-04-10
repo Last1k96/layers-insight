@@ -94,7 +94,7 @@ async def get_bisection_status(request: Request, session_id: str | None = None) 
     if bisect_svc is None:
         raise HTTPException(status_code=503, detail="Bisect service not available")
 
-    jobs = [j.model_dump() for j in bisect_svc.get_jobs()]
+    jobs = [j.model_dump() for j in bisect_svc.get_jobs(session_id=session_id)]
 
     # Also include persisted jobs from session metadata (for reload after backend restart)
     if session_id:

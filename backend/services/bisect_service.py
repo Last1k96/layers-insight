@@ -122,9 +122,12 @@ class BisectService:
     def has_paused_jobs(self) -> bool:
         return any(s.job.status == BisectStatus.PAUSED for s in self._jobs.values())
 
-    def get_jobs(self) -> list[BisectJobInfo]:
-        """Return info for all tracked jobs."""
-        return [s.job for s in self._jobs.values()]
+    def get_jobs(self, session_id: Optional[str] = None) -> list[BisectJobInfo]:
+        """Return info for tracked jobs, optionally filtered by session."""
+        jobs = [s.job for s in self._jobs.values()]
+        if session_id:
+            jobs = [j for j in jobs if j.session_id == session_id]
+        return jobs
 
     def get_job(self, job_id: str) -> Optional[BisectJobInfo]:
         state = self._jobs.get(job_id)
@@ -557,6 +560,7 @@ class BisectService:
                         state.job.step = step
                         await self._broadcast_job_status(state)
                         self._persist_job(state)
+                        self._jobs.pop(job_id, None)
                         return
 
             # ── Main graph-aware bisection loop ──
@@ -628,6 +632,7 @@ class BisectService:
 
             await self._broadcast_job_status(state)
             self._persist_job(state)
+            self._jobs.pop(job_id, None)
 
         except asyncio.CancelledError:
             state.step = step
@@ -640,3 +645,4 @@ class BisectService:
             state.job.error = str(e)
             await self._broadcast_job_status(state)
             self._persist_job(state)
+            self._jobs.pop(job_id, None)

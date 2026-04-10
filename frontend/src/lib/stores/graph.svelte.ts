@@ -71,6 +71,11 @@ class GraphStore {
 
   async fetchGraph(sessionId: string): Promise<void> {
     this.loading = true;
+    this.selectedNodeId = null;
+    this.selectedEdgeIndex = null;
+    this.searchVisible = false;
+    this.searchQuery = '';
+    this.searchResults = [];
     try {
       const res = await fetch(`/api/sessions/${sessionId}/graph`);
       if (!res.ok) throw new Error(`Failed to fetch graph: ${res.statusText}`);

@@ -207,6 +207,7 @@
     disconnect();
     queueStore.clear();
     bisectStore.reset();
+    logStore.clear();
     uninstallShortcuts();
   });
 </script>

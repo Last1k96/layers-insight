@@ -106,6 +106,7 @@ def _make_task(task_id: str, node_name: str, status: TaskStatus,
 class FakeQueue:
     def __init__(self):
         self.created_tasks: list[InferenceTask] = []
+        self.completed_tasks: list[InferenceTask] = []
 
     def create_task(self, session_id, node_id, node_name, node_type):
         return InferenceTask(
@@ -121,11 +122,34 @@ class FakeQueue:
         self.created_tasks.append(task)
         return task
 
+    async def add_completed_task(self, task):
+        self.completed_tasks.append(task)
+        return task
+
     def get_all_tasks(self, session_id=None):
         return []
 
     async def cancel(self, task_id):
         return True
+
+
+class FakeSession:
+    """Mock session service that returns pre-configured cached results."""
+    def __init__(self, cached_nodes: dict[str, dict] | None = None):
+        self._cached = cached_nodes or {}
+
+    def find_task_for_node(self, session_id, node_name, sub_session_id=None):
+        data = self._cached.get(node_name)
+        return data.get("task_id") if data else None
+
+    def _read_metadata(self, session_id):
+        tasks = {}
+        for node_name, data in self._cached.items():
+            tasks[data["task_id"]] = data
+        return {"tasks": tasks}
+
+    def save_bisect_job(self, session_id, job_id, data):
+        pass
 
 
 async def noop_broadcast(sid, msg):
@@ -170,9 +194,8 @@ async def test_bisect_finds_accuracy_drop():
             svc.on_task_complete(result)
             await asyncio.sleep(0.01)
 
-    final_job = svc.get_job(job.job_id)
-    assert final_job.status == BisectStatus.DONE
-    assert final_job.found_node == "op_5"
+    assert job.status == BisectStatus.DONE
+    assert job.found_node == "op_5"
 
 
 @pytest.mark.asyncio
@@ -207,9 +230,8 @@ async def test_bisect_finds_compilation_failure():
             svc.on_task_complete(result)
             await asyncio.sleep(0.01)
 
-    final_job = svc.get_job(job.job_id)
-    assert final_job.status == BisectStatus.DONE
-    assert final_job.found_node == "op_3"
+    assert job.status == BisectStatus.DONE
+    assert job.found_node == "op_3"
 
 
 # ---------------------------------------------------------------------------
@@ -543,9 +565,8 @@ async def test_bisect_diamond_graph():
             svc.on_task_complete(result)
             await asyncio.sleep(0.01)
 
-    final_job = svc.get_job(job.job_id)
-    assert final_job.status == BisectStatus.DONE
-    assert final_job.found_node == "C"
+    assert job.status == BisectStatus.DONE
+    assert job.found_node == "C"
 
 
 # ---------------------------------------------------------------------------
@@ -586,10 +607,9 @@ async def test_bisect_per_output_early_termination():
             svc.on_task_complete(result)
             await asyncio.sleep(0.01)
 
-    final_job = svc.get_job(job.job_id)
-    assert final_job.status == BisectStatus.DONE
-    assert final_job.found_node is None  # no problem found
-    assert final_job.step == 1  # only 1 inference
+    assert job.status == BisectStatus.DONE
+    assert job.found_node is None  # no problem found
+    assert job.step == 1  # only 1 inference
 
 
 @pytest.mark.asyncio
@@ -628,9 +648,8 @@ async def test_bisect_per_output_finds_fault():
             svc.on_task_complete(result)
             await asyncio.sleep(0.01)
 
-    final_job = svc.get_job(job.job_id)
-    assert final_job.status == BisectStatus.DONE
-    assert final_job.found_node == "C"
+    assert job.status == BisectStatus.DONE
+    assert job.found_node == "C"
 
 
 # ---------------------------------------------------------------------------
@@ -704,8 +723,8 @@ async def test_bisect_all_outputs_mixed_results():
             svc.on_task_complete(result)
         await asyncio.sleep(0.01)
 
-    # Find the jobs by output_node
-    job_map = {svc.get_job(j.job_id).output_node: svc.get_job(j.job_id) for j in jobs}
+    # Find the jobs by output_node (use the original references — jobs are removed from _jobs on completion)
+    job_map = {j.output_node: j for j in jobs}
 
     # result_0's predecessor B passes → output OK
     assert job_map["result_0"].status == BisectStatus.DONE
@@ -754,3 +773,113 @@ async def test_bisect_auto_no_graph(async_client, test_app, test_session):
         "threshold": 0.999,
     })
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Cached/reused node tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_bisect_with_all_cached_nodes():
+    """Bisect converges when ALL nodes are already cached (reused path)."""
+    svc = BisectService()
+    graph = _make_graph(10)  # param -> op_0..op_9 -> result
+
+    # Pre-cache all nodes: op_0..op_4 pass (cos=1.0), op_5..op_9 fail (cos=0.5)
+    cached = {}
+    for i in range(10):
+        name = f"op_{i}"
+        cos = 1.0 if i < 5 else 0.5
+        cached[name] = {
+            "task_id": f"orig_{name}",
+            "session_id": "s1",
+            "node_id": name,
+            "node_name": name,
+            "node_type": "Convolution",
+            "status": "success",
+            "metrics": {"cosine_similarity": cos, "mse": 0.0, "max_abs_diff": 0.0},
+        }
+    session = FakeSession(cached)
+
+    req = BisectRequest(
+        session_id="s1",
+        metric=BisectMetric.COSINE_SIMILARITY,
+        threshold=0.999,
+        search_for=BisectSearchFor.ACCURACY_DROP,
+    )
+
+    queue = FakeQueue()
+    job = await svc.start(
+        request=req, graph_data=graph,
+        queue_service=queue, session_service=session,
+        broadcast=noop_broadcast,
+    )
+    assert job.status == BisectStatus.RUNNING
+
+    # All nodes are cached — loop should complete without any enqueued tasks
+    for _ in range(200):
+        await asyncio.sleep(0.01)
+        if not any(s.job.status == BisectStatus.RUNNING for s in svc._jobs.values()):
+            break
+    else:
+        pytest.fail("Bisect did not converge within timeout (all cached)")
+
+    assert len(queue.created_tasks) == 0, "No tasks should be enqueued for execution"
+    assert len(queue.completed_tasks) > 0, "Reused tasks should be registered"
+    for t in queue.completed_tasks:
+        assert t.reused is True
+
+    assert job.status == BisectStatus.DONE
+    assert job.found_node == "op_5"
+
+
+@pytest.mark.asyncio
+async def test_bisect_with_some_cached_nodes():
+    """Bisect works with a mix of cached and fresh nodes."""
+    svc = BisectService()
+    graph = _make_graph(10)
+
+    # Only cache op_0..op_4 (the passing ones)
+    cached = {}
+    for i in range(5):
+        name = f"op_{i}"
+        cached[name] = {
+            "task_id": f"orig_{name}",
+            "session_id": "s1",
+            "node_id": name,
+            "node_name": name,
+            "node_type": "Convolution",
+            "status": "success",
+            "metrics": {"cosine_similarity": 1.0, "mse": 0.0, "max_abs_diff": 0.0},
+        }
+    session = FakeSession(cached)
+
+    req = BisectRequest(
+        session_id="s1",
+        metric=BisectMetric.COSINE_SIMILARITY,
+        threshold=0.999,
+        search_for=BisectSearchFor.ACCURACY_DROP,
+    )
+
+    queue = FakeQueue()
+    job = await svc.start(
+        request=req, graph_data=graph,
+        queue_service=queue, session_service=session,
+        broadcast=noop_broadcast,
+    )
+
+    # Feed results for non-cached nodes (op_5..op_9 fail)
+    while any(s.job.status == BisectStatus.RUNNING for s in svc._jobs.values()):
+        await asyncio.sleep(0.01)
+        if queue.created_tasks:
+            task = queue.created_tasks[-1]
+            node_idx = int(task.node_name.split("_")[1])
+            cos = 1.0 if node_idx < 5 else 0.5
+            result = _make_task(task.task_id, task.node_name, TaskStatus.SUCCESS,
+                                cos=cos, batch_id=task.batch_id)
+            svc.on_task_complete(result)
+            await asyncio.sleep(0.01)
+
+    assert job.status == BisectStatus.DONE
+    assert job.found_node == "op_5"
+    assert len(queue.completed_tasks) > 0, "Some reused tasks should exist"
