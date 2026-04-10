@@ -796,23 +796,33 @@ class SessionService:
         return {}
 
     def merge_bisect_tasks(self, session_id: str, job_id: str) -> int:
-        """Merge bisect tasks: clear batch_id on fresh tasks, delete reused ones.
+        """Clear batch_id from bisect tasks so they appear as regular tasks.
 
-        Returns the number of tasks that were updated.
+        Deduplicates by node_name: if a node already has a non-bisect task,
+        the bisect copy is deleted instead of merged.
+        Returns the number of tasks affected.
         """
         meta = self._read_metadata(session_id)
         batch_id = f"bisect:{job_id}"
+        tasks = meta.get("tasks", {})
+
+        # Collect node_names that already have a non-bisect task
+        existing_nodes = set()
+        for td in tasks.values():
+            if td.get("batch_id") != batch_id and not td.get("batch_id", "").startswith("bisect"):
+                existing_nodes.add(td.get("node_name"))
+
         count = 0
         to_delete = []
-        for task_id, task_data in meta.get("tasks", {}).items():
+        for task_id, task_data in tasks.items():
             if task_data.get("batch_id") == batch_id:
-                if task_data.get("reused"):
+                if task_data.get("node_name") in existing_nodes:
                     to_delete.append(task_id)
                 else:
                     task_data.pop("batch_id", None)
                 count += 1
         for task_id in to_delete:
-            del meta["tasks"][task_id]
+            del tasks[task_id]
         if count > 0:
             self._write_metadata(session_id, meta)
         return count

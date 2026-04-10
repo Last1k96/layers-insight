@@ -54,11 +54,15 @@ class QueueStore {
   }
 
   /** Merge a specific bisect job's tasks into the main list by clearing their batch_id.
-   *  Reused (cached) tasks are removed since their originals already exist in the main list. */
+   *  Deduplicates by node_name — if a node already has a non-bisect task, the bisect copy is dropped. */
   mergeBisectTasks(jobId: string): void {
     const batchId = `bisect:${jobId}`;
+    // Collect node_names that already exist in the main (non-bisect) list
+    const existingNodes = new Set(
+      this.tasks.filter(t => !t.batch_id?.startsWith('bisect')).map(t => t.node_name)
+    );
     this.tasks = this.tasks
-      .filter(t => !(t.batch_id === batchId && t.reused))
+      .filter(t => !(t.batch_id === batchId && existingNodes.has(t.node_name)))
       .map(t => t.batch_id === batchId ? { ...t, batch_id: undefined } : t);
   }
 
