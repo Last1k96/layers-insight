@@ -203,13 +203,9 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    print("[shutdown] stopping bisect jobs...", flush=True)
     await bisect_service.shutdown()
-    print("[shutdown] bisect done. stopping queue worker...", flush=True)
     await queue_service.stop_worker()
-    print("[shutdown] queue worker done. closing websockets...", flush=True)
     await ws_manager.close_all()
-    print("[shutdown] websockets done. lifespan complete.", flush=True)
 
 
 def create_app() -> FastAPI:
@@ -243,10 +239,8 @@ def create_app() -> FastAPI:
                         queue_svc = app.state.queue_service
                         await queue_svc.cancel(task_id)
         except WebSocketDisconnect:
-            print(f"[ws] {session_id} disconnected normally", flush=True)
             ws_manager.disconnect(session_id, websocket)
-        except Exception as e:
-            print(f"[ws] {session_id} disconnected with error: {e}", flush=True)
+        except Exception:
             ws_manager.disconnect(session_id, websocket)
 
     # Serve frontend static files (production build)
@@ -273,6 +267,6 @@ if __name__ == "__main__":
         host=config.host,
         port=config.port,
         reload=False,
-        timeout_graceful_shutdown=3,
+        timeout_graceful_shutdown=1,
         **ssl_kwargs,
     )

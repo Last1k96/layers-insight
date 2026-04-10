@@ -55,20 +55,13 @@ class ConnectionManager:
 
     async def close_all(self) -> None:
         """Close all WebSocket connections (used during shutdown)."""
-        total = sum(len(s) for s in self._connections.values())
-        print(f"[shutdown:ws] closing {total} connections across {len(self._connections)} sessions", flush=True)
         for session_id in list(self._connections):
             for ws in list(self._connections.get(session_id, [])):
                 try:
-                    print(f"[shutdown:ws]   closing ws for {session_id}...", flush=True)
-                    await asyncio.wait_for(ws.close(), timeout=3)
-                    print(f"[shutdown:ws]   closed.", flush=True)
-                except asyncio.TimeoutError:
-                    print(f"[shutdown:ws]   close timed out, forcing.", flush=True)
-                except Exception as e:
-                    print(f"[shutdown:ws]   close error: {e}", flush=True)
+                    await ws.close()
+                except Exception:
+                    pass
         self._connections.clear()
-        print("[shutdown:ws] all cleared", flush=True)
 
     async def send_task_status(self, task: InferenceTask) -> None:
         """Broadcast task status update."""
