@@ -203,8 +203,9 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    await ws_manager.close_all()
+    await bisect_service.shutdown()
     await queue_service.stop_worker()
+    await ws_manager.close_all()
 
 
 def create_app() -> FastAPI:
