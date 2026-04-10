@@ -153,7 +153,7 @@ export function setupInteractions(): void {
       e.preventDefault();
       const task = queueStore.moveSelection(e.key === 'ArrowDown' ? 1 : -1);
       if (task) {
-        graphStore.selectNode(task.node_id);
+        graphStore.selectNode(task.node_id, false);
         centerOnNode(task.node_id);
         refreshRenderer();
       }

@@ -328,7 +328,19 @@ class QueueStore {
   }
 
   moveSelection(direction: 1 | -1): InferenceTask | null {
-    const tasks = this.navigableList;
+    // If currently in a bisect job, navigate only within that job's tasks
+    const current = this.selectedTaskId
+      ? this.tasks.find(t => t.task_id === this.selectedTaskId)
+      : null;
+
+    let tasks: InferenceTask[];
+    if (current?.batch_id?.startsWith('bisect:')) {
+      const jobId = current.batch_id.split(':', 2)[1];
+      tasks = this.bisectTasksForJob(jobId);
+    } else {
+      tasks = this.filteredTasks;
+    }
+
     if (tasks.length === 0) return null;
     const currentIdx = this.selectedTaskId
       ? tasks.findIndex(t => t.task_id === this.selectedTaskId)
