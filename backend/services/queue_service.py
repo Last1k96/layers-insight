@@ -39,11 +39,15 @@ class QueueService:
     async def stop_worker(self) -> None:
         """Stop the background worker."""
         if self._worker_task:
+            print(f"[shutdown:queue] cancelling worker (done={self._worker_task.done()})", flush=True)
             self._worker_task.cancel()
             try:
-                await self._worker_task
-            except asyncio.CancelledError:
-                pass
+                await asyncio.wait_for(self._worker_task, timeout=5)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                print("[shutdown:queue] worker cancel timed out", flush=True)
+            print("[shutdown:queue] worker stopped", flush=True)
+        else:
+            print("[shutdown:queue] no worker to stop", flush=True)
 
     async def enqueue(self, task: InferenceTask) -> InferenceTask:
         """Add a task to the queue."""

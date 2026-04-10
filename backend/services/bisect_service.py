@@ -277,7 +277,9 @@ class BisectService:
 
     async def shutdown(self) -> None:
         """Cancel all running bisect tasks for clean shutdown."""
-        for state in list(self._jobs.values()):
+        print(f"[shutdown:bisect] {len(self._jobs)} jobs to cancel", flush=True)
+        for job_id, state in list(self._jobs.items()):
+            print(f"[shutdown:bisect]   cancelling {job_id} (status={state.job.status})", flush=True)
             state.cancel_event.set()
             state.step_done.set()
             if state.task:
@@ -285,7 +287,8 @@ class BisectService:
                 try:
                     await asyncio.wait_for(state.task, timeout=2)
                 except (asyncio.TimeoutError, asyncio.CancelledError):
-                    pass
+                    print(f"[shutdown:bisect]   {job_id} cancel timed out / cancelled", flush=True)
+            print(f"[shutdown:bisect]   {job_id} done", flush=True)
         self._jobs.clear()
 
     async def pause_all(self) -> None:
