@@ -49,6 +49,16 @@
     refreshRenderer();
   }
 
+  /** Select a bisect task without letting selectNode override the queue selection. */
+  function selectBisectTask(task: InferenceTask, e?: MouseEvent) {
+    queueStore.selectedTaskId = task.task_id;
+    graphStore.selectNode(task.node_id, false);
+    if (e && (e.ctrlKey || e.metaKey)) {
+      centerOnNode(task.node_id);
+    }
+    refreshRenderer();
+  }
+
 
   function formatMse(mse: number): string {
     if (mse < 0.0001) return mse.toExponential(1);
@@ -435,8 +445,8 @@
               class:q-task--selected={queueStore.selectedTaskId === task.task_id}
               class:q-task--hovered={graphStore.hoveredNodeId === task.node_id && queueStore.selectedTaskId !== task.task_id}
               role="button" tabindex="-1"
-              onclick={(e) => { queueStore.selectedTaskId = task.task_id; selectTask(task, e); }}
-              onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedTaskId = task.task_id; selectTask(task); }}}
+              onclick={(e) => { selectBisectTask(task, e); }}
+              onkeydown={(e) => { if (e.key === 'Enter') { selectBisectTask(task); }}}
               onmouseenter={() => { setHoveredNode(task.node_id); }}
               onmouseleave={() => { setHoveredNode(null); }}
             >
@@ -515,8 +525,8 @@
               class:q-task--selected={queueStore.selectedTaskId === task.task_id}
               class:q-task--hovered={graphStore.hoveredNodeId === task.node_id && queueStore.selectedTaskId !== task.task_id}
               role="button" tabindex="-1"
-              onclick={(e) => { queueStore.selectedTaskId = task.task_id; selectTask(task, e); }}
-              onkeydown={(e) => { if (e.key === 'Enter') { queueStore.selectedTaskId = task.task_id; selectTask(task); }}}
+              onclick={(e) => { selectBisectTask(task, e); }}
+              onkeydown={(e) => { if (e.key === 'Enter') { selectBisectTask(task); }}}
               onmouseenter={() => { setHoveredNode(task.node_id); }}
               onmouseleave={() => { setHoveredNode(null); }}
             >

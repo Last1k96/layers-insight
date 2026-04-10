@@ -89,10 +89,10 @@ class GraphStore {
     }
   }
 
-  selectNode(nodeId: string | null): void {
+  selectNode(nodeId: string | null, syncQueue = true): void {
     this.selectedNodeId = nodeId;
     if (nodeId !== null) this.selectedEdgeIndex = null;
-    queueStore.selectByNodeId(nodeId);
+    if (syncQueue) queueStore.selectByNodeId(nodeId);
   }
 
   selectEdge(index: number | null): void {
