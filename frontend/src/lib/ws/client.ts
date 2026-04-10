@@ -178,8 +178,10 @@ function handleMessage(msg: any): void {
     queueStore.removeTask(msg.task_id);
     const node = graphStore.graphData?.nodes.find(n => n.name === msg.node_name);
     if (node) {
-      // Only remove node status if no other task for this node remains
-      const hasRemainingTask = queueStore.tasks.some(t => t.node_name === msg.node_name);
+      // Only remove node status if no non-bisect task for this node remains
+      const hasRemainingTask = queueStore.tasks.some(
+        t => t.node_name === msg.node_name && !t.batch_id?.startsWith('bisect')
+      );
       if (!hasRemainingTask) {
         graphStore.removeNodeStatus(node.id, graphStore.activeSubSessionId);
       }
