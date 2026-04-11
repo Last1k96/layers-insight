@@ -279,6 +279,42 @@ export class WebGPURenderer {
     this.markDirty();
   }
 
+  /**
+   * Rebuild only the appearance pieces that depend on the camera (text glyphs
+   * for fade animation, ghost overlay positions). Used by the pan/zoom path
+   * to avoid running a full updateAppearance() — node and edge data don't
+   * depend on the camera, so they shouldn't be touched on a camera move.
+   *
+   * Caller is responsible for deciding whether the camera change actually
+   * needs this work (see textFadeChanged() in renderer.ts).
+   */
+  rebuildCameraDependentParts(
+    zoomRatio: number,
+    grayedNodes: Set<string>,
+    nodeOverrides: Map<string, { name: string; type: string; color: string }> | undefined,
+    accuracyInferredIds: Set<string> | undefined,
+    selectedEdgeIndex: number | null,
+  ): void {
+    if (!this.graphData) return;
+    const fs = this.frameStats;
+    fs?.beginFrame();
+    fs?.beginPhase('appearance.total');
+    this.currentZoom = zoomRatio;
+
+    fs?.beginPhase('appearance.textRebuild');
+    this.rebuildText(grayedNodes, zoomRatio, nodeOverrides, accuracyInferredIds);
+    fs?.endPhase('appearance.textRebuild');
+
+    if (selectedEdgeIndex !== null) {
+      fs?.beginPhase('appearance.ghostRebuild');
+      this.updateGhosts(selectedEdgeIndex);
+      fs?.endPhase('appearance.ghostRebuild');
+    }
+
+    fs?.endPhase('appearance.total');
+    this.markDirty();
+  }
+
   private applyCameraMatrix(): void {
     const w = this.canvas.clientWidth;
     const h = this.canvas.clientHeight;
@@ -325,9 +361,11 @@ export class WebGPURenderer {
       } else {
         this._lastInferredCount = 0;
       }
-      // Force edge highlight re-eval after accuracy toggle
-      this._lastHoveredEdge = -1;
-      this._lastSelectedEdge = -1;
+      // rebuildEdges() repainted with the current highlight already, so the
+      // cached "last seen" highlight is up to date — record the actual values
+      // so the next updateAppearance doesn't see a phantom change.
+      this._lastHoveredEdge = hoveredEdgeIndex;
+      this._lastSelectedEdge = selectedEdgeIndex;
     } else if (accuracyViewActive) {
       // Accuracy view already active — rebuild edges only when new metrics arrive
       let count = 0;
@@ -339,8 +377,8 @@ export class WebGPURenderer {
         fs?.beginPhase('appearance.edgeRebuild');
         this.rebuildEdges(true, nodeStatusMap);
         fs?.endPhase('appearance.edgeRebuild');
-        this._lastHoveredEdge = -1;
-        this._lastSelectedEdge = -1;
+        this._lastHoveredEdge = hoveredEdgeIndex;
+        this._lastSelectedEdge = selectedEdgeIndex;
       }
     }
 

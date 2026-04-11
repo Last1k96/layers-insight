@@ -25,6 +25,26 @@ export function getNodeSize(nodeId: string): { width: number; height: number } {
   return nodeSizes.get(nodeId) ?? { width: 100, height: 32 };
 }
 
+/**
+ * Decide whether a zoom change requires rebuilding the text glyph buffer.
+ * Mirrors the fade logic baked into WebGPURenderer.rebuildText():
+ *  - zoom < 0.05  → glyphs not built at all
+ *  - 0.05 ≤ zoom < 0.1  → glyphs built with alpha 0
+ *  - 0.1  ≤ zoom < 0.3  → alpha varies linearly with zoom (must rebuild on every change)
+ *  - zoom ≥ 0.3  → alpha = 1
+ *
+ * Returns true when prev and next zooms cross any of those boundaries, OR when
+ * either of them sits in the linear-fade band (so the per-glyph alpha is changing).
+ */
+function textFadeChanged(prev: number, next: number): boolean {
+  if ((prev < 0.05) !== (next < 0.05)) return true;
+  if ((prev < 0.1) !== (next < 0.1)) return true;
+  if ((prev < 0.3) !== (next < 0.3)) return true;
+  // Both zooms inside [0.1, 0.3) → alpha is interpolating, rebuild every step
+  if (prev >= 0.1 && prev < 0.3 && next >= 0.1 && next < 0.3) return true;
+  return false;
+}
+
 export function getGraph(): GraphModel | null {
   return graphModel;
 }
@@ -150,11 +170,39 @@ export async function initRenderer(container: HTMLElement, graphData: GraphData)
 
   renderer.setGraph(graphData, getNodeSize);
 
-  // Register camera listener BEFORE fitToView so the setState triggers updateCamera
+  // Register camera listener BEFORE fitToView so the setState triggers updateCamera.
+  // Pure camera moves do NOT call scheduleRefresh() — node and edge instance data
+  // don't depend on the camera matrix, so a full updateAppearance() rebuild would
+  // be wasted work. We only kick the lighter rebuildCameraDependentParts() path
+  // when the new zoom enters/leaves the text fade band or when an edge is selected
+  // (in which case the ghost overlay needs reprojecting).
+  let lastZoomRatio = panZoom.ratio;
   panZoom.on('updated', () => {
-    renderer.updateCamera(panZoom!.translateX, panZoom!.translateY, panZoom!.ratio);
+    const newZoom = panZoom!.ratio;
+    const prevZoom = lastZoomRatio;
+    lastZoomRatio = newZoom;
+
+    renderer.updateCamera(panZoom!.translateX, panZoom!.translateY, newZoom);
     graphStore.cameraVersion++;
-    scheduleRefresh();
+
+    const textNeedsRebuild = textFadeChanged(prevZoom, newZoom);
+    const ghostsNeedRebuild = graphStore.selectedEdgeIndex !== null;
+    if (!textNeedsRebuild && !ghostsNeedRebuild) return;
+
+    let inferredIds: Set<string> | undefined;
+    if (graphStore.accuracyViewActive) {
+      inferredIds = new Set();
+      for (const [nodeId, status] of graphStore.nodeStatusMap) {
+        if (status.status === 'success' && status.metrics) inferredIds.add(nodeId);
+      }
+    }
+    renderer.rebuildCameraDependentParts(
+      newZoom,
+      graphStore.grayedNodes,
+      graphStore.nodeOverrides,
+      inferredIds,
+      graphStore.selectedEdgeIndex,
+    );
   });
 
   fitToView(container);
