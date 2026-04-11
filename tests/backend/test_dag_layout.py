@@ -252,6 +252,37 @@ class TestLongEdgeStraightening:
                 assert not (x_in and y_in), \
                     f"waypoint ({midwp['x']:.0f},{midwp['y']:.0f}) overlaps node {nid} [{n_left:.0f},{n_right:.0f}]x[{n_top:.0f},{n_bottom:.0f}]"
 
+    def test_aligned_long_skip_hugs_backbone_not_far_corridor(self):
+        """A column-aligned span-6 skip should hug its backbone via nudge,
+        not detour to a distant corridor.
+
+        Regression for human-pose-estimation-0007's Relu_265 → Add_280:
+        each intermediate layer has a backbone neighbour that minimally
+        overlaps the source x, plus an unrelated parallel chain. Pre-fix,
+        the span-6 cutoff forced corridor mode and the edge swung 300+ px
+        out to clear the parallel chain before snapping back. Post-fix,
+        per-dummy nudge keeps it within ~50 px of the source column.
+        """
+        # Backbone n0 → ... → n7 with a span-6 skip from n1 to n7.
+        nodes = [_node(f"n{i}") for i in range(8)]
+        edges = [_edge(f"n{i}", f"n{i+1}") for i in range(7)]
+        # Independent parallel chain that lands in the same intermediate
+        # layers and nudges the backbone-aligned column off-centre.
+        nodes += [_node(f"r{i}") for i in range(8)]
+        edges += [_edge(f"r{i}", f"r{i+1}") for i in range(7)]
+        # The skip edge under test (last edge added).
+        edges.append(_edge("n1", "n7"))
+
+        result = compute_dag_layout(nodes, edges)
+        skip_wps = result["edges"][f"e{len(edges) - 1}"]["waypoints"]
+        src_cx = result["nodes"]["n1"]["x"] + 60  # 120/2
+        max_dev = max(abs(wp["x"] - src_cx) for wp in skip_wps)
+        assert max_dev < 100, (
+            f"span-6 skip detoured {max_dev:.0f} px from src_cx={src_cx:.0f} — "
+            f"corridor over-detour bug. Waypoints: "
+            f"{[(round(w['x']), round(w['y'])) for w in skip_wps]}"
+        )
+
 
 class TestTargetPortSpreading:
     def test_target_ports_spread(self):

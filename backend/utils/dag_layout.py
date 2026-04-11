@@ -468,14 +468,21 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                     "tgt_cx": tgt_cx, "span": span,
                     "strat": chosen_strat,
                 })
-            elif span <= 5:
-                # Nudge mode: pick the strategy with least total
-                # displacement, then nudge each dummy to clear.
+            else:
+                # Compute the best nudge. For minor groups (typical
+                # skip-connections), accept it whenever the worst-case
+                # per-dummy displacement stays small — that lets a
+                # column-aligned skip hug the backbone even when its
+                # span exceeds 5 layers. Major fan-out groups always
+                # bundle into a shared corridor (the only way to keep
+                # 4+ parallel edges visually distinguishable), so for
+                # them we keep the original span<=5 nudge fallback.
+                NUDGE_MAX_DISP = 8 * NODE_SPACING  # 160 px per dummy
                 best_nudge: list[float] | None = None
-                best_cost = float("inf")
+                best_max_disp = float("inf")
                 for strat in strategies:
                     xs: list[float] = []
-                    cost = 0.0
+                    max_disp = 0.0
                     for did in dummies:
                         dL = layer_of[did]
                         t = (dL - src_L) / span
@@ -484,19 +491,26 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                         nudged = _nudge_clear(raw, layer_intervals[dL])
                         final = _nudge_clear(nudged + par_off, layer_intervals[dL])
                         xs.append(final)
-                        cost += abs(final - baseline)
-                    if cost < best_cost:
-                        best_cost = cost
+                        max_disp = max(max_disp, abs(final - baseline))
+                    if max_disp < best_max_disp:
+                        best_max_disp = max_disp
                         best_nudge = xs
-                edge_routes.append({
-                    "mode": "nudge", "chain": chain, "dummies": dummies,
-                    "nudge_xs": best_nudge,
-                })
-            else:
-                edge_routes.append({
-                    "mode": "corridor", "chain": chain, "dummies": dummies,
-                    "tgt_cx": tgt_cx, "tgt_L": tgt_L, "span": span,
-                })
+
+                if is_major:
+                    accept_nudge = best_nudge is not None and span <= 5
+                else:
+                    accept_nudge = best_nudge is not None and best_max_disp <= NUDGE_MAX_DISP
+
+                if accept_nudge:
+                    edge_routes.append({
+                        "mode": "nudge", "chain": chain, "dummies": dummies,
+                        "nudge_xs": best_nudge,
+                    })
+                else:
+                    edge_routes.append({
+                        "mode": "corridor", "chain": chain, "dummies": dummies,
+                        "tgt_cx": tgt_cx, "tgt_L": tgt_L, "span": span,
+                    })
 
         # Count corridor edges to decide routing strategy
         corridor_routes = [r for r in edge_routes if r.get("mode") == "corridor"]
