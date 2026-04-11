@@ -14,6 +14,7 @@ import {
   createEdgesPipeline,
   uploadEdgeData,
   uploadEdgeColors,
+  useCachedEdgeColors,
   updateEdgeViewport,
   drawEdges,
   buildEdgeGeometry,
@@ -58,6 +59,11 @@ export class WebGPURenderer {
   private nodeSizeFn: ((id: string) => { width: number; height: number }) | null = null;
   /** Cached edge tessellation. Built once per graph, color-only updates leave it untouched. */
   private edgeGeometry: EdgeGeometry | null = null;
+
+  /** Reusable Float32Array for node instance data, grown geometrically as needed. */
+  private nodeDataScratch: Float32Array = new Float32Array(256 * NODE_FLOATS);
+  /** Reusable Float32Array for glyph instance data, grown geometrically as needed. */
+  private glyphDataScratch: Float32Array = new Float32Array(4096 * 12);
   private _accuracyViewActive = false;
   private _lastEdgeMode: 'default' | 'search' | 'accuracy' = 'default';
   private _lastHoveredEdge: number | null = null;
@@ -272,11 +278,15 @@ export class WebGPURenderer {
     // branches in updateAppearance().
     const geometry = buildEdgeGeometry(graphData.edges, graphData.nodes, nodeSize);
     this.edgeGeometry = geometry;
-    const colors = buildEdgeColors(geometry.edgeRanges, graphData.edges, geometry.vertexCount);
+    const defaultColors = buildEdgeColors(geometry.edgeRanges, graphData.edges, geometry.vertexCount);
     this.edgesPipeline = uploadEdgeData(
       this.edgesPipeline, this.device,
-      geometry.positions, colors, geometry.vertexCount,
+      geometry.positions, defaultColors, geometry.vertexCount,
     );
+    // Pre-populate the 'default' cached color buffer so the first toggle back
+    // from accuracy view doesn't pay the build cost. The closure reuses the
+    // colors array we already built — no duplicate work.
+    useCachedEdgeColors(this.edgesPipeline, this.device, 'default', () => defaultColors);
     updateEdgeViewport(this.edgesPipeline, this.device, this.canvas.width, this.canvas.height);
 
     if (this.minimapTarget) this.minimapTarget.invalidate();
@@ -414,9 +424,16 @@ export class WebGPURenderer {
       edgeEndpoints.add(edges[selectedEdgeIndex].target);
     }
 
-    // Build node instances
+    // Build node instances. Scratch buffer is reused across frames; grown
+    // geometrically when the node count exceeds capacity. Slice handed to
+    // updateNodeInstances has the exact length the GPU upload needs.
     fs?.beginPhase('appearance.nodeBuild');
-    const nodeData = new Float32Array(nodes.length * NODE_FLOATS);
+    const nodeFloatsNeeded = nodes.length * NODE_FLOATS;
+    if (nodeFloatsNeeded > this.nodeDataScratch.length) {
+      const newCap = Math.max(nodeFloatsNeeded, this.nodeDataScratch.length * 2);
+      this.nodeDataScratch = new Float32Array(newCap);
+    }
+    const nodeData = this.nodeDataScratch;
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
       const off = i * NODE_FLOATS;
@@ -440,8 +457,10 @@ export class WebGPURenderer {
         }
       }
 
-      let fillColor = override ? override.color : isGrayed ? '#232636' : node.color;
-      let fill: { r: number; g: number; b: number };
+      const fillColor = override ? override.color : isGrayed ? '#232636' : node.color;
+      // Local fill RGB scalars instead of mutating an object — keeps the
+      // hexToRgb cache from being corrupted and avoids per-node allocations.
+      let fillR = 0, fillG = 0, fillB = 0;
 
       let strokeR = 0.2, strokeG = 0.2, strokeB = 0.2;
       let strokeWidth = 1;
@@ -450,12 +469,13 @@ export class WebGPURenderer {
         // Accuracy view: inferred nodes filled with accuracy color, others gray
         if (nodeStatus?.status === 'success' && nodeStatus.metrics) {
           const c = getMetricColor(nodeStatus.metrics);
-          fill = { r: c.r, g: c.g, b: c.b };
+          fillR = c.r; fillG = c.g; fillB = c.b;
         } else {
-          fill = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b };
+          fillR = EDGE_COLOR.r; fillG = EDGE_COLOR.g; fillB = EDGE_COLOR.b;
         }
       } else {
-        fill = hexToRgb(fillColor);
+        const fc = hexToRgb(fillColor);
+        fillR = fc.r; fillG = fc.g; fillB = fc.b;
 
         // Status colors — neutral outline for inferred, status color for others
         if (nodeStatus && !isGrayed) {
@@ -475,30 +495,24 @@ export class WebGPURenderer {
         }
       }
 
-      // Selection highlight: bright cyan stroke + fill tint
+      // Selection / hover / edge-endpoint tint — mutate locals only
       if (isSelected) {
-        fill.r = fill.r + (1.0 - fill.r) * 0.4;
-        fill.g = fill.g + (1.0 - fill.g) * 0.4;
-        fill.b = fill.b + (1.0 - fill.b) * 0.4;
+        fillR = fillR + (1.0 - fillR) * 0.4;
+        fillG = fillG + (1.0 - fillG) * 0.4;
+        fillB = fillB + (1.0 - fillB) * 0.4;
         strokeR = 0.298; strokeG = 0.553; strokeB = 1.0; // #4C8DFF
         strokeWidth = 3;
-      }
-
-      // Hover highlight
-      if (isHovered && !isSelected) {
-        fill.r = fill.r + (1.0 - fill.r) * 0.12;
-        fill.g = fill.g + (1.0 - fill.g) * 0.12;
-        fill.b = fill.b + (1.0 - fill.b) * 0.12;
-        strokeR = 0.298; strokeG = 0.553; strokeB = 1.0; // #4C8DFF
+      } else if (isHovered) {
+        fillR = fillR + (1.0 - fillR) * 0.12;
+        fillG = fillG + (1.0 - fillG) * 0.12;
+        fillB = fillB + (1.0 - fillB) * 0.12;
+        strokeR = 0.298; strokeG = 0.553; strokeB = 1.0;
         strokeWidth = 3;
-      }
-
-      // Edge-connected node highlighting
-      if (isEdgeEndpoint && !isSelected && !isHovered) {
-        fill.r = fill.r + (1.0 - fill.r) * 0.25;
-        fill.g = fill.g + (1.0 - fill.g) * 0.25;
-        fill.b = fill.b + (1.0 - fill.b) * 0.25;
-        strokeR = 0.298; strokeG = 0.553; strokeB = 1.0; // #4C8DFF
+      } else if (isEdgeEndpoint) {
+        fillR = fillR + (1.0 - fillR) * 0.25;
+        fillG = fillG + (1.0 - fillG) * 0.25;
+        fillB = fillB + (1.0 - fillB) * 0.25;
+        strokeR = 0.298; strokeG = 0.553; strokeB = 1.0;
         strokeWidth = 3;
       }
 
@@ -514,9 +528,9 @@ export class WebGPURenderer {
       nodeData[off + 1] = node.y;
       nodeData[off + 2] = size.width;
       nodeData[off + 3] = size.height;
-      nodeData[off + 4] = fill.r;
-      nodeData[off + 5] = fill.g;
-      nodeData[off + 6] = fill.b;
+      nodeData[off + 4] = fillR;
+      nodeData[off + 5] = fillG;
+      nodeData[off + 6] = fillB;
       nodeData[off + 7] = 1.0;
       nodeData[off + 8] = strokeR;
       nodeData[off + 9] = strokeG;
@@ -649,7 +663,13 @@ export class WebGPURenderer {
       totalGlyphs += charCount * perChar;
     }
 
-    const glyphData = new Float32Array(totalGlyphs * 12);
+    // Reuse the glyph scratch buffer; grow geometrically when label counts spike.
+    const glyphFloatsNeeded = totalGlyphs * 12;
+    if (glyphFloatsNeeded > this.glyphDataScratch.length) {
+      const newCap = Math.max(glyphFloatsNeeded, this.glyphDataScratch.length * 2);
+      this.glyphDataScratch = new Float32Array(newCap);
+    }
+    const glyphData = this.glyphDataScratch;
     let glyphCount = 0;
 
     // Halo offsets in graph-space pixels (small offset for shadow copies)
@@ -1014,16 +1034,20 @@ export class WebGPURenderer {
         }
       }
 
-      // Dimmed base edges — color-only update, geometry stays cached.
+      // Dimmed base edges — uniform color, served from a cached buffer so
+      // the second-and-onward toggle is just a buffer reference swap.
       if (this.edgeGeometry) {
-        const dimColor = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b, a: 0.15 };
-        const colors = buildEdgeColors(
-          this.edgeGeometry.edgeRanges,
-          this.graphData.edges,
-          this.edgeGeometry.vertexCount,
-          () => ({ start: dimColor, end: dimColor }),
-        );
-        uploadEdgeColors(this.edgesPipeline, this.device, colors, this.edgeGeometry.vertexCount);
+        const geom = this.edgeGeometry;
+        const edges = this.graphData.edges;
+        useCachedEdgeColors(this.edgesPipeline, this.device, 'dim', () => {
+          const dimColor = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b, a: 0.15 };
+          return buildEdgeColors(
+            geom.edgeRanges,
+            edges,
+            geom.vertexCount,
+            () => ({ start: dimColor, end: dimColor }),
+          );
+        });
       }
 
       // Colored overlay paths (drawn on top of nodes). The set of paths
@@ -1041,14 +1065,14 @@ export class WebGPURenderer {
       );
       this._lastEdgeMode = 'accuracy';
     } else {
-      // Restore default colors — color-only update, geometry stays cached.
+      // Restore default colors — uniform color, served from the cached
+      // "default" buffer that was built once at setGraph() time.
       if (this.edgeGeometry) {
-        const colors = buildEdgeColors(
-          this.edgeGeometry.edgeRanges,
-          this.graphData.edges,
-          this.edgeGeometry.vertexCount,
-        );
-        uploadEdgeColors(this.edgesPipeline, this.device, colors, this.edgeGeometry.vertexCount);
+        const geom = this.edgeGeometry;
+        const edges = this.graphData.edges;
+        useCachedEdgeColors(this.edgesPipeline, this.device, 'default', () => {
+          return buildEdgeColors(geom.edgeRanges, edges, geom.vertexCount);
+        });
       }
       // Clear overlay paths
       if (this.overlayEdgesPipeline) {
@@ -1220,11 +1244,15 @@ export class WebGPURenderer {
     }
     this.nodesPipeline.storageBuffer.destroy();
     this.edgesPipeline.geometryBuffer.destroy();
-    this.edgesPipeline.colorBuffer.destroy();
+    this.edgesPipeline.liveColorBuffer.destroy();
+    for (const buf of this.edgesPipeline.cachedColorBuffers.values()) buf.destroy();
+    this.edgesPipeline.cachedColorBuffers.clear();
     this.edgesPipeline.zoomBuffer.destroy();
     if (this.overlayEdgesPipeline) {
       this.overlayEdgesPipeline.geometryBuffer.destroy();
-      this.overlayEdgesPipeline.colorBuffer.destroy();
+      this.overlayEdgesPipeline.liveColorBuffer.destroy();
+      for (const buf of this.overlayEdgesPipeline.cachedColorBuffers.values()) buf.destroy();
+      this.overlayEdgesPipeline.cachedColorBuffers.clear();
       this.overlayEdgesPipeline.zoomBuffer.destroy();
     }
     this.textPipeline.storageBuffer.destroy();
@@ -1242,14 +1270,29 @@ export class WebGPURenderer {
 
 // ---- Helpers ----
 
+/**
+ * Memoized hex → rgb conversion. Real graphs only use ~20 unique color
+ * strings (one per op category) but updateAppearance calls this once per
+ * node per frame. Caching turns 10k parseInt-pairs into 10k Map.get hits.
+ *
+ * The cache lives at module scope and is shared across renderer instances —
+ * harmless because the input space is small and pure (string → rgb).
+ */
+const HEX_RGB_CACHE = new Map<string, { r: number; g: number; b: number }>();
+const HEX_RGB_FALLBACK = { r: 0.2, g: 0.2, b: 0.2 };
+
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
-  const h = hex.replace('#', '');
-  if (h.length !== 6) return { r: 0.2, g: 0.2, b: 0.2 };
-  return {
+  const cached = HEX_RGB_CACHE.get(hex);
+  if (cached) return cached;
+  const h = hex.charCodeAt(0) === 35 /* '#' */ ? hex.slice(1) : hex;
+  if (h.length !== 6) return HEX_RGB_FALLBACK;
+  const result = {
     r: parseInt(h.slice(0, 2), 16) / 255,
     g: parseInt(h.slice(2, 4), 16) / 255,
     b: parseInt(h.slice(4, 6), 16) / 255,
   };
+  HEX_RGB_CACHE.set(hex, result);
+  return result;
 }
 
 /**

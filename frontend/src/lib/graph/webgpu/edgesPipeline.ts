@@ -67,7 +67,26 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4<f32> {
 export interface EdgesPipelineState {
   pipeline: GPURenderPipeline;
   geometryBuffer: GPUBuffer;
+  /**
+   * Currently-active color buffer. drawEdges() binds this. Points at either
+   * `liveColorBuffer` (for transient mixed-color states like hover/select)
+   * or one of the cached uniform-color buffers in `cachedColorBuffers`.
+   */
   colorBuffer: GPUBuffer;
+  /**
+   * Writable color buffer for transient mixed states. Always rebuilt fresh
+   * when the highlight/search/grayed sets change.
+   */
+  liveColorBuffer: GPUBuffer;
+  /**
+   * Lazily-allocated cache of uniform-color buffers, keyed by a state name
+   * (e.g. "default", "dim"). Built once per (graph, key) pair and reused on
+   * every subsequent activation — accuracy view toggling becomes a buffer
+   * reference swap instead of a 38 MB upload.
+   *
+   * Cleared whenever the geometry is reuploaded with a new vertex capacity.
+   */
+  cachedColorBuffers: Map<string, GPUBuffer>;
   zoomBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   bindGroupLayout: GPUBindGroupLayout;
@@ -124,7 +143,7 @@ export function createEdgesPipeline(
     size: initialCapacity * GEOMETRY_BYTES,
     usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
   });
-  const colorBuffer = device.createBuffer({
+  const liveColorBuffer = device.createBuffer({
     size: initialCapacity * COLOR_BYTES,
     usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
   });
@@ -146,7 +165,9 @@ export function createEdgesPipeline(
   return {
     pipeline,
     geometryBuffer,
-    colorBuffer,
+    colorBuffer: liveColorBuffer,
+    liveColorBuffer,
+    cachedColorBuffers: new Map(),
     zoomBuffer,
     bindGroup,
     bindGroupLayout,
@@ -164,7 +185,9 @@ export function updateEdgeViewport(state: EdgesPipelineState, device: GPUDevice,
  * (or for the accuracy overlay pipeline whose path geometry is rebuilt each
  * time the set of inferred nodes changes).
  *
- * Grows both buffers if vertexCount exceeds the current capacity.
+ * Grows the geometry + live color buffers if vertexCount exceeds the current
+ * capacity. Also invalidates any cached uniform-color buffers since their
+ * vertex counts no longer match the new geometry.
  */
 export function uploadEdgeData(
   state: EdgesPipelineState,
@@ -175,32 +198,48 @@ export function uploadEdgeData(
 ): EdgesPipelineState {
   if (vertexCount > state.vertexCapacity) {
     state.geometryBuffer.destroy();
-    state.colorBuffer.destroy();
+    state.liveColorBuffer.destroy();
+    for (const buf of state.cachedColorBuffers.values()) buf.destroy();
+    state.cachedColorBuffers.clear();
+
     const newCapacity = Math.max(vertexCount, state.vertexCapacity * 2);
     const geometryBuffer = device.createBuffer({
       size: newCapacity * GEOMETRY_BYTES,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    const colorBuffer = device.createBuffer({
+    const liveColorBuffer = device.createBuffer({
       size: newCapacity * COLOR_BYTES,
       usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
     });
-    state = { ...state, geometryBuffer, colorBuffer, vertexCapacity: newCapacity };
+    state = {
+      ...state,
+      geometryBuffer,
+      liveColorBuffer,
+      colorBuffer: liveColorBuffer,
+      vertexCapacity: newCapacity,
+    };
+  } else {
+    // Geometry buffer reused. Cached uniform buffers still match the vertex
+    // count, but their *content* is stale if the new geometry is laid out
+    // differently — invalidate them so the next useCachedEdgeColors() call
+    // rebuilds with the current edge layout.
+    for (const buf of state.cachedColorBuffers.values()) buf.destroy();
+    state.cachedColorBuffers.clear();
   }
 
   if (vertexCount > 0) {
     device.queue.writeBuffer(state.geometryBuffer, 0, positions as Float32Array<ArrayBuffer>, 0, vertexCount * GEOMETRY_FLOATS);
-    device.queue.writeBuffer(state.colorBuffer, 0, colors as Float32Array<ArrayBuffer>, 0, vertexCount * COLOR_FLOATS);
+    device.queue.writeBuffer(state.liveColorBuffer, 0, colors as Float32Array<ArrayBuffer>, 0, vertexCount * COLOR_FLOATS);
   }
   state.vertexCount = vertexCount;
+  state.colorBuffer = state.liveColorBuffer;
   return state;
 }
 
 /**
- * Color-only update. The geometry buffer is left untouched. Use this when
- * highlight / search dim / accuracy view colors change but the underlying
- * edge tessellation does not. Caller must guarantee `state.vertexCount`
- * matches the colors length / 4.
+ * Color-only update for the live (mixed) color buffer. Used by the highlight
+ * / search / grayed paths whose color pattern is different on every call.
+ * Always re-binds the live buffer as the active draw target.
  */
 export function uploadEdgeColors(
   state: EdgesPipelineState,
@@ -209,7 +248,37 @@ export function uploadEdgeColors(
   vertexCount: number,
 ): void {
   if (vertexCount === 0) return;
-  device.queue.writeBuffer(state.colorBuffer, 0, colors as Float32Array<ArrayBuffer>, 0, vertexCount * COLOR_FLOATS);
+  device.queue.writeBuffer(state.liveColorBuffer, 0, colors as Float32Array<ArrayBuffer>, 0, vertexCount * COLOR_FLOATS);
+  state.colorBuffer = state.liveColorBuffer;
+}
+
+/**
+ * Activate a cached uniform-color buffer by name (e.g. "default", "dim").
+ * Builds + uploads the buffer once on first use; subsequent calls are O(1)
+ * — they just swap which buffer drawEdges() reads from.
+ *
+ * The fillFn is invoked only on cache miss. It should return a Float32Array
+ * of length vertexCount * 4 holding the per-vertex colors.
+ */
+export function useCachedEdgeColors(
+  state: EdgesPipelineState,
+  device: GPUDevice,
+  key: string,
+  fillFn: () => Float32Array,
+): void {
+  let cached = state.cachedColorBuffers.get(key);
+  if (!cached) {
+    cached = device.createBuffer({
+      size: state.vertexCapacity * COLOR_BYTES,
+      usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST,
+    });
+    const colors = fillFn();
+    if (state.vertexCount > 0) {
+      device.queue.writeBuffer(cached, 0, colors as Float32Array<ArrayBuffer>, 0, state.vertexCount * COLOR_FLOATS);
+    }
+    state.cachedColorBuffers.set(key, cached);
+  }
+  state.colorBuffer = cached;
 }
 
 export function drawEdges(pass: GPURenderPassEncoder, state: EdgesPipelineState): void {
