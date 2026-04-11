@@ -10,9 +10,17 @@ import { getAccuracyColorRgb, type AccuracyMetricKey, type AccuracyRange } from 
 import { buildCameraMatrix, CLEAR_COLOR, EDGE_COLOR, NODE_FLOATS, NODE_RADIUS, GRAPH_FONT_SIZE, GHOST_VERTEX_FLOATS } from './types';
 import { createNodesPipeline, updateNodeInstances, drawNodes } from './nodesPipeline';
 import type { NodesPipelineState } from './nodesPipeline';
-import { createEdgesPipeline, updateEdgeVertices, updateEdgeViewport, drawEdges, buildEdgeGeometry, buildPathGeometry } from './edgesPipeline';
-import type { AccuracyPath } from './edgesPipeline';
-import type { EdgesPipelineState } from './edgesPipeline';
+import {
+  createEdgesPipeline,
+  uploadEdgeData,
+  uploadEdgeColors,
+  updateEdgeViewport,
+  drawEdges,
+  buildEdgeGeometry,
+  buildEdgeColors,
+  buildPathGeometry,
+} from './edgesPipeline';
+import type { AccuracyPath, EdgeGeometry, EdgesPipelineState } from './edgesPipeline';
 import { createTextPipeline, updateGlyphInstances, drawText } from './textPipeline';
 import type { TextPipelineState } from './textPipeline';
 import { createGhostPipeline, updateGhostVertices, updateGhostViewport, drawGhosts } from './ghostPipeline';
@@ -48,6 +56,8 @@ export class WebGPURenderer {
   private currentZoom = 1;
   private graphData: GraphData | null = null;
   private nodeSizeFn: ((id: string) => { width: number; height: number }) | null = null;
+  /** Cached edge tessellation. Built once per graph, color-only updates leave it untouched. */
+  private edgeGeometry: EdgeGeometry | null = null;
   private _accuracyViewActive = false;
   private _lastEdgeMode: 'default' | 'search' | 'accuracy' = 'default';
   private _lastHoveredEdge: number | null = null;
@@ -256,11 +266,16 @@ export class WebGPURenderer {
     // Build edge hit index for proximity queries
     this.edgeHitIndex.build(graphData.edges, graphData.nodes, nodeSize);
 
-    // Build edge geometry (8 floats per vertex: centerX, centerY, normalX, normalY, r, g, b, a)
-    const edgeVerts = buildEdgeGeometry(graphData.edges, graphData.nodes, nodeSize);
-    this.edgesPipeline = updateEdgeVertices(
-      this.edgesPipeline, this.device, this.cameraBuffer,
-      edgeVerts, edgeVerts.length / 8,
+    // Tessellate every edge once and cache the geometry. Subsequent color
+    // changes (highlight, search dim, accuracy view) reuse this geometry and
+    // only rewrite the color buffer — see rebuildEdges() and the highlight
+    // branches in updateAppearance().
+    const geometry = buildEdgeGeometry(graphData.edges, graphData.nodes, nodeSize);
+    this.edgeGeometry = geometry;
+    const colors = buildEdgeColors(geometry.edgeRanges, graphData.edges, geometry.vertexCount);
+    this.edgesPipeline = uploadEdgeData(
+      this.edgesPipeline, this.device,
+      geometry.positions, colors, geometry.vertexCount,
     );
     updateEdgeViewport(this.edgesPipeline, this.device, this.canvas.width, this.canvas.height);
 
@@ -532,33 +547,44 @@ export class WebGPURenderer {
       const wasColored = this._lastEdgeMode !== 'default';
       const needsRebuild = edgeHighlightChanged || grayedChanged || (isColored !== wasColored);
 
-      if (needsRebuild) {
+      if (needsRebuild && this.edgeGeometry) {
         fs?.beginPhase('appearance.edgeColorRebuild');
         const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 }; // #4C8DFF
         const dim = { r: 0.184, g: 0.200, b: 0.255, a: 0.3 };
         const grayDim = { r: 0.353, g: 0.376, b: 0.502, a: 0.35 };
-        const edgeVerts = buildEdgeGeometry(this.graphData.edges, this.graphData.nodes, this.nodeSizeFn!, (edge, idx) => {
-          if (idx === highlightEdge) return { start: hl, end: hl };
-          if (grayedNodes.has(edge.source) || grayedNodes.has(edge.target)) return { start: grayDim, end: grayDim };
-          // Gray incoming edges to Parameter nodes (cut-as-input overrides)
-          if (hasOverrides && nodeOverrides!.has(edge.target)) return { start: grayDim, end: grayDim };
-          if (searchActive) return { start: dim, end: dim };
-          return undefined as any; // use default
-        });
-        this.edgesPipeline = updateEdgeVertices(this.edgesPipeline, this.device, this.cameraBuffer, edgeVerts, edgeVerts.length / 8);
+        const colors = buildEdgeColors(
+          this.edgeGeometry.edgeRanges,
+          this.graphData.edges,
+          this.edgeGeometry.vertexCount,
+          (edge, idx) => {
+            if (idx === highlightEdge) return { start: hl, end: hl };
+            if (grayedNodes.has(edge.source) || grayedNodes.has(edge.target)) return { start: grayDim, end: grayDim };
+            // Gray incoming edges to Parameter nodes (cut-as-input overrides)
+            if (hasOverrides && nodeOverrides!.has(edge.target)) return { start: grayDim, end: grayDim };
+            if (searchActive) return { start: dim, end: dim };
+            return undefined;
+          },
+        );
+        uploadEdgeColors(this.edgesPipeline, this.device, colors, this.edgeGeometry.vertexCount);
         fs?.endPhase('appearance.edgeColorRebuild');
       }
       this._lastEdgeMode = isColored ? 'search' : 'default';
-    } else if (edgeHighlightChanged && highlightEdge !== null) {
-      // In accuracy view, rebuild base edges with the highlighted edge visible
+    } else if (edgeHighlightChanged && highlightEdge !== null && this.edgeGeometry) {
+      // In accuracy view, rewrite base edge colors so the highlighted edge
+      // pops over the dimmed background. Geometry stays cached.
       fs?.beginPhase('appearance.edgeColorRebuild');
       const dimColor = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b, a: 0.15 };
       const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 };
-      const baseVerts = buildEdgeGeometry(this.graphData.edges, this.graphData.nodes, this.nodeSizeFn!, (_edge, idx) => {
-        if (idx === highlightEdge) return { start: hl, end: hl };
-        return { start: dimColor, end: dimColor };
-      });
-      this.edgesPipeline = updateEdgeVertices(this.edgesPipeline, this.device, this.cameraBuffer, baseVerts, baseVerts.length / 8);
+      const colors = buildEdgeColors(
+        this.edgeGeometry.edgeRanges,
+        this.graphData.edges,
+        this.edgeGeometry.vertexCount,
+        (_edge, idx) => {
+          if (idx === highlightEdge) return { start: hl, end: hl };
+          return { start: dimColor, end: dimColor };
+        },
+      );
+      uploadEdgeColors(this.edgesPipeline, this.device, colors, this.edgeGeometry.vertexCount);
       fs?.endPhase('appearance.edgeColorRebuild');
     }
     this._lastHoveredEdge = hoveredEdgeIndex;
@@ -988,26 +1014,48 @@ export class WebGPURenderer {
         }
       }
 
-      // Dimmed base edges (drawn under nodes)
-      const dimColor = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b, a: 0.15 };
-      const baseVerts = buildEdgeGeometry(this.graphData.edges, this.graphData.nodes, this.nodeSizeFn!, () => ({ start: dimColor, end: dimColor }));
-      this.edgesPipeline = updateEdgeVertices(this.edgesPipeline, this.device, this.cameraBuffer, baseVerts, baseVerts.length / 8);
+      // Dimmed base edges — color-only update, geometry stays cached.
+      if (this.edgeGeometry) {
+        const dimColor = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b, a: 0.15 };
+        const colors = buildEdgeColors(
+          this.edgeGeometry.edgeRanges,
+          this.graphData.edges,
+          this.edgeGeometry.vertexCount,
+          () => ({ start: dimColor, end: dimColor }),
+        );
+        uploadEdgeColors(this.edgesPipeline, this.device, colors, this.edgeGeometry.vertexCount);
+      }
 
-      // Colored overlay paths (drawn on top of nodes)
-      const pathVerts = buildPathGeometry(paths, this.graphData.nodes, this.nodeSizeFn!);
+      // Colored overlay paths (drawn on top of nodes). The set of paths
+      // changes whenever new metrics arrive, so the overlay still rebuilds
+      // its tessellation — but only for the BFS-discovered paths, not the
+      // full edge list.
+      const pathGeom = buildPathGeometry(paths, this.graphData.nodes, this.nodeSizeFn!);
       if (!this.overlayEdgesPipeline) {
         this.overlayEdgesPipeline = createEdgesPipeline(this.device, this.format, this.cameraBuffer);
         updateEdgeViewport(this.overlayEdgesPipeline, this.device, this.canvas.width, this.canvas.height);
       }
-      this.overlayEdgesPipeline = updateEdgeVertices(this.overlayEdgesPipeline, this.device, this.cameraBuffer, pathVerts, pathVerts.length / 8);
+      this.overlayEdgesPipeline = uploadEdgeData(
+        this.overlayEdgesPipeline, this.device,
+        pathGeom.positions, pathGeom.colors, pathGeom.vertexCount,
+      );
       this._lastEdgeMode = 'accuracy';
     } else {
-      // Rebuild with default colors
-      const edgeVerts = buildEdgeGeometry(this.graphData.edges, this.graphData.nodes, this.nodeSizeFn!);
-      this.edgesPipeline = updateEdgeVertices(this.edgesPipeline, this.device, this.cameraBuffer, edgeVerts, edgeVerts.length / 8);
+      // Restore default colors — color-only update, geometry stays cached.
+      if (this.edgeGeometry) {
+        const colors = buildEdgeColors(
+          this.edgeGeometry.edgeRanges,
+          this.graphData.edges,
+          this.edgeGeometry.vertexCount,
+        );
+        uploadEdgeColors(this.edgesPipeline, this.device, colors, this.edgeGeometry.vertexCount);
+      }
       // Clear overlay paths
       if (this.overlayEdgesPipeline) {
-        this.overlayEdgesPipeline = updateEdgeVertices(this.overlayEdgesPipeline, this.device, this.cameraBuffer, new Float32Array(0), 0);
+        this.overlayEdgesPipeline = uploadEdgeData(
+          this.overlayEdgesPipeline, this.device,
+          new Float32Array(0), new Float32Array(0), 0,
+        );
       }
       this._lastEdgeMode = 'default';
     }
@@ -1171,8 +1219,14 @@ export class WebGPURenderer {
       this.minimapTarget = null;
     }
     this.nodesPipeline.storageBuffer.destroy();
-    this.edgesPipeline.vertexBuffer.destroy();
+    this.edgesPipeline.geometryBuffer.destroy();
+    this.edgesPipeline.colorBuffer.destroy();
     this.edgesPipeline.zoomBuffer.destroy();
+    if (this.overlayEdgesPipeline) {
+      this.overlayEdgesPipeline.geometryBuffer.destroy();
+      this.overlayEdgesPipeline.colorBuffer.destroy();
+      this.overlayEdgesPipeline.zoomBuffer.destroy();
+    }
     this.textPipeline.storageBuffer.destroy();
     this.ghostPipeline.vertexBuffer.destroy();
     this.ghostPipeline.viewportBuffer.destroy();

@@ -59,11 +59,14 @@ export class MinimapTarget {
   private msaaTexture: GPUTexture | null = null;
   private msaaView: GPUTextureView | null = null;
 
-  // Shared-pipeline bind groups (recreated when shared buffers grow)
+  // Shared-pipeline bind groups. The edges bind group references only uniform
+  // buffers (camera + viewport), so it never needs to be recreated when the
+  // edge geometry/color vertex buffers grow — those are bound via
+  // setVertexBuffer at draw time. The nodes bind group does reference the
+  // shared node storage buffer though, and must be rebuilt when that grows.
   private nodesBindGroup: GPUBindGroup | null = null;
   private edgesBindGroup: GPUBindGroup | null = null;
   private lastNodesStorageBuffer: GPUBuffer | null = null;
-  private lastEdgesVertexBuffer: GPUBuffer | null = null;
 
   // Viewport rect overlay
   private viewportPipeline: ViewportPipelineState | null = null;
@@ -237,8 +240,7 @@ export class MinimapTarget {
       });
     }
 
-    if (edges.vertexBuffer !== this.lastEdgesVertexBuffer || this.edgesBindGroup === null) {
-      this.lastEdgesVertexBuffer = edges.vertexBuffer;
+    if (this.edgesBindGroup === null) {
       this.edgesBindGroup = device.createBindGroup({
         layout: edges.bindGroupLayout,
         entries: [
@@ -359,7 +361,8 @@ export class MinimapTarget {
     if (edges.vertexCount > 0) {
       pass.setPipeline(edges.pipeline);
       pass.setBindGroup(0, this.edgesBindGroup);
-      pass.setVertexBuffer(0, edges.vertexBuffer);
+      pass.setVertexBuffer(0, edges.geometryBuffer);
+      pass.setVertexBuffer(1, edges.colorBuffer);
       pass.draw(edges.vertexCount);
     }
 
