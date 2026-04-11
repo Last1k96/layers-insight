@@ -95,8 +95,10 @@ function handleMessage(msg: any): void {
     graphStore.loadingDetail = msg.detail || '';
     if (msg.stage === 'layout' && msg.node_count) {
       const n = msg.node_count;
-      // Pure-Python layout: ~0.5ms/node + 200ms overhead
-      graphStore.layoutEstimateMs = 200 + n * 0.5;
+      // Pure-Python layout: ~0.5ms/node + 200ms overhead.
+      // ELK reference layout is roughly 30x slower (Node.js subprocess + elkjs).
+      const base = 200 + n * 0.5;
+      graphStore.layoutEstimateMs = msg.backend === 'elk' ? base * 30 : base;
       graphStore.layoutStartedAt = performance.now();
     } else {
       graphStore.layoutStartedAt = 0;

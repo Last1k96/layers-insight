@@ -59,6 +59,7 @@ export interface SessionConfig {
   inputs?: InputConfig[];
   plugin_config?: Record<string, string>;
   ref_plugin_config?: Record<string, string>;
+  use_elk_layout?: boolean;
 }
 
 export interface DeviceProperty {

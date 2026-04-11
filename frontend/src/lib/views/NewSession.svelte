@@ -30,6 +30,7 @@
   let sessionName = $state('');
   let mainDevice = $state('CPU');
   let refDevice = $state('CPU');
+  let useElkLayout = $state(false);
   let submitting = $state(false);
   let error = $state<string | null>(null);
 
@@ -685,6 +686,7 @@
         inputs: modelInputs.length > 0 ? modelInputs : undefined,
         plugin_config: Object.keys(pluginCfg).length > 0 ? pluginCfg : undefined,
         ref_plugin_config: Object.keys(refPluginCfg).length > 0 ? refPluginCfg : undefined,
+        use_elk_layout: useElkLayout || undefined,
       });
 
       submitting = false;
@@ -1016,6 +1018,27 @@
           </div>
         </div>
       </div>
+
+      {#if !isCloneMode}
+        <!-- Section: Layout -->
+        <div class="form-section">
+          <div class="section-label">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+              <rect x="2" y="2" width="10" height="10" rx="1" />
+              <line x1="2" y1="6" x2="12" y2="6" />
+              <line x1="6" y1="6" x2="6" y2="12" />
+            </svg>
+            Layout
+          </div>
+          <label class="layout-toggle">
+            <input type="checkbox" bind:checked={useElkLayout} />
+            <span class="layout-toggle-text">
+              <span class="layout-toggle-title">Use ELK reference layout</span>
+              <span class="layout-toggle-hint">Slower, but sometimes produces better layout</span>
+            </span>
+          </label>
+        </div>
+      {/if}
 
       <!-- Plugin Configuration -->
       {#snippet pluginConfigPanel(label: string, properties: DeviceProperty[], configValues: Record<string, string>, loading: boolean, prefix: string, onValueChange: (key: string, val: string) => void, filterText: string, onFilterChange: (v: string) => void)}
@@ -1353,6 +1376,48 @@
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
+  }
+
+  /* ── Layout toggle ── */
+  .layout-toggle {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    padding: 0.45rem 0.55rem;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.4rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .layout-toggle:hover {
+    border-color: rgba(76, 141, 255, 0.45);
+  }
+
+  .layout-toggle input[type="checkbox"] {
+    margin-top: 0.15rem;
+    cursor: pointer;
+    accent-color: rgba(76, 141, 255, 0.85);
+  }
+
+  .layout-toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    user-select: none;
+  }
+
+  .layout-toggle-title {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .layout-toggle-hint {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    opacity: 0.75;
   }
 
   .field-label {

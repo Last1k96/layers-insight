@@ -1,13 +1,19 @@
 """Graph extraction and layout service."""
 from __future__ import annotations
 
+import asyncio
+import json
 import re
+import shutil
 from collections import defaultdict
+from pathlib import Path
 from typing import Any, Optional
 
 from backend.schemas.graph import GraphData, GraphEdge, GraphNode, NodeInput
 from backend.utils.dag_layout import compute_dag_layout
 from backend.utils.op_categories import get_op_category, get_op_color
+
+ELK_SCRIPT = Path(__file__).parent.parent / "utils" / "elk_layout.js"
 
 # Node sizing constants (must match frontend svgRenderer.ts)
 NODE_HEIGHT = 32
@@ -225,6 +231,64 @@ async def compute_layout(graph_data: GraphData) -> dict:
         for e in graph_data.edges
     ]
     return compute_dag_layout(layout_nodes, layout_edges)
+
+
+def _find_node_binary() -> str:
+    """Locate the node executable, preferring the project-local install.
+
+    start.sh installs Node.js into ``.node/`` at the project root and
+    prepends it to PATH, but the server may be launched without sourcing
+    that script (e.g. directly via the venv). Look for the local install
+    first, then fall back to PATH.
+    """
+    project_root = Path(__file__).parent.parent.parent
+    local = project_root / ".node" / "bin" / "node"
+    if local.exists():
+        return str(local)
+    found = shutil.which("node")
+    if found:
+        return found
+    raise RuntimeError(
+        "node executable not found. Run start.sh once to install the project-local "
+        "Node.js, or ensure 'node' is on PATH."
+    )
+
+
+async def compute_elk_layout(graph_data: GraphData) -> dict:
+    """Compute layout via the elkjs reference engine in a Node.js subprocess.
+
+    Slower than ``compute_layout`` for large graphs but useful as a
+    reference for visual comparison. Requires the project-local Node.js
+    install (see start.sh) and the ``elkjs`` package in node_modules.
+    """
+    elk_input = {
+        "nodes": [
+            {"id": n.id, "width": n.width or 100, "height": n.height or NODE_HEIGHT}
+            for n in graph_data.nodes
+        ],
+        "edges": [
+            {"source": e.source, "target": e.target}
+            for e in graph_data.edges
+        ],
+    }
+
+    node_bin = _find_node_binary()
+    project_root = ELK_SCRIPT.parent.parent.parent  # cwd for node_modules resolution
+
+    proc = await asyncio.create_subprocess_exec(
+        node_bin, "--stack-size=65536", str(ELK_SCRIPT),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=str(project_root),
+    )
+    stdout, stderr = await proc.communicate(json.dumps(elk_input).encode())
+
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"ELK layout failed (rc={proc.returncode}): {stderr.decode().strip()}"
+        )
+    return json.loads(stdout.decode())
 
 
 def apply_layout(graph_data: GraphData, layout_result: dict) -> GraphData:

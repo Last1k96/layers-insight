@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from backend.services.graph_service import (
     apply_layout,
+    compute_elk_layout,
     compute_layout,
     extract_graph,
     load_model,
@@ -130,8 +131,18 @@ async def get_graph(session_id: str, request: Request) -> JSONResponse:
     node_count = len(graph_data.nodes)
     edge_count = len(graph_data.edges)
 
-    await _progress("layout", f"Computing layout for {node_count} nodes…", node_count=node_count)
-    positions = await compute_layout(graph_data)
+    if session.config.use_elk_layout:
+        await _progress(
+            "layout", f"Computing ELK layout for {node_count} nodes…",
+            node_count=node_count, backend="elk",
+        )
+        positions = await compute_elk_layout(graph_data)
+    else:
+        await _progress(
+            "layout", f"Computing layout for {node_count} nodes…",
+            node_count=node_count, backend="python",
+        )
+        positions = await compute_layout(graph_data)
 
     graph_data = apply_layout(graph_data, positions)
 
