@@ -201,13 +201,13 @@
   {#if selectedEdge}
     <!-- Edge Info -->
     <div class="mb-4">
-      <h4 class="text-[10px] font-medium text-content-secondary/40 uppercase tracking-wider mb-2">Edge Connection</h4>
+      <h4 class="text-[10px] font-medium text-muted-soft uppercase tracking-wider mb-2">Edge Connection</h4>
 
       <!-- Source Node -->
       <div class="bg-surface-base rounded-lg p-2.5 text-xs">
-        <div class="text-[10px] text-content-secondary/30 uppercase tracking-wider mb-1">Source</div>
+        <div class="text-[10px] text-muted-soft uppercase tracking-wider mb-1">Source</div>
         <div class="flex items-center gap-1.5">
-          <span class="text-content-secondary/25 font-mono w-4 shrink-0">:{selectedEdge.edge.source_port}</span>
+          <span class="text-muted-soft font-mono w-4 shrink-0">:{selectedEdge.edge.source_port}</span>
           {#if selectedEdge.sourceNode}
             <button
               class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
@@ -216,15 +216,15 @@
               onclick={() => centerOnNode(selectedEdge!.sourceNode!.id)}
             >{selectedEdge.sourceNode.name}</button>
           {:else}
-            <span class="text-content-secondary/50 font-mono truncate">{selectedEdge.edge.source}</span>
+            <span class="text-muted font-mono truncate">{selectedEdge.edge.source}</span>
           {/if}
         </div>
         {#if selectedEdge.sourceNode}
-          <div class="text-content-secondary/40 ml-5 mt-0.5">{selectedEdge.sourceNode.type}</div>
+          <div class="text-muted-soft ml-5 mt-0.5">{selectedEdge.sourceNode.type}</div>
           {#if selectedEdge.sourceNode.shape}
-            <div class="text-content-secondary/40 ml-5 mt-0.5">
+            <div class="text-muted-soft ml-5 mt-0.5">
               [{#each selectedEdge.sourceNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]
-              {#if selectedEdge.sourceNode.element_type}<span class="text-content-secondary/25"> {selectedEdge.sourceNode.element_type}</span>{/if}
+              {#if selectedEdge.sourceNode.element_type}<span class="text-muted-soft"> {selectedEdge.sourceNode.element_type}</span>{/if}
             </div>
           {/if}
         {/if}
@@ -232,16 +232,16 @@
 
       <!-- Arrow -->
       <div class="flex justify-center py-1">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" class="text-content-secondary/20">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" class="text-muted-faint">
           <path d="M8 3v10M4 9l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </div>
 
       <!-- Target Node -->
       <div class="bg-surface-base rounded-lg p-2.5 text-xs">
-        <div class="text-[10px] text-content-secondary/30 uppercase tracking-wider mb-1">Target</div>
+        <div class="text-[10px] text-muted-soft uppercase tracking-wider mb-1">Target</div>
         <div class="flex items-center gap-1.5">
-          <span class="text-content-secondary/25 font-mono w-4 shrink-0">:{selectedEdge.edge.target_port}</span>
+          <span class="text-muted-soft font-mono w-4 shrink-0">:{selectedEdge.edge.target_port}</span>
           {#if selectedEdge.targetNode}
             <button
               class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
@@ -250,15 +250,15 @@
               onclick={() => centerOnNode(selectedEdge!.targetNode!.id)}
             >{selectedEdge.targetNode.name}</button>
           {:else}
-            <span class="text-content-secondary/50 font-mono truncate">{selectedEdge.edge.target}</span>
+            <span class="text-muted font-mono truncate">{selectedEdge.edge.target}</span>
           {/if}
         </div>
         {#if selectedEdge.targetNode}
-          <div class="text-content-secondary/40 ml-5 mt-0.5">{selectedEdge.targetNode.type}</div>
+          <div class="text-muted-soft ml-5 mt-0.5">{selectedEdge.targetNode.type}</div>
           {#if selectedEdge.targetNode.shape}
-            <div class="text-content-secondary/40 ml-5 mt-0.5">
+            <div class="text-muted-soft ml-5 mt-0.5">
               [{#each selectedEdge.targetNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]
-              {#if selectedEdge.targetNode.element_type}<span class="text-content-secondary/25"> {selectedEdge.targetNode.element_type}</span>{/if}
+              {#if selectedEdge.targetNode.element_type}<span class="text-muted-soft"> {selectedEdge.targetNode.element_type}</span>{/if}
             </div>
           {/if}
         {/if}
@@ -280,26 +280,26 @@
             {#each selectedNode.inputs as inp}
               {@const inpPropagated = graphStore.graphData?.propagated_shapes?.[inp.name] ?? null}
               {@const inpOrigShape = inp.shape}
-              <span class="text-content-secondary/30 shrink-0">{inp.is_const ? 'const' : 'input'}</span>
+              <span class="text-muted-soft shrink-0">{inp.is_const ? 'const' : 'input'}</span>
               <span>
                 {#if inpPropagated && inpOrigShape}
-                  <span class="font-mono text-content-secondary/60">[{#each inpPropagated as dim, idx}{#if idx > 0}, {/if}{#if inpOrigShape[idx] !== undefined && typeof inpOrigShape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
+                  <span class="font-mono text-muted">[{#each inpPropagated as dim, idx}{#if idx > 0}, {/if}{#if inpOrigShape[idx] !== undefined && typeof inpOrigShape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
                 {:else if inpOrigShape}
-                  <span class="font-mono text-content-secondary/60">[{#each inpOrigShape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
+                  <span class="font-mono text-muted">[{#each inpOrigShape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
                 {/if}
-                {#if inp.element_type}<span class="text-content-secondary/30 ml-1">{inp.element_type}</span>{/if}
+                {#if inp.element_type}<span class="text-muted-soft ml-1">{inp.element_type}</span>{/if}
               </span>
             {/each}
           {/if}
           {#if selectedNode.shape}
-            <span class="text-content-secondary/30 shrink-0">output</span>
+            <span class="text-muted-soft shrink-0">output</span>
             <span>
               {#if propagatedShape}
-                <span class="font-mono text-content-secondary/60">[{#each propagatedShape as dim, idx}{#if idx > 0}, {/if}{#if selectedNode.shape[idx] !== undefined && typeof selectedNode.shape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
+                <span class="font-mono text-muted">[{#each propagatedShape as dim, idx}{#if idx > 0}, {/if}{#if selectedNode.shape[idx] !== undefined && typeof selectedNode.shape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
               {:else}
-                <span class="font-mono text-content-secondary/60">[{#each selectedNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
+                <span class="font-mono text-muted">[{#each selectedNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
               {/if}
-              {#if selectedNode.element_type}<span class="text-content-secondary/30 ml-1">{selectedNode.element_type}</span>{/if}
+              {#if selectedNode.element_type}<span class="text-muted-soft ml-1">{selectedNode.element_type}</span>{/if}
             </span>
           {/if}
         </div>
@@ -392,19 +392,19 @@
           {@const goodness = selectedMetricGoodness(nodeStatus.metrics)}
           {@const activeMetric = configStore.accuracyMetric}
           <div class="space-y-2">
-            <h4 class="text-[10px] font-medium text-content-secondary/40 uppercase tracking-wider">Accuracy</h4>
+            <h4 class="text-[10px] font-medium text-muted-soft uppercase tracking-wider">Accuracy</h4>
             <table class="w-full text-xs">
               <tbody>
                 <tr>
-                  <td class="py-1.5 text-content-secondary/50">MSE</td>
+                  <td class="py-1.5 text-muted">MSE</td>
                   <td class="py-1.5 text-right font-mono tabular-nums" style={activeMetric === 'mse' ? `color: ${color}` : ''}>{formatValue(nodeStatus.metrics.mse)}</td>
                 </tr>
                 <tr>
-                  <td class="py-1.5 text-content-secondary/50">Max Abs Diff</td>
+                  <td class="py-1.5 text-muted">Max Abs Diff</td>
                   <td class="py-1.5 text-right font-mono tabular-nums" style={activeMetric === 'max_abs_diff' ? `color: ${color}` : ''}>{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
                 </tr>
                 <tr>
-                  <td class="py-1.5 text-content-secondary/50">Cosine Sim</td>
+                  <td class="py-1.5 text-muted">Cosine Sim</td>
                   <td class="py-1.5 text-right font-mono tabular-nums" style={activeMetric === 'cosine_similarity' ? `color: ${color}` : ''}>{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
                 </tr>
               </tbody>
@@ -426,7 +426,7 @@
           {@const main = nodeStatus.mainResult}
           {@const ref = nodeStatus.refResult}
           <div class="mt-4">
-            <h4 class="text-[10px] font-medium text-content-secondary/40 uppercase tracking-wider mb-2">Device Outputs</h4>
+            <h4 class="text-[10px] font-medium text-muted-soft uppercase tracking-wider mb-2">Device Outputs</h4>
             <table class="w-full text-xs table-fixed">
               <colgroup>
                 <col class="w-[20%]" />
@@ -435,7 +435,7 @@
                 {#if main && ref}<col class="w-[26.6%]" />{/if}
               </colgroup>
               <thead>
-                <tr class="text-content-secondary/30">
+                <tr class="text-muted-soft">
                   <th class="py-1.5 text-left font-normal"></th>
                   {#if main}<th class="py-1.5 text-right font-normal">{main.device}</th>{/if}
                   {#if ref}<th class="py-1.5 text-right font-normal">{ref.device}</th>{/if}
@@ -450,7 +450,7 @@
                   { label: 'Std', key: 'std_val' as const },
                 ] as row}
                   <tr class="border-t border-content-secondary/5">
-                    <td class="py-1.5 text-content-secondary/50">{row.label}</td>
+                    <td class="py-1.5 text-muted">{row.label}</td>
                     {#if main}<td class="py-1.5 text-right font-mono truncate tabular-nums">{fmt4(main[row.key])}</td>{/if}
                     {#if ref}<td class="py-1.5 text-right font-mono truncate tabular-nums">{fmt4(ref[row.key])}</td>{/if}
                     {#if main && ref}
@@ -506,19 +506,19 @@
           {@const goodness = selectedMetricGoodness(nodeStatus.metrics)}
           {@const activeMetric = configStore.accuracyMetric}
           <div class="space-y-2 mb-4">
-            <h4 class="text-[10px] font-medium text-content-secondary/40 uppercase tracking-wider">Worst-Case Accuracy ({outputCount} outputs)</h4>
+            <h4 class="text-[10px] font-medium text-muted-soft uppercase tracking-wider">Worst-Case Accuracy ({outputCount} outputs)</h4>
             <table class="w-full text-xs">
               <tbody>
                 <tr>
-                  <td class="py-1.5 text-content-secondary/50">MSE</td>
+                  <td class="py-1.5 text-muted">MSE</td>
                   <td class="py-1.5 text-right font-mono tabular-nums" style={activeMetric === 'mse' ? `color: ${color}` : ''}>{formatValue(nodeStatus.metrics.mse)}</td>
                 </tr>
                 <tr>
-                  <td class="py-1.5 text-content-secondary/50">Max Abs Diff</td>
+                  <td class="py-1.5 text-muted">Max Abs Diff</td>
                   <td class="py-1.5 text-right font-mono tabular-nums" style={activeMetric === 'max_abs_diff' ? `color: ${color}` : ''}>{formatValue(nodeStatus.metrics.max_abs_diff)}</td>
                 </tr>
                 <tr>
-                  <td class="py-1.5 text-content-secondary/50">Cosine Sim</td>
+                  <td class="py-1.5 text-muted">Cosine Sim</td>
                   <td class="py-1.5 text-right font-mono tabular-nums" style={activeMetric === 'cosine_similarity' ? `color: ${color}` : ''}>{formatValue(nodeStatus.metrics.cosine_similarity)}</td>
                 </tr>
               </tbody>
@@ -546,7 +546,7 @@
               <h4 class="text-xs font-medium text-content-primary/80">
                 Output {outIdx}
                 {#if outMain?.dtype}
-                  <span class="text-content-secondary/30 font-normal ml-1">[{outMain.dtype}, {outMain.output_shapes?.[0]?.join('x') ?? '?'}]</span>
+                  <span class="text-muted-soft font-normal ml-1">[{outMain.dtype}, {outMain.output_shapes?.[0]?.join('x') ?? '?'}]</span>
                 {/if}
               </h4>
             </div>
@@ -554,15 +554,15 @@
             <table class="w-full text-xs mb-1.5">
               <tbody>
                 <tr>
-                  <td class="py-1 text-content-secondary/50">MSE</td>
+                  <td class="py-1 text-muted">MSE</td>
                   <td class="py-1 text-right font-mono tabular-nums" style={outActiveMetric === 'mse' ? `color: ${outColor}` : ''}>{formatValue(outMetrics.mse)}</td>
                 </tr>
                 <tr>
-                  <td class="py-1 text-content-secondary/50">Max Abs Diff</td>
+                  <td class="py-1 text-muted">Max Abs Diff</td>
                   <td class="py-1 text-right font-mono tabular-nums" style={outActiveMetric === 'max_abs_diff' ? `color: ${outColor}` : ''}>{formatValue(outMetrics.max_abs_diff)}</td>
                 </tr>
                 <tr>
-                  <td class="py-1 text-content-secondary/50">Cosine Sim</td>
+                  <td class="py-1 text-muted">Cosine Sim</td>
                   <td class="py-1 text-right font-mono tabular-nums" style={outActiveMetric === 'cosine_similarity' ? `color: ${outColor}` : ''}>{formatValue(outMetrics.cosine_similarity)}</td>
                 </tr>
               </tbody>
@@ -577,7 +577,7 @@
                   {#if outMain && outRef}<col class="w-[26.6%]" />{/if}
                 </colgroup>
                 <thead>
-                  <tr class="text-content-secondary/30">
+                  <tr class="text-muted-soft">
                     <th class="py-1 text-left font-normal"></th>
                     {#if outMain}<th class="py-1 text-right font-normal">{outMain.device}</th>{/if}
                     {#if outRef}<th class="py-1 text-right font-normal">{outRef.device}</th>{/if}
@@ -592,7 +592,7 @@
                     { label: 'Std', key: 'std_val' as const },
                   ] as row}
                     <tr class="border-t border-content-secondary/5">
-                      <td class="py-1 text-content-secondary/50">{row.label}</td>
+                      <td class="py-1 text-muted">{row.label}</td>
                       {#if outMain}<td class="py-1 text-right font-mono truncate tabular-nums">{fmt4(outMain[row.key])}</td>{/if}
                       {#if outRef}<td class="py-1 text-right font-mono truncate tabular-nums">{fmt4(outRef[row.key])}</td>{/if}
                       {#if outMain && outRef}
@@ -702,14 +702,14 @@
     <!-- Attributes -->
     {#if selectedNode.attributes && Object.keys(selectedNode.attributes).length > 0}
       <details class="mt-4">
-        <summary class="text-xs text-content-secondary/40 cursor-pointer hover:text-content-secondary/60 transition-colors">
+        <summary class="text-xs text-muted-soft cursor-pointer hover:text-muted transition-colors">
           Attributes ({Object.keys(selectedNode.attributes).length})
         </summary>
         <div class="mt-1.5 bg-surface-base rounded-lg p-2.5 text-xs font-mono max-h-32 overflow-y-auto">
           {#each Object.entries(selectedNode.attributes) as [key, value]}
             <div class="flex justify-between gap-2 py-0.5">
-              <span class="text-content-secondary/40">{key}</span>
-              <span class="text-content-secondary/70 truncate">{String(value)}</span>
+              <span class="text-muted-soft">{key}</span>
+              <span class="text-muted truncate">{String(value)}</span>
             </div>
           {/each}
         </div>
@@ -719,7 +719,7 @@
     <!-- Inputs -->
     {#if selectedNode.inputs && selectedNode.inputs.length > 0}
       <details class="mt-4" open>
-        <summary class="text-xs text-content-secondary/40 cursor-pointer hover:text-content-secondary/60 transition-colors">
+        <summary class="text-xs text-muted-soft cursor-pointer hover:text-muted transition-colors">
           Inputs ({selectedNode.inputs.length})
         </summary>
         <div class="mt-1.5 space-y-1">
@@ -727,7 +727,7 @@
             {@const sourceNode = graphStore.graphData?.nodes.find(n => n.name === inp.name)}
             <div class="bg-surface-base rounded-lg p-2.5 text-xs">
               <div class="flex items-center gap-1.5">
-                <span class="text-content-secondary/25 font-mono w-4 shrink-0">{idx}</span>
+                <span class="text-muted-soft font-mono w-4 shrink-0">{idx}</span>
                 {#if !inp.is_const}
                   <button
                     class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
@@ -747,17 +747,17 @@
                     }}
                   >{inp.name}</button>
                 {:else}
-                  <span class="text-content-secondary/70 font-mono truncate" title={inp.name}>{inp.name}</span>
+                  <span class="text-muted font-mono truncate" title={inp.name}>{inp.name}</span>
                 {/if}
               </div>
               {#if sourceNode}
-                <div class="text-content-secondary/40 ml-5 mt-0.5">{sourceNode.type}</div>
+                <div class="text-muted-soft ml-5 mt-0.5">{sourceNode.type}</div>
               {:else if inp.is_const}
                 <div class="ml-5 mt-0.5"><span class="px-1.5 py-0.5 bg-amber-500/10 text-amber-400/70 rounded-full text-[10px] leading-none">const</span></div>
               {/if}
               {#if inp.shape}
-                <div class="text-content-secondary/40 ml-5 mt-0.5">
-                  [{#each inp.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}] {#if inp.element_type}<span class="text-content-secondary/25">{inp.element_type}</span>{/if}
+                <div class="text-muted-soft ml-5 mt-0.5">
+                  [{#each inp.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}] {#if inp.element_type}<span class="text-muted-soft">{inp.element_type}</span>{/if}
                 </div>
               {/if}
               {#if inp.is_const && inp.const_node_name}
@@ -769,27 +769,27 @@
                 </button>
                 {#if constDataExpanded.has(inp.const_node_name)}
                   {#if constDataLoading.has(inp.const_node_name)}
-                    <div class="ml-5 mt-1 text-content-secondary/30 text-[10px]">Loading...</div>
+                    <div class="ml-5 mt-1 text-muted-soft text-[10px]">Loading...</div>
                   {:else if constDataCache.has(inp.const_node_name)}
                     {@const cd = constDataCache.get(inp.const_node_name)!}
                     <div class="ml-5 mt-1 space-y-1">
                       <div class="grid grid-cols-2 gap-x-3 text-[10px]">
-                        <span class="text-content-secondary/30">dtype</span>
-                        <span class="text-content-secondary/60 font-mono text-right">{cd.dtype}</span>
-                        <span class="text-content-secondary/30">min</span>
-                        <span class="text-content-secondary/60 font-mono text-right">{formatFloat(cd.stats.min)}</span>
-                        <span class="text-content-secondary/30">max</span>
-                        <span class="text-content-secondary/60 font-mono text-right">{formatFloat(cd.stats.max)}</span>
-                        <span class="text-content-secondary/30">mean</span>
-                        <span class="text-content-secondary/60 font-mono text-right">{formatFloat(cd.stats.mean)}</span>
-                        <span class="text-content-secondary/30">std</span>
-                        <span class="text-content-secondary/60 font-mono text-right">{formatFloat(cd.stats.std)}</span>
+                        <span class="text-muted-soft">dtype</span>
+                        <span class="text-muted font-mono text-right">{cd.dtype}</span>
+                        <span class="text-muted-soft">min</span>
+                        <span class="text-muted font-mono text-right">{formatFloat(cd.stats.min)}</span>
+                        <span class="text-muted-soft">max</span>
+                        <span class="text-muted font-mono text-right">{formatFloat(cd.stats.max)}</span>
+                        <span class="text-muted-soft">mean</span>
+                        <span class="text-muted font-mono text-right">{formatFloat(cd.stats.mean)}</span>
+                        <span class="text-muted-soft">std</span>
+                        <span class="text-muted font-mono text-right">{formatFloat(cd.stats.std)}</span>
                       </div>
                       <details>
-                        <summary class="text-[10px] text-content-secondary/30 cursor-pointer hover:text-content-secondary/50 transition-colors">
+                        <summary class="text-[10px] text-muted-soft cursor-pointer hover:text-muted transition-colors">
                           Values ({cd.total_elements}{cd.truncated ? ', truncated' : ''})
                         </summary>
-                        <pre class="mt-1 bg-surface-base rounded-lg p-2 text-[9px] text-content-secondary/50 font-mono overflow-x-auto max-h-40 whitespace-pre-wrap leading-tight">{cd.data.map(v => formatFloat(v)).join(', ')}</pre>
+                        <pre class="mt-1 bg-surface-base rounded-lg p-2 text-[9px] text-muted font-mono overflow-x-auto max-h-40 whitespace-pre-wrap leading-tight">{cd.data.map(v => formatFloat(v)).join(', ')}</pre>
                       </details>
                     </div>
                   {/if}
@@ -804,14 +804,14 @@
     <!-- Outputs -->
     {#if outputs.length > 0}
       <details class="mt-4" open>
-        <summary class="text-xs text-content-secondary/40 cursor-pointer hover:text-content-secondary/60 transition-colors">
+        <summary class="text-xs text-muted-soft cursor-pointer hover:text-muted transition-colors">
           Outputs ({outputs.length})
         </summary>
         <div class="mt-1.5 space-y-1">
           {#each outputs as out}
             <div class="bg-surface-base rounded-lg p-2.5 text-xs">
               <div class="flex items-center gap-1.5">
-                <span class="text-content-secondary/25 font-mono w-4 shrink-0">{out.source_port}</span>
+                <span class="text-muted-soft font-mono w-4 shrink-0">{out.source_port}</span>
                 <button
                   class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
                   onmouseenter={() => { setHoveredNode(out.targetId); setHoveredEdge(out.edgeIndex); }}
@@ -826,10 +826,10 @@
                 </button>
               </div>
               {#if out.targetNode}
-                <div class="text-content-secondary/40 ml-5 mt-0.5">{out.targetNode.type}</div>
+                <div class="text-muted-soft ml-5 mt-0.5">{out.targetNode.type}</div>
                 {#if out.targetNode.shape}
-                  <div class="text-content-secondary/40 ml-5 mt-0.5">
-                    [{#each out.targetNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}] {#if out.targetNode.element_type}<span class="text-content-secondary/25">{out.targetNode.element_type}</span>{/if}
+                  <div class="text-muted-soft ml-5 mt-0.5">
+                    [{#each out.targetNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}] {#if out.targetNode.element_type}<span class="text-muted-soft">{out.targetNode.element_type}</span>{/if}
                   </div>
                 {/if}
               {/if}
@@ -841,13 +841,13 @@
   {:else}
     <div class="flex flex-col items-center justify-center py-16 px-4">
       <div class="relative mb-4">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" class="text-content-secondary/12">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" class="text-muted-faint">
           <rect x="3" y="3" width="18" height="18" rx="3" />
           <path d="M9 12h6M12 9v6" stroke-linecap="round" />
         </svg>
         <div class="absolute inset-0 rounded-full" style="animation: node-breathe 3s ease-in-out infinite; background: radial-gradient(circle, rgba(76,141,255,0.15) 0%, transparent 70%);"></div>
       </div>
-      <span class="text-content-secondary/25 text-xs">Select a node or edge</span>
+      <span class="text-muted-soft text-xs">Select a node or edge</span>
     </div>
   {/if}
 </div>

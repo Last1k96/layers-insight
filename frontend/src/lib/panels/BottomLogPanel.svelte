@@ -16,7 +16,7 @@
     info: 'text-blue-400',
     warning: 'text-yellow-400',
     error: 'text-red-400',
-    debug: 'text-gray-500',
+    debug: 'text-muted',
     ov: 'text-purple-400',
   };
 
@@ -124,7 +124,7 @@
       <span class="text-[13px] font-medium tracking-tight text-content-primary">Inference Logs</span>
       <div class="flex items-center gap-2">
         <button
-          class="text-xs text-content-secondary/40 hover:text-content-secondary transition-colors"
+          class="text-xs text-muted-soft hover:text-content-secondary transition-colors"
           onclick={() => logStore.toggle()}
           title="Close logs"
         >
@@ -143,8 +143,8 @@
         <div style:position="absolute" style:top="{startIndex * ROW_HEIGHT}px" style:left="0" style:right="0">
           {#each visibleEntries as entry (entry._id)}
             <div class="flex gap-2 px-3 row-hover" style:height="{ROW_HEIGHT}px" style:line-height="{ROW_HEIGHT}px">
-              <span class="text-content-secondary/30 shrink-0 tabular-nums">{entry.formattedTime}</span>
-              <span class="shrink-0 px-1.5 rounded-full text-[10px] uppercase font-semibold {LEVEL_COLORS[entry.level] ?? 'text-gray-400'} {LEVEL_BG[entry.level] ?? 'bg-gray-700/50'}">
+              <span class="text-muted-soft shrink-0 tabular-nums">{entry.formattedTime}</span>
+              <span class="shrink-0 px-1.5 rounded-full text-[10px] uppercase font-semibold {LEVEL_COLORS[entry.level] ?? 'text-muted'} {LEVEL_BG[entry.level] ?? 'bg-gray-700/50'}">
                 {entry.level}
               </span>
               {#if entry.node_name}
@@ -152,13 +152,13 @@
                   {entry.node_name}
                 </span>
               {/if}
-              <span class="text-content-primary/80 truncate">{entry.message}</span>
+              <span class="text-content-primary truncate">{entry.message}</span>
             </div>
           {/each}
         </div>
       </div>
       {#if logStore.entries.length === 0}
-        <div class="text-content-secondary/20 text-center py-6">No log entries yet</div>
+        <div class="text-muted-soft text-center py-6">No log entries yet</div>
       {/if}
     </div>
   </div>

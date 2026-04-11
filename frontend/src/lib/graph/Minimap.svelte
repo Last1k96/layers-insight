@@ -188,7 +188,7 @@
         class="absolute top-0 left-0 w-3 h-3 z-10 cursor-nw-resize"
         onmousedown={handleResizeDown}
       >
-        <svg class="w-3 h-3 text-gray-500 rotate-180" viewBox="0 0 12 12">
+        <svg class="w-3 h-3 text-muted-soft rotate-180" viewBox="0 0 12 12">
           <path d="M2 10L10 10L10 2" fill="none" stroke="currentColor" stroke-width="1.5"/>
           <path d="M5 10L10 10L10 5" fill="none" stroke="currentColor" stroke-width="1.5"/>
         </svg>
@@ -203,7 +203,7 @@
     </div>
   {/if}
   <button
-    class="px-2 py-0.5 text-xs text-gray-400 bg-[--bg-panel] border border-[--border-color] {collapsed ? 'rounded' : 'rounded-b border-t-0'} hover:bg-[--bg-menu] transition-colors"
+    class="px-2 py-0.5 text-xs text-muted hover:text-content-primary bg-[--bg-panel] border border-[--border-color] {collapsed ? 'rounded' : 'rounded-b border-t-0'} hover:bg-[--bg-menu] transition-colors"
     onclick={() => { collapsed = !collapsed; localStorage.setItem('minimap-collapsed', String(collapsed)); }}
   >
     {collapsed ? 'Map' : 'Hide'}

@@ -117,27 +117,27 @@
   }
 
   function bisectProgressColor(status: string): string {
-    if (status === 'running') return 'rgba(59, 130, 246, 0.1)';
-    if (status === 'paused') return 'rgba(234, 179, 8, 0.1)';
-    if (status === 'done') return 'rgba(34, 197, 94, 0.1)';
-    if (status === 'error') return 'rgba(239, 68, 68, 0.1)';
+    if (status === 'running') return 'var(--status-info-bg)';
+    if (status === 'paused') return 'var(--status-warn-bg)';
+    if (status === 'done') return 'var(--status-ok-bg)';
+    if (status === 'error') return 'var(--status-err-bg)';
     return 'transparent';
   }
 
   function bisectIconColor(status: string): string {
-    if (status === 'running') return '#60a5fa';
-    if (status === 'paused') return '#facc15';
-    if (status === 'done') return '#4ade80';
-    if (status === 'error') return '#f87171';
-    return '#9ca3af';
+    if (status === 'running') return 'var(--status-info)';
+    if (status === 'paused') return 'var(--status-warn)';
+    if (status === 'done') return 'var(--status-ok)';
+    if (status === 'error') return 'var(--status-err)';
+    return 'var(--text-muted)';
   }
 
   function bisectTextColor(status: string): string {
-    if (status === 'running') return '#93c5fd';
-    if (status === 'paused') return '#fde047';
-    if (status === 'done') return '#86efac';
-    if (status === 'error') return '#fca5a5';
-    return '#d1d5db';
+    if (status === 'running') return 'var(--status-info)';
+    if (status === 'paused') return 'var(--status-warn)';
+    if (status === 'done') return 'var(--status-ok)';
+    if (status === 'error') return 'var(--status-err)';
+    return 'var(--text-muted-strong)';
   }
 
   function statusLabel(status: string): string {
@@ -586,8 +586,8 @@
     border: 1px solid transparent;
   }
   .q-icon-btn:hover {
-    background: rgba(76, 141, 255, 0.06);
-    border-color: rgba(76, 141, 255, 0.12);
+    background: var(--accent-bg);
+    border-color: var(--accent-bg-strong);
     color: var(--text-primary);
   }
   .q-icon-btn:active {
@@ -600,7 +600,7 @@
   .q-icon-btn--subtle {
     width: 30px;
     height: 30px;
-    color: rgba(155, 161, 181, 0.5);
+    color: var(--text-muted-soft);
   }
   .q-icon-btn--subtle:hover {
     color: var(--text-secondary);
@@ -608,7 +608,7 @@
 
   .q-cancel-prompt {
     font-size: 11px;
-    color: #f87171;
+    color: var(--status-err);
     font-weight: 500;
   }
   .q-cancel-yes {
@@ -616,17 +616,17 @@
     font-size: 10px;
     font-weight: 600;
     border-radius: 5px;
-    background: rgba(239, 68, 68, 0.15);
-    color: #f87171;
+    background: rgba(248, 113, 113, 0.15);
+    color: var(--status-err);
     transition: background 0.12s;
   }
-  .q-cancel-yes:hover { background: rgba(239, 68, 68, 0.25); }
+  .q-cancel-yes:hover { background: rgba(248, 113, 113, 0.25); }
   .q-cancel-no {
     padding: 2px 8px;
     font-size: 10px;
     font-weight: 600;
     border-radius: 5px;
-    background: rgba(155, 161, 181, 0.08);
+    background: rgba(155, 161, 181, 0.10);
     color: var(--text-secondary);
     transition: all 0.12s;
   }
@@ -641,18 +641,18 @@
     border-radius: 99px;
   }
   .q-badge--blue {
-    background: rgba(76, 141, 255, 0.12);
-    color: #60a5fa;
+    background: var(--accent-bg-strong);
+    color: var(--status-info);
   }
   .q-badge--yellow {
-    background: rgba(234, 179, 8, 0.12);
-    color: #facc15;
+    background: var(--status-warn-bg);
+    color: var(--status-warn);
   }
 
   .q-task-count {
     font-family: var(--font-mono);
     font-size: 11px;
-    color: rgba(155, 161, 181, 0.4);
+    color: var(--text-muted-soft);
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.02em;
   }
@@ -673,31 +673,31 @@
     padding: 6px 0;
     font-size: 11px;
     font-weight: 500;
-    color: rgba(155, 161, 181, 0.7);
+    color: var(--text-muted);
     border-radius: 7px;
-    border: 1px solid rgba(47, 51, 71, 0.6);
+    border: 1px solid var(--border-color);
     background: rgba(27, 30, 43, 0.4);
     transition: all 0.12s ease;
   }
   .q-action-btn:hover {
     color: var(--text-primary);
-    background: rgba(76, 141, 255, 0.04);
-    border-color: rgba(76, 141, 255, 0.15);
+    background: var(--accent-bg-soft);
+    border-color: var(--accent-bg-strong);
   }
   .q-action-btn:active {
     transform: scale(0.97);
   }
   .q-action-btn--active {
-    color: #60a5fa;
-    border-color: rgba(96, 165, 250, 0.2);
-    background: rgba(76, 141, 255, 0.06);
+    color: var(--status-info);
+    border-color: var(--accent-bg-strong);
+    background: var(--accent-bg);
   }
 
   /* ── Filter ── */
   .q-filter {
     padding: 8px 12px;
     flex-shrink: 0;
-    border-bottom: 1px solid rgba(47, 51, 71, 0.5);
+    border-bottom: 1px solid var(--border-soft);
   }
   .q-filter-row {
     display: flex;
@@ -712,14 +712,14 @@
   .q-search-icon {
     position: absolute;
     left: 9px;
-    color: rgba(155, 161, 181, 0.3);
+    color: var(--text-muted);
     pointer-events: none;
   }
   .q-search-input {
     width: 100%;
     padding: 7px 10px 7px 28px;
     background: var(--bg-input);
-    border: 1px solid rgba(47, 51, 71, 0.5);
+    border: 1px solid var(--border-soft);
     border-radius: 8px;
     font-size: 12px;
     color: var(--text-primary);
@@ -727,11 +727,11 @@
     transition: all 0.15s ease;
   }
   .q-search-input::placeholder {
-    color: rgba(155, 161, 181, 0.25);
+    color: var(--text-muted-soft);
   }
   .q-search-input:focus {
-    border-color: rgba(76, 141, 255, 0.3);
-    box-shadow: 0 0 0 3px rgba(76, 141, 255, 0.06);
+    border-color: var(--accent-glow);
+    box-shadow: 0 0 0 3px var(--accent-bg);
   }
 
   .q-status-tabs {
@@ -746,7 +746,7 @@
     padding: 4px 10px;
     font-size: 11px;
     font-weight: 500;
-    color: rgba(155, 161, 181, 0.5);
+    color: var(--text-muted-soft);
     border-radius: 6px;
     transition: all 0.12s;
   }
@@ -755,8 +755,8 @@
     background: rgba(155, 161, 181, 0.04);
   }
   .q-status-tab--active {
-    color: #4C8DFF;
-    background: rgba(76, 141, 255, 0.08);
+    color: var(--accent);
+    background: var(--accent-bg);
   }
   .q-status-dot {
     width: 6px;
@@ -772,7 +772,7 @@
     gap: 8px;
     padding: 6px 12px;
     flex-shrink: 0;
-    border-bottom: 1px solid rgba(47, 51, 71, 0.3);
+    border-bottom: 1px solid var(--border-soft);
     background: rgba(27, 30, 43, 0.3);
   }
   .q-col-status { width: 12px; flex-shrink: 0; }
@@ -781,7 +781,7 @@
     font-weight: 600;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: rgba(155, 161, 181, 0.35);
+    color: var(--text-muted);
     cursor: pointer;
     transition: color 0.12s;
     display: flex;
@@ -789,8 +789,8 @@
     gap: 2px;
     white-space: nowrap;
   }
-  .q-colheader:hover { color: rgba(155, 161, 181, 0.6); }
-  .q-colheader--active { color: rgba(155, 161, 181, 0.6); }
+  .q-colheader:hover { color: var(--text-muted-strong); }
+  .q-colheader--active { color: var(--text-muted-strong); }
   .q-col-node { flex: 1; text-align: left; }
   .q-col-type { flex-shrink: 0; text-align: right; justify-content: flex-end; }
   .q-col-cos { width: 56px; flex-shrink: 0; text-align: right; justify-content: flex-end; }
@@ -825,7 +825,7 @@
   .q-empty-ring {
     position: absolute;
     border-radius: 99px;
-    border: 1px solid rgba(76, 141, 255, 0.1);
+    border: 1px solid var(--accent-bg-strong);
   }
   .q-empty-ring--outer {
     inset: 0;
@@ -833,15 +833,15 @@
   }
   .q-empty-ring--inner {
     inset: 8px;
-    border-color: rgba(76, 141, 255, 0.15);
+    border-color: var(--accent-bg-strong);
     animation: ring-breathe 3s ease-in-out infinite 0.5s;
   }
   .q-empty-icon {
-    color: rgba(155, 161, 181, 0.2);
+    color: var(--text-muted-soft);
   }
   .q-empty-text {
     font-size: 12px;
-    color: rgba(155, 161, 181, 0.3);
+    color: var(--text-muted);
     font-weight: 500;
   }
 
@@ -860,14 +860,14 @@
   .q-separator-line {
     flex: 1;
     height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(76, 141, 255, 0.12), transparent);
+    background: linear-gradient(90deg, transparent, var(--accent-bg-strong), transparent);
   }
   .q-separator-label {
     font-size: 9px;
     font-weight: 600;
     letter-spacing: 0.12em;
     text-transform: uppercase;
-    color: rgba(76, 141, 255, 0.3);
+    color: var(--accent-glow);
     flex-shrink: 0;
   }
 
@@ -884,17 +884,17 @@
     border-left: 2px solid transparent;
   }
   .q-task:hover {
-    background: rgba(76, 141, 255, 0.03);
+    background: var(--accent-bg-soft);
   }
   .q-task--selected {
-    background: rgba(76, 141, 255, 0.06);
-    border-left-color: #4C8DFF;
+    background: var(--accent-bg);
+    border-left-color: var(--accent);
   }
   .q-task--hovered {
-    background: rgba(76, 141, 255, 0.03);
+    background: var(--accent-bg-soft);
   }
   .q-task--executing {
-    background: rgba(76, 141, 255, 0.02);
+    background: var(--accent-bg-soft);
   }
   .q-task--nested {
     padding-left: 32px;
@@ -926,7 +926,7 @@
   }
   .q-task-type {
     font-size: 11px;
-    color: rgba(155, 161, 181, 0.35);
+    color: var(--text-muted);
     flex-shrink: 0;
     text-align: right;
     white-space: nowrap;
@@ -942,14 +942,14 @@
     width: 20px;
     flex-shrink: 0;
     font-size: 11px;
-    color: rgba(155, 161, 181, 0.15);
+    color: var(--text-muted-soft);
     text-align: center;
     transition: color 0.12s;
     border-radius: 4px;
     padding: 2px 0;
   }
   .q-task-delete:hover {
-    color: #f87171;
+    color: var(--status-err);
   }
 
   /* ── Bisect Job ── */
@@ -961,7 +961,7 @@
     transition: background-color 0.1s ease;
   }
   .q-bisect-header:hover {
-    background: rgba(76, 141, 255, 0.03);
+    background: var(--accent-bg-soft);
   }
   .q-bisect-progress {
     position: absolute;
@@ -977,7 +977,7 @@
     width: 100%;
   }
   .q-bisect-chevron {
-    color: rgba(155, 161, 181, 0.4);
+    color: var(--text-muted-soft);
     transition: color 0.12s;
     flex-shrink: 0;
   }
@@ -992,16 +992,17 @@
     min-width: 0;
   }
   .q-bisect-node {
-    color: rgba(156, 163, 175, 0.5);
+    color: var(--text-muted-soft);
     font-family: var(--font-mono);
     font-size: 11px;
     margin-left: 4px;
   }
   .q-bisect-output {
-    color: rgba(147, 197, 253, 0.6);
+    color: var(--status-info);
     font-family: var(--font-mono);
     font-size: 10px;
     margin-right: 4px;
+    opacity: 0.75;
   }
   .q-bisect-tag {
     font-size: 10px;
@@ -1012,17 +1013,17 @@
     transition: all 0.12s;
   }
   .q-bisect-tag--busy {
-    background: rgba(155, 161, 181, 0.1);
-    color: rgba(155, 161, 181, 0.5);
+    background: rgba(155, 161, 181, 0.10);
+    color: var(--text-muted-soft);
   }
   .q-bisect-tag--merge {
-    background: rgba(74, 222, 128, 0.1);
-    color: #4ade80;
+    background: var(--status-ok-bg);
+    color: var(--status-ok);
   }
-  .q-bisect-tag--merge:hover { background: rgba(74, 222, 128, 0.18); }
+  .q-bisect-tag--merge:hover { background: rgba(52, 211, 153, 0.18); }
   .q-bisect-tag--discard {
-    background: rgba(248, 113, 113, 0.1);
-    color: #f87171;
+    background: var(--status-err-bg);
+    color: var(--status-err);
   }
   .q-bisect-tag--discard:hover { background: rgba(248, 113, 113, 0.18); }
 </style>

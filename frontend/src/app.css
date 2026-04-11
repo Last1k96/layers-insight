@@ -8,8 +8,33 @@
   --bg-menu: #2A2E41;
   --bg-input: #1E2130;
   --border-color: #2F3347;
+  --border-soft: rgba(47, 51, 71, 0.5);
   --text-primary: #E1E4ED;
   --text-secondary: #9BA1B5;
+
+  /* Muted text ladder — four fixed steps derived from --text-secondary */
+  --text-muted-strong: rgba(155, 161, 181, 0.85);
+  --text-muted: rgba(155, 161, 181, 0.70);
+  --text-muted-soft: rgba(155, 161, 181, 0.55);
+  --text-muted-faint: rgba(155, 161, 181, 0.40);
+
+  /* Accent + tints */
+  --accent: #4C8DFF;
+  --accent-hover: #6BA1FF;
+  --accent-bg-strong: rgba(76, 141, 255, 0.12);
+  --accent-bg: rgba(76, 141, 255, 0.08);
+  --accent-bg-soft: rgba(76, 141, 255, 0.04);
+  --accent-glow: rgba(76, 141, 255, 0.30);
+
+  /* Status palette — shared across queue badges and node-status boxes */
+  --status-info: #60A5FA;
+  --status-info-bg: rgba(96, 165, 250, 0.08);
+  --status-warn: #FBBF24;
+  --status-warn-bg: rgba(251, 191, 36, 0.08);
+  --status-ok: #34D399;
+  --status-ok-bg: rgba(52, 211, 153, 0.08);
+  --status-err: #F87171;
+  --status-err-bg: rgba(248, 113, 113, 0.08);
 
   --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
   --font-display: 'Outfit', system-ui, -apple-system, sans-serif;

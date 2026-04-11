@@ -318,11 +318,11 @@
   }
 
   .tree-item.active {
-    background: rgba(76, 141, 255, 0.1);
+    background: var(--accent-bg);
   }
 
   .tree-item.active .tree-label {
-    color: #8bb4ff;
+    color: var(--accent-hover);
   }
 
   .tree-indent {
@@ -361,7 +361,7 @@
   }
 
   .dot-root {
-    background: #4C8DFF;
+    background: var(--accent);
   }
 
   .dot-output {
@@ -422,7 +422,7 @@
 
   .delete-btn:hover {
     opacity: 1 !important;
-    background: rgba(229, 77, 77, 0.15);
-    color: #E54D4D;
+    background: var(--status-err-bg);
+    color: var(--status-err);
   }
 </style>

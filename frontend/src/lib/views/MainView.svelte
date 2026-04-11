@@ -297,7 +297,7 @@
         <div class="w-48 h-1.5 bg-white/10 rounded-full overflow-hidden">
           <div class="h-full bg-blue-500 rounded-full transition-all duration-300" style="width: {loadingPct}%"></div>
         </div>
-        <div class="text-content-secondary text-sm">{graphStore.loadingDetail || 'Connecting…'}</div>
+        <div class="text-muted text-sm">{graphStore.loadingDetail || 'Connecting…'}</div>
       </div>
     </div>
   {/if}
@@ -340,15 +340,13 @@
     padding: 0.3rem;
     margin-right: 0.25rem;
     border-radius: 0.375rem;
-    color: var(--text-secondary);
-    opacity: 0.5;
-    transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+    color: var(--text-muted);
+    transition: color 0.15s ease, background 0.15s ease;
   }
 
   .back-btn:hover {
-    opacity: 1;
     color: var(--text-primary);
-    background: rgba(76, 141, 255, 0.1);
+    background: var(--accent-bg);
   }
 
   .session-name-header {
@@ -374,19 +372,18 @@
     padding: 0.35rem;
     margin-left: 0.25rem;
     border-radius: 0.25rem;
-    color: var(--text-secondary);
+    color: var(--text-muted-soft);
     opacity: 0;
     transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
   }
 
   .session-name-header:hover .rename-btn-header {
-    opacity: 0.6;
+    opacity: 1;
   }
 
   .rename-btn-header:hover {
-    opacity: 1 !important;
-    color: #4C8DFF;
-    background: rgba(76, 141, 255, 0.1);
+    color: var(--accent);
+    background: var(--accent-bg);
   }
 
   .rename-input {
@@ -394,7 +391,7 @@
     font-weight: 500;
     color: var(--text-primary);
     background: var(--bg-primary);
-    border: 1px solid #4C8DFF;
+    border: 1px solid var(--accent);
     border-radius: 0.25rem;
     padding: 0 0.3rem;
     outline: none;

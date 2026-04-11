@@ -68,7 +68,7 @@
   <!-- Keyboard shortcuts hint -->
   <button
     onclick={() => toggleHelp()}
-    class="px-1.5 py-1.5 rounded-md text-xs font-medium border transition-colors bg-[--bg-panel] border-[--border-color] text-gray-400 hover:text-gray-200 hover:bg-[--bg-menu]"
+    class="px-1.5 py-1.5 rounded-md text-xs font-medium border transition-colors bg-[--bg-panel] border-[--border-color] text-muted hover:text-content-primary hover:bg-[--bg-menu]"
     title="Keyboard shortcuts (?)"
   >?</button>
 
@@ -81,7 +81,7 @@
     class:text-white={configStore.accuracyEnabled}
     class:bg-[--bg-panel]={!configStore.accuracyEnabled}
     class:border-[--border-color]={!configStore.accuracyEnabled}
-    class:text-gray-300={!configStore.accuracyEnabled}
+    class:text-muted-strong={!configStore.accuracyEnabled}
     class:hover:bg-[--bg-menu]={!configStore.accuracyEnabled}
     title={configStore.accuracyEnabled ? 'Disable accuracy overlay' : 'Enable accuracy overlay (or hold Alt for quick preview)'}
   >
@@ -97,10 +97,10 @@
     class="px-1.5 py-1.5 rounded-md text-xs border transition-colors"
     class:bg-[--bg-panel]={!expanded}
     class:border-[--border-color]={!expanded}
-    class:text-gray-400={!expanded}
+    class:text-muted={!expanded}
     class:bg-[--bg-menu]={expanded}
-    class:border-gray-500={expanded}
-    class:text-gray-200={expanded}
+    class:border-accent={expanded}
+    class:text-content-primary={expanded}
     title="Accuracy settings"
   >
     <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -115,19 +115,19 @@
   <div class="absolute top-12 right-3 z-30 w-56 bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-lg shadow-xl p-3 space-y-3">
     <!-- Metric selector -->
     <div>
-      <span class="block text-[10px] uppercase tracking-wide text-gray-500 mb-1">Metric</span>
+      <span class="block text-[10px] uppercase tracking-wide text-muted-soft mb-1">Metric</span>
       <div class="flex gap-1">
         {#each Object.entries(METRIC_LABELS) as [key, label] (key)}
           <button
             onclick={() => setMetric(key as AccuracyMetricKey)}
             class="flex-1 px-2 py-1 rounded text-xs font-medium transition-colors border"
-            class:bg-blue-600={configStore.accuracyMetric === key}
-            class:border-blue-500={configStore.accuracyMetric === key}
+            class:bg-accent={configStore.accuracyMetric === key}
+            class:border-accent={configStore.accuracyMetric === key}
             class:text-white={configStore.accuracyMetric === key}
             class:bg-transparent={configStore.accuracyMetric !== key}
             class:border-[--border-color]={configStore.accuracyMetric !== key}
-            class:text-gray-400={configStore.accuracyMetric !== key}
-            class:hover:text-gray-200={configStore.accuracyMetric !== key}
+            class:text-muted={configStore.accuracyMetric !== key}
+            class:hover:text-content-primary={configStore.accuracyMetric !== key}
           >
             {label}
           </button>
@@ -138,17 +138,17 @@
     <!-- Range inputs -->
     <div>
       <div class="flex items-center justify-between mb-1">
-        <span class="text-[10px] uppercase tracking-wide text-gray-500">Color range</span>
+        <span class="text-[10px] uppercase tracking-wide text-muted-soft">Color range</span>
         <button
           onclick={resetRange}
-          class="text-[10px] text-gray-500 hover:text-gray-300 transition-colors"
+          class="text-[10px] text-muted-soft hover:text-content-primary transition-colors"
         >
           Reset
         </button>
       </div>
       <div class="flex gap-2 items-center">
         <div class="flex-1">
-          <label for="acc-range-min" class="block text-[10px] text-gray-500 mb-0.5">Min</label>
+          <label for="acc-range-min" class="block text-[10px] text-muted-soft mb-0.5">Min</label>
           <input
             id="acc-range-min"
             type="number"
@@ -156,13 +156,13 @@
             value={configStore.activeRange.min}
             oninput={(e) => handleRangeInput('min', e)}
             onwheel={(e) => handleRangeWheel('min', e)}
-            class="w-full bg-[--bg-primary] border border-[--border-color] rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-blue-500"
+            class="w-full bg-[--bg-primary] border border-[--border-color] rounded px-2 py-1 text-xs text-content-primary focus:outline-none focus:border-accent"
           />
         </div>
         <!-- Gradient preview bar -->
         <div class="w-6 h-4 rounded mt-3.5" style="background: linear-gradient(to right, #EF4444, #E5B010, #10B981);"></div>
         <div class="flex-1">
-          <label for="acc-range-max" class="block text-[10px] text-gray-500 mb-0.5">Max</label>
+          <label for="acc-range-max" class="block text-[10px] text-muted-soft mb-0.5">Max</label>
           <input
             id="acc-range-max"
             type="number"
@@ -170,11 +170,11 @@
             value={configStore.activeRange.max}
             oninput={(e) => handleRangeInput('max', e)}
             onwheel={(e) => handleRangeWheel('max', e)}
-            class="w-full bg-[--bg-primary] border border-[--border-color] rounded px-2 py-1 text-xs text-gray-200 focus:outline-none focus:border-blue-500"
+            class="w-full bg-[--bg-primary] border border-[--border-color] rounded px-2 py-1 text-xs text-content-primary focus:outline-none focus:border-accent"
           />
         </div>
       </div>
-      <div class="flex justify-between text-[9px] text-gray-600 mt-0.5">
+      <div class="flex justify-between text-[9px] text-muted-faint mt-0.5">
         <span>{configStore.accuracyMetric === 'cosine_similarity' ? 'Bad' : 'Good'}</span>
         <span>{configStore.accuracyMetric === 'cosine_similarity' ? 'Good' : 'Bad'}</span>
       </div>

@@ -102,7 +102,7 @@
     <!-- Header -->
     <div class="flex items-center justify-between px-4 py-3 border-b border-[--border-color]">
       <h3 class="text-sm font-medium text-gray-200">Bisect</h3>
-      <button class="text-gray-400 hover:text-gray-200 text-xs" onclick={onclose}>Close</button>
+      <button class="text-gray-300 hover:text-gray-100 text-xs" onclick={onclose}>Close</button>
     </div>
 
     <!-- Tabs -->
@@ -120,17 +120,17 @@
 
       <div class="p-4 space-y-3">
         {#if activeTab === 'all-outputs'}
-          <div class="text-xs text-gray-400">
+          <div class="text-xs text-gray-300">
             Start one bisect job per model output. Correct outputs finish in 1 inference. Graph-aware search follows actual data paths.
           </div>
         {:else if activeTab === 'from-node' && endNodeName}
-          <div class="text-xs text-gray-400">
+          <div class="text-xs text-gray-300">
             End node: <span class="text-gray-200 font-mono">{endNodeName}</span>
           </div>
         {/if}
 
         <label class="block text-xs">
-          <span class="text-gray-400">Search for:</span>
+          <span class="text-gray-300">Search for:</span>
           <select
             value={bisectStore.searchFor}
             onchange={onSearchForChange}
@@ -144,7 +144,7 @@
 
         {#if bisectStore.searchFor === 'accuracy_drop'}
           <label class="block text-xs">
-            <span class="text-gray-400">Metric:</span>
+            <span class="text-gray-300">Metric:</span>
             <select
               value={bisectStore.metric}
               onchange={onMetricChange}
@@ -157,7 +157,7 @@
           </label>
 
           <label class="block text-xs">
-            <span class="text-gray-400">Threshold:</span>
+            <span class="text-gray-300">Threshold:</span>
             <input
               type="number"
               step="0.01"
@@ -173,7 +173,7 @@
           </label>
         {/if}
 
-        <div class="text-xs text-gray-500">
+        <div class="text-xs text-gray-400">
           {#if activeTab === 'all-outputs'}
             Mode: per-output graph-aware bisect
           {:else if activeTab === 'from-node' && endNodeName}

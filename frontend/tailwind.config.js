@@ -18,6 +18,13 @@ export default {
           primary: '#E1E4ED',
           secondary: '#9BA1B5',
         },
+        // Unified muted text ladder — fixed four steps. Do not apply opacity modifiers.
+        muted: {
+          strong: 'rgba(155, 161, 181, 0.85)',
+          DEFAULT: 'rgba(155, 161, 181, 0.70)',
+          soft: 'rgba(155, 161, 181, 0.55)',
+          faint: 'rgba(155, 161, 181, 0.40)',
+        },
         accent: {
           DEFAULT: '#4C8DFF',
           hover: '#6BA1FF',
