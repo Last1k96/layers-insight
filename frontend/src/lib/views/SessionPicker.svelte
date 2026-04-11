@@ -125,13 +125,12 @@
   }
 
   onMount(() => {
-    sessionStore.fetchSessions().then(() => {
-      const sessions = sessionStore.sessions;
-      if (sessions.length === 0) return;
+    const sessions = sessionStore.sessions;
+    if (sessions.length > 0) {
       const lastId = sessionStore.lastSessionId;
       const idx = lastId ? sessions.findIndex(s => s.id === lastId) : -1;
       selectedIndex = idx >= 0 ? idx : 0;
-    });
+    }
     document.addEventListener('keydown', handleKeydown);
     return () => document.removeEventListener('keydown', handleKeydown);
   });

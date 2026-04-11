@@ -20,6 +20,9 @@ class AppConfig(BaseSettings):
     host: str = "0.0.0.0"
     sessions_dir: Path = Path("sessions")
     https: bool = True
+    max_upload_bytes: int = 5 << 30  # 5 GiB per file
+    max_group_bytes: int = 10 << 30  # 10 GiB per upload group
+    uploads_ttl_hours: int = 6
 
     model_config = {"env_prefix": "LI_"}
 

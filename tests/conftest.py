@@ -10,9 +10,10 @@ import pytest
 from fastapi import FastAPI
 
 from backend.config import AppConfig
-from backend.routers import bisect, devices, graph, inference, sessions, tensors
+from backend.routers import bisect, devices, graph, inference, sessions, tensors, uploads
 from backend.services.queue_service import QueueService
 from backend.services.session_service import SessionService
+from backend.services.upload_service import UploadService
 from backend.schemas.session import SessionConfig
 
 
@@ -72,6 +73,9 @@ def test_app(tmp_path, sample_model_files):
     session_service = SessionService(config.sessions_dir)
     app.state.session_service = session_service
 
+    upload_service = UploadService(sessions_dir=config.sessions_dir)
+    app.state.upload_service = upload_service
+
     queue_service = QueueService()
     queue_service.set_callbacks(
         notify=AsyncMock(),
@@ -91,6 +95,7 @@ def test_app(tmp_path, sample_model_files):
     app.include_router(inference.router)
     app.include_router(bisect.router)
     app.include_router(tensors.router)
+    app.include_router(uploads.router)
 
     return app
 

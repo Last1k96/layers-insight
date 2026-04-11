@@ -1,4 +1,5 @@
 import type { SessionInfo, SessionDetail, SessionConfig, CloneRequest, CloneResponse, CompareResponse } from './types';
+import { SESSION_STORAGE_KEY, VIEW_STORAGE_KEY } from '../initView';
 
 async function extractError(res: Response): Promise<string> {
   try { return (await res.json()).detail || res.statusText; } catch { return res.statusText; }
@@ -52,9 +53,18 @@ class SessionStore {
     this.error = null;
     try {
       const res = await fetch(`/api/sessions/${sessionId}`);
+      if (res.status === 404) {
+        if (localStorage.getItem(SESSION_STORAGE_KEY) === sessionId) {
+          localStorage.removeItem(SESSION_STORAGE_KEY);
+          localStorage.removeItem(VIEW_STORAGE_KEY);
+        }
+        this.currentSession = null;
+        this.error = `Session ${sessionId} no longer exists.`;
+        return;
+      }
       if (!res.ok) throw new Error(await extractError(res));
       this.currentSession = await res.json();
-      localStorage.setItem('lastSessionId', sessionId);
+      localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
     } catch (e: any) {
       this.error = e.message;
     } finally {
@@ -63,7 +73,7 @@ class SessionStore {
   }
 
   get lastSessionId(): string | null {
-    return localStorage.getItem('lastSessionId');
+    return localStorage.getItem(SESSION_STORAGE_KEY);
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -72,6 +82,10 @@ class SessionStore {
       this.sessions = this.sessions.filter(s => s.id !== sessionId);
       if (this.currentSession?.id === sessionId) {
         this.currentSession = null;
+      }
+      if (localStorage.getItem(SESSION_STORAGE_KEY) === sessionId) {
+        localStorage.removeItem(SESSION_STORAGE_KEY);
+        localStorage.removeItem(VIEW_STORAGE_KEY);
       }
     } catch (e: any) {
       this.error = e.message;

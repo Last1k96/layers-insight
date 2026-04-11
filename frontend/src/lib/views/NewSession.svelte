@@ -5,6 +5,11 @@
   import type { InputConfig, ModelInputInfo, DeviceProperty } from '../stores/types';
   import FileBrowser from '../components/FileBrowser.svelte';
   import PathInput from '../components/PathInput.svelte';
+  import SourceField from '../components/SourceField.svelte';
+  import { deleteUploadGroup, type StagedFile } from '../stores/upload.svelte';
+  import { CLI_CONSUMED_KEY, cliFingerprint } from '../initView';
+
+  type SourceMode = 'server' | 'upload';
 
   let {
     onsessioncreated,
@@ -27,6 +32,26 @@
   let refDevice = $state('CPU');
   let submitting = $state(false);
   let error = $state<string | null>(null);
+
+  // Upload state — shared group for the whole NewSession draft.
+  let uploadGroupId = $state<string | null>(null);
+  let modelSource = $state<SourceMode>('server');
+  let modelUploads = $state<StagedFile[]>([]);
+  let inputSources = $state<Record<number, SourceMode>>({});
+  let inputUploads = $state<Record<number, StagedFile[]>>({});
+
+  /** Recognized model file extensions in priority order. */
+  const MODEL_PRIMARY_EXT = ['.xml', '.onnx', '.pb', '.tflite', '.pt', '.pth'];
+
+  /** Find the file in `files` that should drive `model_path`. */
+  function pickPrimaryModel(files: StagedFile[]): StagedFile | null {
+    if (files.length === 0) return null;
+    for (const ext of MODEL_PRIMARY_EXT) {
+      const hit = files.find(f => f.original_filename.toLowerCase().endsWith(ext));
+      if (hit) return hit;
+    }
+    return files[files.length - 1];
+  }
 
   // Clone mode tracking
   let isCloneMode = $derived(!!cloneSourceId);
@@ -329,6 +354,9 @@
     } else if (result.inputs.length === 0) {
       inputsError = 'Model has no inputs.';
     } else {
+      // Reset per-input upload state when re-inspecting a different model.
+      inputSources = {};
+      inputUploads = {};
       modelInputs = result.inputs.map((info) => {
         const dynDims = hasDynamicDims(info.shape);
         return {
@@ -362,9 +390,28 @@
           }) : undefined,
         };
       });
+      // Initialize per-input upload state so SourceField bindings always have
+      // a defined value to write to.
+      const initSources: Record<number, SourceMode> = {};
+      const initUploads: Record<number, StagedFile[]> = {};
+      for (let i = 0; i < modelInputs.length; i++) {
+        initSources[i] = 'server';
+        initUploads[i] = [];
+      }
+      inputSources = initSources;
+      inputUploads = initUploads;
       inspectedModelPath = path;
     }
     loadingInputs = false;
+  }
+
+  /** Toggle a per-input source between random and file. When switching to file
+   *  with no path yet, default the SourceField to upload mode (most users
+   *  picking File on a remote browser want to drop a local file). */
+  function onInputSourceChange(i: number) {
+    if (modelInputs[i].source === 'file' && !modelInputs[i].path) {
+      inputSources[i] = 'upload';
+    }
   }
 
   const debouncedInspectModel = debounce((path: string) => {
@@ -424,8 +471,8 @@
       return;
     }
 
-    // Fetch defaults to pre-fill form
-    const defaults = await configStore.fetchDefaults();
+    // Read CLI defaults already fetched by App init.
+    const defaults = configStore.defaults;
 
     if (defaults) {
       if (defaults.ov_path) ovPath = defaults.ov_path;
@@ -449,6 +496,15 @@
           applyCliInputs(defaults.cli_inputs);
         }
       }
+
+      // Mark this CLI fingerprint as consumed so an in-tab refresh
+      // doesn't bounce the user back to this form.
+      try {
+        const fp = cliFingerprint(defaults);
+        if (fp) sessionStorage.setItem(CLI_CONSUMED_KEY, fp);
+      } catch { /* ignore */ }
+    } else {
+      configStore.devices = ['CPU'];
     }
   });
 
@@ -482,6 +538,53 @@
         debounceInputFileCheck(i);
       }
     }
+  }
+
+  function onModelUploadComplete() {
+    // Re-pick the primary model file from the current upload list.
+    // For IR pairs the .xml wins; for ONNX/PB/TFLite/PyTorch the file itself.
+    const primary = pickPrimaryModel(modelUploads);
+    if (!primary) return;
+    if (primary.staged_path !== modelPath) {
+      modelPath = primary.staged_path;
+      onModelPathInput();
+    }
+  }
+
+  $effect(() => {
+    // Whenever the upload list changes (file added or removed), re-pick the
+    // primary so modelPath stays in sync.
+    if (modelSource !== 'upload') return;
+    const primary = pickPrimaryModel(modelUploads);
+    if (primary && primary.staged_path !== modelPath) {
+      modelPath = primary.staged_path;
+      onModelPathInput();
+    } else if (!primary && modelPath) {
+      modelPath = '';
+      onModelPathInput();
+    }
+  });
+
+  function handleBack() {
+    if (uploadGroupId) {
+      // Fire-and-forget; the TTL sweeper catches anything that fails.
+      deleteUploadGroup(uploadGroupId);
+      uploadGroupId = null;
+    }
+    onback();
+  }
+
+  function onInputUploadComplete(i: number, file: StagedFile) {
+    if (!uploadGroupId) uploadGroupId = file.group_id;
+    modelInputs[i] = { ...modelInputs[i], path: file.staged_path };
+    // Auto-infer precision from .bin file size when possible.
+    if (file.original_filename.toLowerCase().endsWith('.bin')) {
+      const inferred = inferPrecisionFromBin(modelInputs[i], file.size);
+      if (inferred) {
+        modelInputs[i] = { ...modelInputs[i], data_type: inferred };
+      }
+    }
+    debounceInputFileCheck(i);
   }
 
   /** Extract the inner type name from OV strings like "<Type: 'float32'>" or plain "f32" */
@@ -586,6 +689,12 @@
 
       submitting = false;
       if (info) {
+        // Session already self-copies model + inputs into its own dir,
+        // so the staging group can be released immediately.
+        if (uploadGroupId) {
+          deleteUploadGroup(uploadGroupId);
+          uploadGroupId = null;
+        }
         onsessioncreated(info.id);
       } else {
         error = sessionStore.error ?? 'Failed to create session';
@@ -598,7 +707,7 @@
   <div class="form-inner">
     <!-- Header -->
     <div class="form-header">
-      <button class="back-btn" onclick={onback}>
+      <button class="back-btn" onclick={handleBack}>
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
           <line x1="12" y1="8" x2="4" y2="8" />
           <polyline points="8,4 4,8 8,12" />
@@ -666,44 +775,25 @@
         </div>
 
         <div class="field-group">
-          <label for="model-path" class="field-label">Model Path <span class="field-req">.xml</span></label>
-          <div class="path-row">
-            <PathInput
-              bind:value={modelPath}
-              mode="file"
-              placeholder="/path/to/model.xml"
-              class="flex-1"
-              id="model-path"
-              oninput={onModelPathInput}
-            />
-            <button
-              type="button"
-              class="browse-btn"
-              title="Browse files"
-              onclick={() => openBrowser('model')}
-            >
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
-                <path d="M2 5.5V3a1 1 0 011-1h3l1.5 1.5H11a1 1 0 011 1V11a1 1 0 01-1 1H3a1 1 0 01-1-1V5.5z" />
-              </svg>
-            </button>
-            <div class="field-status-slot">
-              {#if loadingInputs}
-                <div class="field-status">
-                  <svg class="status-spin" width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <circle cx="6" cy="6" r="4.5" stroke="currentColor" stroke-width="1.2" stroke-dasharray="20" stroke-dashoffset="6" stroke-linecap="round" />
-                  </svg>
-                </div>
-              {:else if inputsError}
-                <div class="field-status field-warn" title={inputsError}>
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
-                    <path d="M7 1.5L12.5 11.5H1.5L7 1.5z" stroke-linejoin="round" />
-                    <line x1="7" y1="6" x2="7" y2="8.5" stroke-linecap="round" />
-                    <circle cx="7" cy="10" r="0.5" fill="currentColor" />
-                  </svg>
-                </div>
-              {/if}
-            </div>
-          </div>
+          <label for="model-path" class="field-label">Model <span class="field-req">.xml / .onnx / ...</span></label>
+          <SourceField
+            kind="model"
+            multi={true}
+            bind:mode={modelSource}
+            bind:serverPath={modelPath}
+            bind:uploadedFiles={modelUploads}
+            bind:groupId={uploadGroupId}
+            placeholder="/path/to/model.xml"
+            inputId="model-path"
+            onServerInput={onModelPathInput}
+            onBrowse={() => openBrowser('model')}
+            onUploadComplete={() => onModelUploadComplete()}
+          />
+          {#if loadingInputs}
+            <div class="field-hint">Loading model inputs…</div>
+          {:else if inputsError}
+            <div class="field-hint field-warn">{inputsError}</div>
+          {/if}
         </div>
 
         <div class="field-group">
@@ -748,6 +838,7 @@
                     <select
                       id="source-{i}"
                       bind:value={modelInputs[i].source}
+                      onchange={() => onInputSourceChange(i)}
                       title="Source"
                       class="ctrl-select"
                     >
@@ -861,35 +952,18 @@
                   </div>
                 {/if}
                 {#if input.source === 'file'}
-                  <div class="path-row" style="margin-top: 0.25rem;">
-                    <PathInput
-                      bind:value={modelInputs[i].path}
-                      mode="file"
+                  <div style="margin-top: 0.25rem;">
+                    <SourceField
+                      kind="input"
+                      bind:mode={inputSources[i]}
+                      bind:serverPath={modelInputs[i].path}
+                      bind:uploadedFiles={inputUploads[i]}
+                      bind:groupId={uploadGroupId}
                       placeholder="/path/to/input.npy"
-                      class="flex-1 min-w-0 file-input {inputFileErrors[i] ? 'input-error' : ''}"
-                      oninput={() => debounceInputFileCheck(i)}
+                      onServerInput={() => debounceInputFileCheck(i)}
+                      onBrowse={() => openBrowser('model', i)}
+                      onUploadComplete={(f) => onInputUploadComplete(i, f)}
                     />
-                    <button
-                      type="button"
-                      class="browse-btn small"
-                      title="Browse files"
-                      onclick={() => openBrowser('model', i)}
-                    >
-                      <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
-                        <path d="M2 5.5V3a1 1 0 011-1h3l1.5 1.5H11a1 1 0 011 1V11a1 1 0 01-1 1H3a1 1 0 01-1-1V5.5z" />
-                      </svg>
-                    </button>
-                    <div class="field-status-slot">
-                      {#if inputFileErrors[i]}
-                        <div class="field-status field-warn" title={inputFileErrors[i]}>
-                          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
-                            <path d="M7 1.5L12.5 11.5H1.5L7 1.5z" stroke-linejoin="round" />
-                            <line x1="7" y1="6" x2="7" y2="8.5" stroke-linecap="round" />
-                            <circle cx="7" cy="10" r="0.5" fill="currentColor" />
-                          </svg>
-                        </div>
-                      {/if}
-                    </div>
                   </div>
                   {#if inputFileErrors[i]}
                     <div class="input-file-error">{inputFileErrors[i]}</div>

@@ -10,8 +10,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 
 from backend.config import AppConfig, parse_cli_args
-from backend.routers import bisect, devices, graph, inference, sessions, tensors
+from backend.routers import bisect, devices, graph, inference, sessions, tensors, uploads
 from backend.services.inference_service import InferenceService
+from backend.services.upload_service import UploadService
 from backend.utils.ov_helpers import register_plugins
 from backend.schemas.inference import TaskStatus
 from backend.services.queue_service import QueueService
@@ -66,6 +67,15 @@ async def lifespan(app: FastAPI):
     from backend.services.bisect_service import BisectService
     bisect_service = BisectService()
     app.state.bisect_service = bisect_service
+
+    upload_service = UploadService(
+        sessions_dir=config.sessions_dir,
+        max_upload_bytes=config.max_upload_bytes,
+        max_group_bytes=config.max_group_bytes,
+        ttl_seconds=config.uploads_ttl_hours * 3600,
+    )
+    app.state.upload_service = upload_service
+    upload_sweeper_task = asyncio.create_task(upload_service.run_sweeper())
 
     # Serialize pause/resume/start/stop operations to prevent interleaving
     app.state.pause_resume_lock = asyncio.Lock()
@@ -203,6 +213,11 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    upload_sweeper_task.cancel()
+    try:
+        await upload_sweeper_task
+    except (asyncio.CancelledError, Exception):
+        pass
     await bisect_service.shutdown()
     await queue_service.stop_worker()
     await ws_manager.close_all()
@@ -223,6 +238,7 @@ def create_app() -> FastAPI:
     app.include_router(inference.router)
     app.include_router(bisect.router)
     app.include_router(tensors.router)
+    app.include_router(uploads.router)
 
     # WebSocket endpoint
     @app.websocket("/ws/{session_id}")
