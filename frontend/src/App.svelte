@@ -4,6 +4,7 @@
   import MainView from './lib/views/MainView.svelte';
   import SessionCompare from './lib/views/SessionCompare.svelte';
   import ErrorBanner from './lib/panels/ErrorBanner.svelte';
+  import PerfHud from './lib/perf/PerfHud.svelte';
   import { sessionStore } from './lib/stores/session.svelte';
   import type { SessionConfig } from './lib/stores/types';
 
@@ -104,4 +105,6 @@
   {:else if currentView === 'main'}
     <MainView onback={onBackToPicker} />
   {/if}
+
+  <PerfHud />
 </div>

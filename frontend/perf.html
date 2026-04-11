@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebGPU Renderer Bench</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      padding: 1.5rem;
+      background: #1B1E2B;
+      color: #e5e7eb;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    h1 { font-size: 16px; margin: 0 0 1rem 0; font-weight: 600; }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      margin-bottom: 1rem;
+      padding: 0.75rem;
+      background: #232636;
+      border-radius: 6px;
+    }
+    .controls label { font-size: 12px; opacity: 0.8; }
+    select, button {
+      background: #1B1E2B;
+      color: #e5e7eb;
+      border: 1px solid #3A3F56;
+      padding: 4px 10px;
+      border-radius: 4px;
+      font: inherit;
+      cursor: pointer;
+    }
+    button:hover { background: #2A2E40; }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .scenario-list { display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; }
+    .scenario-list label { display: flex; gap: 0.35rem; align-items: center; cursor: pointer; }
+    #log {
+      white-space: pre;
+      font-size: 12px;
+      line-height: 1.55;
+      background: #0F1119;
+      border: 1px solid #3A3F56;
+      border-radius: 6px;
+      padding: 1rem;
+      max-height: 60vh;
+      overflow: auto;
+    }
+    .row { display: flex; gap: 0.5rem; align-items: center; }
+    .summary {
+      margin-top: 1rem;
+      padding: 0.75rem;
+      background: #0F1119;
+      border: 1px solid #3A3F56;
+      border-radius: 6px;
+      font-size: 12px;
+      white-space: pre;
+      display: none;
+    }
+    a.dl {
+      display: inline-block;
+      margin-top: 0.5rem;
+      color: #4C8DFF;
+      text-decoration: none;
+    }
+    a.dl:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>WebGPU Renderer Bench</h1>
+  <div class="controls">
+    <label>Dataset
+      <select id="dataset"></select>
+    </label>
+    <label class="row"><input type="checkbox" id="disable-minimap"> Disable minimap</label>
+    <button id="run">Run</button>
+    <button id="clear">Clear log</button>
+  </div>
+  <div class="controls">
+    <label>Scenarios:</label>
+    <div class="scenario-list" id="scenario-list"></div>
+  </div>
+  <div id="log">Ready.</div>
+  <pre class="summary" id="summary"></pre>
+  <a class="dl" id="download" style="display:none">Download bench-result.json</a>
+
+  <script type="module" src="/src/perf-main.ts"></script>
+</body>
+</html>

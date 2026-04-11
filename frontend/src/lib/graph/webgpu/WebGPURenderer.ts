@@ -21,16 +21,18 @@ import { createTextAtlas, measureText } from './textAtlas';
 import type { TextAtlasData } from './textAtlas';
 import { SpatialGrid } from './hitTest';
 import { EdgeHitIndex } from './edgeHitTest';
+import type { FrameStats } from '../../perf/instrumentation';
+import type { MinimapTarget } from './MinimapTarget';
 
 export class WebGPURenderer {
   readonly canvas: HTMLCanvasElement;
   readonly hitGrid = new SpatialGrid();
   readonly edgeHitIndex = new EdgeHitIndex();
 
-  private device: GPUDevice;
+  readonly device: GPUDevice;
+  readonly format: GPUTextureFormat;
   private context: GPUCanvasContext;
-  private format: GPUTextureFormat;
-  private cameraBuffer: GPUBuffer;
+  readonly cameraBuffer: GPUBuffer;
   private nodesPipeline: NodesPipelineState;
   private edgesPipeline: EdgesPipelineState;
   /** Overlay edges drawn on top of nodes (accuracy paths). Shares pipeline/bindGroup with edgesPipeline. */
@@ -53,6 +55,21 @@ export class WebGPURenderer {
   private _lastGrayedNodes: Set<string> = new Set();
   private _lastInferredCount = 0;
 
+  // ---- Performance instrumentation ----
+  private frameStats: FrameStats | null = null;
+
+  // GPU timestamp-query state (optional, depends on adapter feature support)
+  private hasTimestampQuery = false;
+  private gpuQuerySet: GPUQuerySet | null = null;
+  private gpuResolveBuffer: GPUBuffer | null = null;
+  private gpuReadbackBuffer: GPUBuffer | null = null;
+  private gpuQueryPending = false;
+  /** Most recently resolved GPU pass time (ms), attached to the next frame to close. */
+  private lastResolvedGpuMs: number | null = null;
+
+  // ---- Minimap target ----
+  private minimapTarget: MinimapTarget | null = null;
+
   // Store last camera params so we can re-apply on resize
   private lastCameraTx = 0;
   private lastCameraTy = 0;
@@ -73,6 +90,7 @@ export class WebGPURenderer {
     textPipeline: TextPipelineState,
     ghostPipeline: GhostPipelineState,
     atlas: TextAtlasData,
+    hasTimestampQuery: boolean,
   ) {
     this.canvas = canvas;
     this.device = device;
@@ -84,6 +102,19 @@ export class WebGPURenderer {
     this.textPipeline = textPipeline;
     this.ghostPipeline = ghostPipeline;
     this.atlas = atlas;
+    this.hasTimestampQuery = hasTimestampQuery;
+
+    if (hasTimestampQuery) {
+      this.gpuQuerySet = device.createQuerySet({ type: 'timestamp', count: 2 });
+      this.gpuResolveBuffer = device.createBuffer({
+        size: 16,
+        usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC,
+      });
+      this.gpuReadbackBuffer = device.createBuffer({
+        size: 16,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+      });
+    }
 
     // Handle canvas resize
     this.resizeObserver = new ResizeObserver(() => {
@@ -111,8 +142,12 @@ export class WebGPURenderer {
     }
     console.log('[WebGPU] adapter:', adapter.info);
 
-    const device = await adapter.requestDevice();
-    console.log('[WebGPU] device acquired');
+    const requiredFeatures: GPUFeatureName[] = [];
+    const hasTimestampQuery = adapter.features.has('timestamp-query');
+    if (hasTimestampQuery) requiredFeatures.push('timestamp-query');
+
+    const device = await adapter.requestDevice({ requiredFeatures });
+    console.log('[WebGPU] device acquired (timestamp-query:', hasTimestampQuery, ')');
 
     const context = canvas.getContext('webgpu');
     if (!context) {
@@ -137,8 +172,69 @@ export class WebGPURenderer {
     return new WebGPURenderer(
       canvas, device, context, format, cameraBuffer,
       nodesPipeline, edgesPipeline, textPipeline, ghostPipeline, atlas,
+      hasTimestampQuery,
     );
   }
+
+  // ---- Performance instrumentation API ----
+
+  setFrameStats(stats: FrameStats | null): void {
+    this.frameStats = stats;
+  }
+
+  getFrameStats(): FrameStats | null {
+    return this.frameStats;
+  }
+
+  /** True when GPU pass timing is available via the timestamp-query feature. */
+  get supportsGpuTimestamps(): boolean {
+    return this.hasTimestampQuery;
+  }
+
+  /**
+   * Mark dirty, render once, and resolve when the GPU has finished the submit.
+   * Used by scripted scenarios to render-and-wait between steps.
+   */
+  async forceRender(): Promise<void> {
+    this.dirty = true;
+    // Run one render synchronously, then await GPU completion.
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    if (w === 0 || h === 0) return;
+    if (this.frameStats) this.frameStats.beginFrame();
+    this.render();
+    if (this.frameStats) {
+      this.frameStats.endFrame(this.lastResolvedGpuMs);
+      this.lastResolvedGpuMs = null;
+    }
+    this.dirty = false;
+    await this.device.queue.onSubmittedWorkDone();
+  }
+
+  // ---- Minimap target attach/detach ----
+
+  attachMinimap(target: MinimapTarget): void {
+    this.minimapTarget = target;
+    target.bindToRenderer(this);
+    this.markDirty();
+  }
+
+  detachMinimap(): void {
+    this.minimapTarget = null;
+  }
+
+  getMinimapTarget(): MinimapTarget | null {
+    return this.minimapTarget;
+  }
+
+  getCurrentCamera(): { tx: number; ty: number; scale: number } {
+    return { tx: this.lastCameraTx, ty: this.lastCameraTy, scale: this.lastCameraScale };
+  }
+
+  getNodesPipeline(): NodesPipelineState { return this.nodesPipeline; }
+  getEdgesPipeline(): EdgesPipelineState { return this.edgesPipeline; }
+  getGraphData(): GraphData | null { return this.graphData; }
+  getNodeSizeFn(): ((id: string) => { width: number; height: number }) | null { return this.nodeSizeFn; }
 
   /** Load graph data and build GPU buffers */
   setGraph(
@@ -168,6 +264,7 @@ export class WebGPURenderer {
     );
     updateEdgeViewport(this.edgesPipeline, this.device, this.canvas.width, this.canvas.height);
 
+    if (this.minimapTarget) this.minimapTarget.invalidate();
     this.markDirty();
   }
 
@@ -178,6 +275,7 @@ export class WebGPURenderer {
     this.lastCameraScale = scale;
     this.currentZoom = scale;
     this.applyCameraMatrix();
+    if (this.minimapTarget) this.minimapTarget.notifyMainCameraChanged();
     this.markDirty();
   }
 
@@ -204,12 +302,20 @@ export class WebGPURenderer {
     selectedEdgeIndex: number | null = null,
   ): void {
     if (!this.graphData) return;
+    const fs = this.frameStats;
+    // Open a frame window if one isn't already open. updateAppearance often
+    // runs from a separate RAF/microtask than render(), so its phases would
+    // otherwise land outside any frame bracket. beginFrame is idempotent.
+    fs?.beginFrame();
+    fs?.beginPhase('appearance.total');
     this.currentZoom = zoomRatio;
 
     // Rebuild edge geometry when accuracy view toggles or new inferred nodes arrive
     if (accuracyViewActive !== this._accuracyViewActive) {
       this._accuracyViewActive = accuracyViewActive;
+      fs?.beginPhase('appearance.edgeRebuild');
       this.rebuildEdges(accuracyViewActive, nodeStatusMap);
+      fs?.endPhase('appearance.edgeRebuild');
       if (accuracyViewActive) {
         let count = 0;
         for (const [, status] of nodeStatusMap) {
@@ -230,7 +336,9 @@ export class WebGPURenderer {
       }
       if (count !== this._lastInferredCount) {
         this._lastInferredCount = count;
+        fs?.beginPhase('appearance.edgeRebuild');
         this.rebuildEdges(true, nodeStatusMap);
+        fs?.endPhase('appearance.edgeRebuild');
         this._lastHoveredEdge = -1;
         this._lastSelectedEdge = -1;
       }
@@ -254,6 +362,7 @@ export class WebGPURenderer {
     }
 
     // Build node instances
+    fs?.beginPhase('appearance.nodeBuild');
     const nodeData = new Float32Array(nodes.length * NODE_FLOATS);
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
@@ -366,10 +475,13 @@ export class WebGPURenderer {
       nodeData[off + 15] = 0; // padding
     }
 
+    fs?.endPhase('appearance.nodeBuild');
+    fs?.beginPhase('appearance.nodeUpload');
     this.nodesPipeline = updateNodeInstances(
       this.nodesPipeline, this.device, this.cameraBuffer,
       nodeData, nodes.length,
     );
+    fs?.endPhase('appearance.nodeUpload');
 
     // Rebuild edges for search dimming / edge highlighting / grayed nodes (skip if accuracy view handles it)
     const edgeHighlightChanged = highlightEdge !== prevHighlight;
@@ -383,6 +495,7 @@ export class WebGPURenderer {
       const needsRebuild = edgeHighlightChanged || grayedChanged || (isColored !== wasColored);
 
       if (needsRebuild) {
+        fs?.beginPhase('appearance.edgeColorRebuild');
         const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 }; // #4C8DFF
         const dim = { r: 0.184, g: 0.200, b: 0.255, a: 0.3 };
         const grayDim = { r: 0.353, g: 0.376, b: 0.502, a: 0.35 };
@@ -395,10 +508,12 @@ export class WebGPURenderer {
           return undefined as any; // use default
         });
         this.edgesPipeline = updateEdgeVertices(this.edgesPipeline, this.device, this.cameraBuffer, edgeVerts, edgeVerts.length / 8);
+        fs?.endPhase('appearance.edgeColorRebuild');
       }
       this._lastEdgeMode = isColored ? 'search' : 'default';
     } else if (edgeHighlightChanged && highlightEdge !== null) {
       // In accuracy view, rebuild base edges with the highlighted edge visible
+      fs?.beginPhase('appearance.edgeColorRebuild');
       const dimColor = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b, a: 0.15 };
       const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 };
       const baseVerts = buildEdgeGeometry(this.graphData.edges, this.graphData.nodes, this.nodeSizeFn!, (_edge, idx) => {
@@ -406,6 +521,7 @@ export class WebGPURenderer {
         return { start: dimColor, end: dimColor };
       });
       this.edgesPipeline = updateEdgeVertices(this.edgesPipeline, this.device, this.cameraBuffer, baseVerts, baseVerts.length / 8);
+      fs?.endPhase('appearance.edgeColorRebuild');
     }
     this._lastHoveredEdge = hoveredEdgeIndex;
     this._lastSelectedEdge = selectedEdgeIndex;
@@ -420,9 +536,17 @@ export class WebGPURenderer {
         if (status.status === 'success' && status.metrics) accuracyInferredIds.add(nodeId);
       }
     }
+    fs?.beginPhase('appearance.textRebuild');
     this.rebuildText(grayedNodes, zoomRatio, nodeOverrides, accuracyInferredIds);
-    this.updateGhosts(selectedEdgeIndex);
+    fs?.endPhase('appearance.textRebuild');
 
+    fs?.beginPhase('appearance.ghostRebuild');
+    this.updateGhosts(selectedEdgeIndex);
+    fs?.endPhase('appearance.ghostRebuild');
+
+    fs?.endPhase('appearance.total');
+
+    if (this.minimapTarget) this.minimapTarget.invalidate();
     this.markDirty();
   }
 
@@ -865,20 +989,33 @@ export class WebGPURenderer {
     const h = this.canvas.clientHeight;
     if (w === 0 || h === 0) return;
 
+    if (this.frameStats) this.frameStats.beginFrame();
     this.render();
+    if (this.frameStats) {
+      this.frameStats.endFrame(this.lastResolvedGpuMs);
+      this.lastResolvedGpuMs = null;
+    }
   }
 
   private render(): void {
+    const fs = this.frameStats;
+    fs?.beginPhase('render.total');
+
     let textureView: GPUTextureView;
     try {
       textureView = this.context.getCurrentTexture().createView();
     } catch {
       // Context lost or canvas not ready
+      fs?.endPhase('render.total');
       return;
     }
 
+    fs?.beginPhase('render.encode');
     const encoder = this.device.createCommandEncoder();
-    const pass = encoder.beginRenderPass({
+
+    // Attach GPU timestamps to the main pass when available and not already pending
+    const useTimestamps = this.hasTimestampQuery && !this.gpuQueryPending && this.gpuQuerySet !== null;
+    const passDesc: GPURenderPassDescriptor = {
       colorAttachments: [{
         view: this.msaaView!,
         resolveTarget: textureView,
@@ -886,10 +1023,17 @@ export class WebGPURenderer {
         loadOp: 'clear',
         storeOp: 'discard',
       }],
-    });
+    };
+    if (useTimestamps) {
+      passDesc.timestampWrites = {
+        querySet: this.gpuQuerySet!,
+        beginningOfPassWriteIndex: 0,
+        endOfPassWriteIndex: 1,
+      };
+    }
+    const pass = encoder.beginRenderPass(passDesc);
 
-    // Draw order: edges → nodes → text
-    // Draw order: edges → nodes → overlay paths (on top of nodes) → text
+    // Draw order: edges → nodes → overlay paths (on top of nodes) → text → ghosts
     drawEdges(pass, this.edgesPipeline);
     drawNodes(pass, this.nodesPipeline);
     if (this.overlayEdgesPipeline) {
@@ -901,7 +1045,45 @@ export class WebGPURenderer {
     drawGhosts(pass, this.ghostPipeline);
 
     pass.end();
+
+    // Resolve GPU timestamps + start async readback
+    if (useTimestamps) {
+      encoder.resolveQuerySet(this.gpuQuerySet!, 0, 2, this.gpuResolveBuffer!, 0);
+      encoder.copyBufferToBuffer(this.gpuResolveBuffer!, 0, this.gpuReadbackBuffer!, 0, 16);
+    }
+    fs?.endPhase('render.encode');
+
+    // Minimap pass (after main, in same encoder for one submit)
+    if (this.minimapTarget) {
+      fs?.beginPhase('render.minimap');
+      this.minimapTarget.draw(encoder);
+      fs?.endPhase('render.minimap');
+    }
+
+    fs?.beginPhase('render.submit');
     this.device.queue.submit([encoder.finish()]);
+    fs?.endPhase('render.submit');
+
+    if (useTimestamps) {
+      this.gpuQueryPending = true;
+      const readback = this.gpuReadbackBuffer!;
+      readback.mapAsync(GPUMapMode.READ).then(() => {
+        try {
+          const arr = new BigInt64Array(readback.getMappedRange().slice(0));
+          const ns = Number(arr[1] - arr[0]);
+          if (ns >= 0) this.lastResolvedGpuMs = ns / 1_000_000;
+          readback.unmap();
+        } catch {
+          // Ignore — the device may have been destroyed mid-frame
+        } finally {
+          this.gpuQueryPending = false;
+        }
+      }).catch(() => {
+        this.gpuQueryPending = false;
+      });
+    }
+
+    fs?.endPhase('render.total');
   }
 
   private handleResize(): void {
@@ -946,6 +1128,10 @@ export class WebGPURenderer {
       this.animFrameId = null;
     }
     this.resizeObserver.disconnect();
+    if (this.minimapTarget) {
+      this.minimapTarget.destroy();
+      this.minimapTarget = null;
+    }
     this.nodesPipeline.storageBuffer.destroy();
     this.edgesPipeline.vertexBuffer.destroy();
     this.edgesPipeline.zoomBuffer.destroy();
@@ -955,6 +1141,9 @@ export class WebGPURenderer {
     this.atlas.texture.destroy();
     this.cameraBuffer.destroy();
     if (this.msaaTexture) this.msaaTexture.destroy();
+    if (this.gpuQuerySet) this.gpuQuerySet.destroy();
+    if (this.gpuResolveBuffer) this.gpuResolveBuffer.destroy();
+    if (this.gpuReadbackBuffer) this.gpuReadbackBuffer.destroy();
     this.device.destroy();
   }
 }

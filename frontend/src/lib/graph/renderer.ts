@@ -6,14 +6,17 @@ import { graphStore } from '../stores/graph.svelte';
 import { GraphModel } from './graphModel';
 import { PanZoom } from './panZoom';
 import { WebGPURenderer } from './webgpu/WebGPURenderer';
+import { MinimapTarget } from './webgpu/MinimapTarget';
 
 let graphModel: GraphModel | null = null;
 let panZoom: PanZoom | null = null;
 let gpuRenderer: WebGPURenderer | null = null;
+let minimapTarget: MinimapTarget | null = null;
 let refreshScheduled = false;
 let hoveredNodeId: string | null = null;
 let hoveredEdgeIndex: number | null = null;
 let currentGraphData: GraphData | null = null;
+const rendererReadyListeners: Array<(r: WebGPURenderer) => void> = [];
 
 /** Node dimensions cache (id -> {width, height}) */
 const nodeSizes = new Map<string, { width: number; height: number }>();
@@ -32,6 +35,43 @@ export function getCamera(): PanZoom | null {
 
 export function getGPURenderer(): WebGPURenderer | null {
   return gpuRenderer;
+}
+
+/** Subscribe to be notified when the WebGPU renderer becomes available.
+ *  Fires immediately if a renderer already exists. Returns an unsubscribe fn. */
+export function onRendererReady(fn: (r: WebGPURenderer) => void): () => void {
+  if (gpuRenderer) {
+    fn(gpuRenderer);
+  }
+  rendererReadyListeners.push(fn);
+  return () => {
+    const idx = rendererReadyListeners.indexOf(fn);
+    if (idx >= 0) rendererReadyListeners.splice(idx, 1);
+  };
+}
+
+/** Attach a canvas as the minimap target. Idempotent — replaces any existing minimap canvas. */
+export function attachMinimap(canvas: HTMLCanvasElement): MinimapTarget | null {
+  if (!gpuRenderer) return null;
+  if (minimapTarget) {
+    minimapTarget.destroy();
+    minimapTarget = null;
+  }
+  minimapTarget = MinimapTarget.create(canvas, gpuRenderer);
+  gpuRenderer.attachMinimap(minimapTarget);
+  return minimapTarget;
+}
+
+export function detachMinimap(): void {
+  if (gpuRenderer) gpuRenderer.detachMinimap();
+  if (minimapTarget) {
+    minimapTarget.destroy();
+    minimapTarget = null;
+  }
+}
+
+export function getMinimapTarget(): MinimapTarget | null {
+  return minimapTarget;
 }
 
 export function setHoveredNode(nodeId: string | null): void {
@@ -97,6 +137,7 @@ export async function initRenderer(container: HTMLElement, graphData: GraphData)
 
   const renderer = await WebGPURenderer.create(canvas);
   gpuRenderer = renderer;
+  for (const fn of rendererReadyListeners) fn(renderer);
 
   // Set up pan/zoom on canvas
   panZoom = new PanZoom(canvas, {
@@ -157,6 +198,10 @@ export function destroyRenderer(): void {
   if (panZoom) {
     panZoom.destroy();
     panZoom = null;
+  }
+  if (minimapTarget) {
+    // The renderer.destroy() will also tear it down, but null our handle first
+    minimapTarget = null;
   }
   if (gpuRenderer) {
     gpuRenderer.canvas.remove();
