@@ -240,7 +240,7 @@ async def compute_layout(graph_data: GraphData) -> dict:
         {"source": e.source, "target": e.target, "source_port": e.source_port, "target_port": e.target_port}
         for e in graph_data.edges
     ]
-    return compute_dag_layout(layout_nodes, layout_edges)
+    return await asyncio.to_thread(compute_dag_layout, layout_nodes, layout_edges)
 
 
 def _find_node_binary() -> str:

@@ -19,6 +19,66 @@ NODE_SPACING = 20   # horizontal gap between nodes in same layer
 LAYER_SPACING = 20  # vertical gap between layers
 DUMMY_SPACING = 2   # horizontal gap between dummy nodes (tight bundling)
 ARROW_LENGTH = 8    # must match frontend edgesPipeline.ts
+MAX_WAYPOINTS = 200
+
+
+def _simplify_waypoints(wps: list[dict], max_points: int = MAX_WAYPOINTS) -> list[dict]:
+    """Reduce waypoint count for long edges via Ramer-Douglas-Peucker.
+
+    Edges spanning hundreds of layers produce a waypoint per dummy node. The
+    frontend tessellates each span into B-spline segments, so 2000+ waypoints
+    create millions of GPU vertices.
+    """
+    if len(wps) <= max_points:
+        return wps
+
+    # Iterative RDP with adaptive tolerance (increase until under budget)
+    tolerance = 1.0
+    result = wps
+    for _ in range(20):
+        result = _rdp(wps, tolerance)
+        if len(result) <= max_points:
+            return result
+        tolerance *= 2.0
+
+    # Fallback: uniform subsample
+    step = (len(wps) - 1) / (max_points - 1)
+    return [wps[min(int(j * step), len(wps) - 1)] for j in range(max_points)]
+
+
+def _rdp(points: list[dict], epsilon: float) -> list[dict]:
+    """Iterative Ramer-Douglas-Peucker polyline simplification."""
+    n = len(points)
+    if n <= 2:
+        return points
+    keep = [False] * n
+    keep[0] = keep[-1] = True
+    stack = [(0, n - 1)]
+    while stack:
+        lo, hi = stack.pop()
+        if hi - lo < 2:
+            continue
+        ax, ay = points[lo]["x"], points[lo]["y"]
+        bx, by = points[hi]["x"], points[hi]["y"]
+        dx, dy = bx - ax, by - ay
+        seg_len_sq = dx * dx + dy * dy
+        max_dist = 0.0
+        max_idx = lo
+        for i in range(lo + 1, hi):
+            px, py = points[i]["x"] - ax, points[i]["y"] - ay
+            if seg_len_sq > 0:
+                cross = abs(px * dy - py * dx)
+                d = cross * cross / seg_len_sq
+            else:
+                d = px * px + py * py
+            if d > max_dist:
+                max_dist = d
+                max_idx = i
+        if max_dist > epsilon * epsilon:
+            keep[max_idx] = True
+            stack.append((lo, max_idx))
+            stack.append((max_idx, hi))
+    return [p for p, k in zip(points, keep) if k]
 
 
 def compute_dag_layout(
@@ -319,7 +379,7 @@ def compute_dag_layout(
                 wps[0] = {"x": sx, "y": sy}
         wps.append({"x": ex, "y": ey})
 
-        ewp[f"e{i}"] = {"waypoints": wps}
+        ewp[f"e{i}"] = {"waypoints": _simplify_waypoints(wps)}
 
     return {"nodes": positions, "edges": ewp}
 
@@ -881,7 +941,7 @@ def _straighten_long_edges(
                         best_nudge = xs
 
                 if is_major:
-                    accept_nudge = best_nudge is not None and span <= 5
+                    accept_nudge = best_nudge is not None and span <= 10
                 else:
                     accept_nudge = best_nudge is not None and best_max_disp <= NUDGE_MAX_DISP
 
@@ -892,24 +952,6 @@ def _straighten_long_edges(
                     best_nudge = _snap_nudges_to_column(
                         best_nudge, dummies, layer_of, edge_intervals,
                     )
-                    # Skip the demote-to-corridor fallback for edges
-                    # whose enclosing SESE region is small. The per-edge
-                    # nudge already lives inside a tiny obstacle field,
-                    # so even a wavy result stays local — and the
-                    # corridor branch wouldn't use the scope filter,
-                    # which would walk the route across the diagram.
-                    scope_is_small = (
-                        edge_scope is not None
-                        and edge_scope.parent is not None  # not the root
-                        and len(edge_scope.nodes) <= 50
-                    )
-                    # No demote-to-corridor: the gap-aware snap above
-                    # already collapses zigzags into a single column
-                    # whenever feasible (using the union of blocked
-                    # intervals across every dummy layer), so the wavy
-                    # mode that motivated the demote rarely happens.
-                    # Skipping demote keeps long bypasses from being
-                    # pushed into far corridors.
                     pass
 
                 if accept_nudge:

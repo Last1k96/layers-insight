@@ -234,7 +234,19 @@ function fitToView(container: HTMLElement): void {
 
   const scaleX = containerWidth / (graphWidth + 100);
   const scaleY = containerHeight / (graphHeight + 100);
-  const scale = Math.min(scaleX, scaleY, 1.5);
+  let scale = Math.min(scaleX, scaleY, 1.5);
+
+  // For very tall/wide graphs, don't zoom out so far that nodes become
+  // invisible. Instead, clamp to a minimum zoom where nodes are readable
+  // and center on the top of the graph so the user sees something useful.
+  const MIN_FIT_ZOOM = 0.15;
+  if (scale < MIN_FIT_ZOOM) {
+    scale = MIN_FIT_ZOOM;
+    const tx = (containerWidth - graphWidth * scale) / 2 - minX * scale;
+    const ty = 40 - minY * scale;
+    panZoom.setState({ tx, ty, scale });
+    return;
+  }
 
   const tx = (containerWidth - graphWidth * scale) / 2 - minX * scale;
   const ty = (containerHeight - graphHeight * scale) / 2 - minY * scale;
