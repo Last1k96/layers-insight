@@ -252,6 +252,46 @@ class TestLongEdgeStraightening:
                 assert not (x_in and y_in), \
                     f"waypoint ({midwp['x']:.0f},{midwp['y']:.0f}) overlaps node {nid} [{n_left:.0f},{n_right:.0f}]x[{n_top:.0f},{n_bottom:.0f}]"
 
+    def test_long_skip_has_few_local_direction_changes(self):
+        """A long skip edge should not weave back and forth.
+
+        The renderer's B-spline traces every waypoint, so a per-layer
+        zigzag of nudged dummies becomes a visibly wavy line. The
+        layout collapses zigzags to a single column when feasible and
+        otherwise demotes to a corridor route. Either way, the
+        resulting waypoint sequence should have at most one local
+        change of horizontal direction.
+        """
+        # Backbone n0..n9 plus a parallel chain whose nodes shift across
+        # multiple columns at different layers, forcing a per-layer
+        # nudge that would zigzag without smoothing.
+        nodes = [_node(f"n{i}") for i in range(10)]
+        edges = [_edge(f"n{i}", f"n{i+1}") for i in range(9)]
+        for i in range(10):
+            nodes.append(_node(f"r{i}", width=120 + (i % 3) * 30))
+        edges += [_edge(f"r{i}", f"r{i+1}") for i in range(9)]
+        edges.append(_edge("n1", "n9"))  # span-8 skip
+
+        result = compute_dag_layout(nodes, edges)
+        wps = result["edges"][f"e{len(edges) - 1}"]["waypoints"]
+
+        # Count direction changes in horizontal motion (ignore tiny dx).
+        eps = 0.5
+        last_dir = 0
+        changes = 0
+        for i in range(len(wps) - 1):
+            dx = wps[i + 1]["x"] - wps[i]["x"]
+            if abs(dx) < eps:
+                continue
+            d = 1 if dx > 0 else -1
+            if last_dir != 0 and d != last_dir:
+                changes += 1
+            last_dir = d
+        assert changes <= 1, (
+            f"long skip wove with {changes} direction changes; "
+            f"waypoints: {[(round(w['x']), round(w['y'])) for w in wps]}"
+        )
+
     def test_aligned_long_skip_hugs_backbone_not_far_corridor(self):
         """A column-aligned span-6 skip should hug its backbone via nudge,
         not detour to a distant corridor.

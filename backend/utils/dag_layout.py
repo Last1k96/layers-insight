@@ -350,6 +350,44 @@ def _nudge_clear(ideal_x: float, intervals: list[tuple[float, float]]) -> float:
     return best
 
 
+def _snap_nudges_to_column(
+    nudges: list[float],
+    dummies: list[str],
+    layer_of: dict,
+    layer_intervals: list[list[tuple[float, float]]],
+) -> list[float]:
+    """Collapse a per-dummy nudge list to a single x when geometrically safe.
+
+    Independent per-layer nudges produce slightly different x values that
+    the renderer's B-spline traces as a wavy line. If the most extreme
+    nudge (the rightmost when nudges went right, leftmost when they went
+    left) clears every dummy's intermediate-layer obstacles, we use it
+    for all dummies — yielding a perfectly vertical segment with the
+    same overall displacement as the original tightest nudge.
+    Returns the original list unchanged when snapping isn't feasible.
+    """
+    if len(nudges) < 2:
+        return nudges
+    if max(nudges) == min(nudges):
+        return nudges
+
+    for candidate in (max(nudges), min(nudges)):
+        clear = True
+        for did in dummies:
+            for left, right in layer_intervals[layer_of[did]]:
+                # Strict <: a value sitting exactly on the padded
+                # boundary is treated as clear (matches what _nudge_clear
+                # produces when it pushes a point to the edge).
+                if left - NODE_SPACING < candidate < right + NODE_SPACING:
+                    clear = False
+                    break
+            if not clear:
+                break
+        if clear:
+            return [candidate] * len(nudges)
+    return nudges
+
+
 def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_layers, edges):
     """Post-process long-edge dummy positions for visual quality.
 
@@ -500,6 +538,34 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                     accept_nudge = best_nudge is not None and span <= 5
                 else:
                     accept_nudge = best_nudge is not None and best_max_disp <= NUDGE_MAX_DISP
+
+                if accept_nudge:
+                    # Collapse the per-dummy zigzag to a single column when
+                    # safe, so the rendered spline traces a straight vertical
+                    # segment instead of weaving between obstacles.
+                    best_nudge = _snap_nudges_to_column(
+                        best_nudge, dummies, layer_of, layer_intervals,
+                    )
+                    # If the snapped path still wiggles (more than one
+                    # local direction change in x), prefer a corridor:
+                    # a single shared column with brief entry/exit ramps
+                    # is visually cleaner than a long per-layer zigzag.
+                    # Major fan-out groups skip this because they have
+                    # their own corridor-bundling logic upstream.
+                    if not is_major:
+                        eps = 0.5
+                        last_dir = 0
+                        changes = 0
+                        for i in range(len(best_nudge) - 1):
+                            dx = best_nudge[i + 1] - best_nudge[i]
+                            if abs(dx) < eps:
+                                continue
+                            d = 1 if dx > 0 else -1
+                            if last_dir != 0 and d != last_dir:
+                                changes += 1
+                            last_dir = d
+                        if changes >= 2:
+                            accept_nudge = False
 
                 if accept_nudge:
                     edge_routes.append({
