@@ -319,6 +319,7 @@ export class WebGPURenderer {
     nodeOverrides: Map<string, { name: string; type: string; color: string }> | undefined,
     accuracyInferredIds: Set<string> | undefined,
     selectedEdgeIndex: number | null,
+    hoveredEdgeIndex: number | null = null,
   ): void {
     if (!this.graphData) return;
     const fs = this.frameStats;
@@ -330,9 +331,10 @@ export class WebGPURenderer {
     this.rebuildText(grayedNodes, zoomRatio, nodeOverrides, accuracyInferredIds);
     fs?.endPhase('appearance.textRebuild');
 
-    if (selectedEdgeIndex !== null) {
+    const ghostEdge = selectedEdgeIndex ?? hoveredEdgeIndex;
+    if (ghostEdge !== null) {
       fs?.beginPhase('appearance.ghostRebuild');
-      this.updateGhosts(selectedEdgeIndex);
+      this.updateGhosts(ghostEdge);
       fs?.endPhase('appearance.ghostRebuild');
     }
 
@@ -619,7 +621,7 @@ export class WebGPURenderer {
     fs?.endPhase('appearance.textRebuild');
 
     fs?.beginPhase('appearance.ghostRebuild');
-    this.updateGhosts(selectedEdgeIndex);
+    this.updateGhosts(selectedEdgeIndex ?? hoveredEdgeIndex);
     fs?.endPhase('appearance.ghostRebuild');
 
     fs?.endPhase('appearance.total');

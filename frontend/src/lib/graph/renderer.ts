@@ -202,6 +202,7 @@ export async function initRenderer(container: HTMLElement, graphData: GraphData)
       graphStore.nodeOverrides,
       inferredIds,
       graphStore.selectedEdgeIndex,
+      hoveredEdgeIndex,
     );
   });
 

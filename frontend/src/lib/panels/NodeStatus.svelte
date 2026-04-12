@@ -266,7 +266,18 @@
     </div>
   {:else if selectedNode}
     <!-- Node Info -->
-    <div class="mb-4">
+    <div
+      class="mb-4 bg-surface-base rounded-lg p-2.5 cursor-pointer hover:bg-surface-hover transition-all ring-1 ring-transparent hover:ring-[#4C8DFF]/50"
+      role="button"
+      tabindex={0}
+      onmouseenter={() => { setHoveredNode(selectedNode.id); }}
+      onmouseleave={() => { setHoveredNode(null); }}
+      onmouseup={() => {
+        if (!window.getSelection()?.toString()) {
+          centerOnNode(selectedNode.id);
+        }
+      }}
+    >
       <span
         class="font-mono font-medium text-[13px] text-content-primary break-all leading-snug"
       >{selectedNode.name}</span>
@@ -725,33 +736,35 @@
         <div class="mt-1.5 space-y-1">
           {#each selectedNode.inputs as inp, idx}
             {@const sourceNode = graphStore.graphData?.nodes.find(n => n.name === inp.name)}
-            <div class="bg-surface-base rounded-lg p-2.5 text-xs">
+            <div
+              class="bg-surface-base rounded-lg p-2.5 text-xs {sourceNode ? 'cursor-pointer hover:bg-surface-hover transition-all ring-1 ring-transparent hover:ring-[#4C8DFF]/50' : ''}"
+              role={sourceNode ? 'button' : undefined}
+              tabindex={sourceNode ? 0 : undefined}
+              onmouseenter={() => {
+                if (sourceNode) {
+                  setHoveredNode(sourceNode.id);
+                  setHoveredEdge(findInputEdgeIndex(sourceNode.id, idx));
+                }
+              }}
+              onmouseleave={() => { setHoveredNode(null); setHoveredEdge(null); }}
+              onmouseup={(e) => {
+                if (sourceNode && !window.getSelection()?.toString()) {
+                  graphStore.selectNode(sourceNode.id);
+                  refreshRenderer();
+                  if (e.ctrlKey || e.metaKey) centerOnNode(sourceNode.id);
+                }
+              }}
+            >
               <div class="flex items-center gap-1.5">
                 <span class="text-muted-soft font-mono w-4 shrink-0">{idx}</span>
                 {#if !inp.is_const}
-                  <button
-                    class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
-                    onmouseenter={() => {
-                      if (sourceNode) {
-                        setHoveredNode(sourceNode.id);
-                        setHoveredEdge(findInputEdgeIndex(sourceNode.id, idx));
-                      }
-                    }}
-                    onmouseleave={() => { setHoveredNode(null); setHoveredEdge(null); }}
-                    onclick={(e) => {
-                      if (sourceNode) {
-                        graphStore.selectNode(sourceNode.id);
-                        refreshRenderer();
-                        if (e.ctrlKey || e.metaKey) centerOnNode(sourceNode.id);
-                      }
-                    }}
-                  >{inp.name}</button>
+                  <span class="text-accent font-mono truncate text-left">{inp.name}</span>
                 {:else}
                   <span class="text-muted font-mono truncate" title={inp.name}>{inp.name}</span>
                 {/if}
               </div>
               {#if sourceNode}
-                <div class="text-muted-soft ml-5 mt-0.5">{sourceNode.type}</div>
+                <div class="w-fit text-xs font-medium mt-0.5 ml-5 px-2 py-0.5 rounded-md" style="background-color: {sourceNode.color}; color: {isLightNodeColor(sourceNode.color) ? '#1B1E2B' : '#E1E4ED'};">{sourceNode.type}</div>
               {:else if inp.is_const}
                 <div class="ml-5 mt-0.5"><span class="px-1.5 py-0.5 bg-amber-500/10 text-amber-400/70 rounded-full text-[10px] leading-none">const</span></div>
               {/if}
@@ -763,7 +776,7 @@
               {#if inp.is_const && inp.const_node_name}
                 <button
                   class="ml-5 mt-1 text-[10px] text-accent hover:text-accent-hover transition-colors"
-                  onclick={() => toggleConstData(inp.const_node_name!)}
+                  onclick={(e) => { e.stopPropagation(); toggleConstData(inp.const_node_name!); }}
                 >
                   {constDataExpanded.has(inp.const_node_name) ? 'Hide data' : 'View data'}
                 </button>
@@ -808,25 +821,27 @@
           Outputs ({outputs.length})
         </summary>
         <div class="mt-1.5 space-y-1">
-          {#each outputs as out}
-            <div class="bg-surface-base rounded-lg p-2.5 text-xs">
+          {#each outputs as out, idx}
+            <div
+              class="bg-surface-base rounded-lg p-2.5 text-xs cursor-pointer hover:bg-surface-hover transition-all ring-1 ring-transparent hover:ring-[#4C8DFF]/50"
+              role="button"
+              tabindex={0}
+              onmouseenter={() => { setHoveredNode(out.targetId); setHoveredEdge(out.edgeIndex); }}
+              onmouseleave={() => { setHoveredNode(null); setHoveredEdge(null); }}
+              onmouseup={(e) => {
+                if (!window.getSelection()?.toString()) {
+                  graphStore.selectNode(out.targetId);
+                  refreshRenderer();
+                  if (e.ctrlKey || e.metaKey) centerOnNode(out.targetId);
+                }
+              }}
+            >
               <div class="flex items-center gap-1.5">
-                <span class="text-muted-soft font-mono w-4 shrink-0">{out.source_port}</span>
-                <button
-                  class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
-                  onmouseenter={() => { setHoveredNode(out.targetId); setHoveredEdge(out.edgeIndex); }}
-                  onmouseleave={() => { setHoveredNode(null); setHoveredEdge(null); }}
-                  onclick={(e) => {
-                    graphStore.selectNode(out.targetId);
-                    refreshRenderer();
-                    if (e.ctrlKey || e.metaKey) centerOnNode(out.targetId);
-                  }}
-                >
-                  {out.targetNode?.name ?? out.targetId}
-                </button>
+                <span class="text-muted-soft font-mono w-4 shrink-0">{idx}</span>
+                <span class="text-accent font-mono truncate text-left">{out.targetNode?.name ?? out.targetId}</span>
               </div>
               {#if out.targetNode}
-                <div class="text-muted-soft ml-5 mt-0.5">{out.targetNode.type}</div>
+                <div class="w-fit text-xs font-medium mt-0.5 ml-5 px-2 py-0.5 rounded-md" style="background-color: {out.targetNode.color}; color: {isLightNodeColor(out.targetNode.color) ? '#1B1E2B' : '#E1E4ED'};">{out.targetNode.type}</div>
                 {#if out.targetNode.shape}
                   <div class="text-muted-soft ml-5 mt-0.5">
                     [{#each out.targetNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}] {#if out.targetNode.element_type}<span class="text-muted-soft">{out.targetNode.element_type}</span>{/if}
