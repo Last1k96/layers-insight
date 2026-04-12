@@ -736,6 +736,7 @@
         <div class="mt-1.5 space-y-1">
           {#each selectedNode.inputs as inp, idx}
             {@const sourceNode = graphStore.graphData?.nodes.find(n => n.name === inp.name)}
+            <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
             <div
               class="bg-surface-base rounded-lg p-2.5 text-xs {sourceNode ? 'cursor-pointer hover:bg-surface-hover transition-all ring-1 ring-transparent hover:ring-[#4C8DFF]/50' : ''}"
               role={sourceNode ? 'button' : undefined}

@@ -256,6 +256,7 @@
       onmousedown={(e) => e.preventDefault()}
     >
       {#each suggestions as s, i (s.path)}
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
         <li
           class="path-dropdown-item"
           class:selected={i === selectedIndex}

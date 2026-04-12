@@ -1439,35 +1439,6 @@
     user-select: none;
   }
 
-  /* ── Layout toggle (legacy) ── */
-  .layout-toggle {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.55rem;
-    padding: 0.45rem 0.55rem;
-    background: var(--bg-primary);
-    border: 1px solid var(--border-color);
-    border-radius: 0.4rem;
-    cursor: pointer;
-    transition: border-color 0.15s ease, background 0.15s ease;
-  }
-
-  .layout-toggle:hover {
-    border-color: rgba(76, 141, 255, 0.45);
-  }
-
-  .layout-toggle input[type="checkbox"] {
-    margin-top: 0.15rem;
-    cursor: pointer;
-    accent-color: rgba(76, 141, 255, 0.85);
-  }
-
-  .layout-toggle-text {
-    display: flex;
-    flex-direction: column;
-    gap: 0.1rem;
-    user-select: none;
-  }
 
   .layout-toggle-title {
     font-size: 0.78rem;
@@ -1549,9 +1520,6 @@
     border-color: rgba(76, 141, 255, 0.25);
   }
 
-  .browse-btn.small {
-    padding: 0.375rem;
-  }
 
   .field-status-slot {
     width: 20px;
