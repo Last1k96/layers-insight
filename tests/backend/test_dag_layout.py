@@ -252,6 +252,68 @@ class TestLongEdgeStraightening:
                 assert not (x_in and y_in), \
                     f"waypoint ({midwp['x']:.0f},{midwp['y']:.0f}) overlaps node {nid} [{n_left:.0f},{n_right:.0f}]x[{n_top:.0f},{n_bottom:.0f}]"
 
+    def test_skip_inside_small_sese_region_stays_local(self):
+        """A skip edge whose enclosing SESE region is small should not
+        be pushed into a far corridor.
+
+        Regression for the BatchNormalization_885 → Resize_914 case in
+        human-pose-estimation-0007: a small "resize-tail" subgraph
+        contains both endpoints of the skip and a handful of dynamic-
+        shape helper ops. Pre-fix, the obstacle field was global and
+        the corridor branch walked the route 3000+ px sideways. Post-
+        fix, the obstacle filter restricts to the 6-node region and the
+        skip stays within tens of pixels of its endpoints.
+        """
+        # A small SESE block: src -> skip target with a side chain that
+        # also reads from src and feeds the target.
+        nodes = [
+            _node("upstream"),
+            _node("src"),
+            _node("h1"),
+            _node("h2"),
+            _node("tgt"),
+            _node("downstream"),
+            # Decoy: a wide column of unrelated nodes far to the side
+            # at the same y values as the skip's intermediate layers.
+            _node("d0", width=200),
+            _node("d1", width=200),
+            _node("d2", width=200),
+            _node("d3", width=200),
+            _node("d4", width=200),
+            _node("d5", width=200),
+        ]
+        edges = [
+            _edge("upstream", "src"),
+            _edge("src", "h1"),
+            _edge("h1", "h2"),
+            _edge("h2", "tgt"),
+            _edge("src", "tgt"),  # the skip we care about
+            _edge("tgt", "downstream"),
+            # Independent decoy chain
+            _edge("d0", "d1"),
+            _edge("d1", "d2"),
+            _edge("d2", "d3"),
+            _edge("d3", "d4"),
+            _edge("d4", "d5"),
+        ]
+        result = compute_dag_layout(nodes, edges)
+        # Find the src -> tgt edge (the skip)
+        skip_idx = None
+        for i, e in enumerate(edges):
+            if e["source"] == "src" and e["target"] == "tgt":
+                skip_idx = i
+                break
+        assert skip_idx is not None
+        skip_wps = result["edges"][f"e{skip_idx}"]["waypoints"]
+        src_cx = result["nodes"]["src"]["x"] + 60
+        tgt_cx = result["nodes"]["tgt"]["x"] + 60
+        for wp in skip_wps:
+            min_dev = min(abs(wp["x"] - src_cx), abs(wp["x"] - tgt_cx))
+            assert min_dev < 200, (
+                f"skip waypoint at x={wp['x']:.0f} is more than 200 px "
+                f"from BOTH src={src_cx:.0f} and tgt={tgt_cx:.0f}"
+            )
+
     def test_long_skip_has_few_local_direction_changes(self):
         """A long skip edge should not weave back and forth.
 

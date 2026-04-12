@@ -8,6 +8,12 @@ from __future__ import annotations
 
 from collections import defaultdict, deque
 
+from backend.utils.dag_regions import (
+    Region,
+    build_node_region_map,
+    find_sese_regions,
+)
+
 # Spacing constants (match Netron/ELK dagre config)
 NODE_SPACING = 20   # horizontal gap between nodes in same layer
 LAYER_SPACING = 20  # vertical gap between layers
@@ -98,29 +104,47 @@ def compute_dag_layout(
     # Phase 4: Brandes-Köpf coordinate assignment (4 variants, median)
     x_of = _brandes_kopf(layers, num_layers, ext_nmap, ext_adj, ext_rev, pos)
 
+    # Phase 4a: Detect Single-Entry Single-Exit regions so the
+    # straightening pass can restrict its obstacle field per edge to
+    # nodes that are structurally relevant. A bypass that lives inside
+    # a residual block won't see the rest of the network as obstacles,
+    # which keeps it from being pushed into a far corridor.
+    region_root = find_sese_regions(node_ids, edges)
+    node_region = build_node_region_map(region_root)
+
     # Phase 4b: Straighten long edges and route alongside subgraph boundaries
-    _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_layers, edges)
+    _straighten_long_edges(
+        x_of, edge_chains, layer_of, ext_nmap, layers, num_layers, edges,
+        node_region=node_region,
+    )
 
     # Phase 5: Y-coordinates
-    # Use span-1 (local) per-node degree to avoid inflating gaps where
-    # a high-fan-out node (e.g. Shape with 12 corridor-bound outputs)
-    # shares a layer with simple nodes.  Long-edge bonus only at the
-    # DESTINATION layer where edges converge (not at source — those
-    # depart to corridors and don't crowd the local gap).
-    node_local_out: dict[str, int] = defaultdict(int)
+    # The gap below each layer grows with the maximum single-node fan-
+    # out (so a node with many outputs has room for its edges to spread
+    # cleanly) and the local fan-in of the next layer (so converging
+    # edges don't crowd a single target).
+    #
+    # Source-side fan-out counts EVERY outgoing edge — even long ones
+    # need to depart from the source's bottom and share the post-layer
+    # space, so a node with 4 outputs (3 short + 1 long) deserves the
+    # same gap as one with 4 short outputs.
+    #
+    # Destination-side fan-in stays local-only; long edges arrive
+    # through corridors and don't crowd the destination layer.
+    node_total_out: dict[str, int] = defaultdict(int)
     node_local_in: dict[str, int] = defaultdict(int)
     for chain in edge_chains:
         src_L, tgt_L = layer_of[chain[0]], layer_of[chain[-1]]
+        node_total_out[chain[0]] += 1
         if tgt_L - src_L <= 2:
-            node_local_out[chain[0]] += 1
             node_local_in[chain[-1]] += 1
 
     layer_max_out: list[int] = [0] * num_layers
     layer_max_in: list[int] = [0] * num_layers
     for nid in node_ids:
         L = layer_of[nid]
-        if node_local_out.get(nid, 0) > layer_max_out[L]:
-            layer_max_out[L] = node_local_out[nid]
+        if node_total_out.get(nid, 0) > layer_max_out[L]:
+            layer_max_out[L] = node_total_out[nid]
         if node_local_in.get(nid, 0) > layer_max_in[L]:
             layer_max_in[L] = node_local_in[nid]
 
@@ -132,7 +156,7 @@ def compute_dag_layout(
             layer_long_in[tgt_L] += 1
 
     DEGREE_THRESHOLD = 2
-    EXTRA_PER_DEGREE = 16   # px per local connection above threshold
+    EXTRA_PER_DEGREE = 32   # px per local connection above threshold
     EXTRA_PER_LONG = 10     # px per long skip edge arriving
     typical_h = max((node_map[nid]["height"] for nid in node_ids), default=40)
 
@@ -143,14 +167,17 @@ def compute_dag_layout(
         layer_y[L] = y
         max_h = max((ext_nmap[nid]["height"] for nid in layers[L]), default=0)
         layer_mid[L] = y + max_h / 2
-        # Degree-based: max single-node LOCAL fan-out/fan-in at gap boundary
+        # Degree-based: max single-node fan-out/fan-in at gap boundary
         fan = layer_max_out[L]
         if L + 1 < num_layers:
             fan = max(fan, layer_max_in[L + 1])
         deg_extra = max(0, fan - DEGREE_THRESHOLD) * EXTRA_PER_DEGREE
         # Long-edge bonus: skip edges arriving at L+1 (convergence)
         long_extra = (layer_long_in[L + 1] if L + 1 < num_layers else 0) * EXTRA_PER_LONG
-        extra = min(typical_h, deg_extra + long_extra)
+        # Cap at 4× the typical node height so extreme fan-outs (e.g.
+        # Shape → 12 reshape ops) get plenty of room without going
+        # completely unbounded.
+        extra = min(4 * typical_h, deg_extra + long_extra)
         y += max_h + LAYER_SPACING + extra
 
     # Phase 6: Build result (only real nodes in positions)
@@ -350,6 +377,25 @@ def _nudge_clear(ideal_x: float, intervals: list[tuple[float, float]]) -> float:
     return best
 
 
+def _region_lca(r1: "Region", r2: "Region") -> "Region | None":
+    """Lowest common ancestor of two regions in the region tree."""
+    if r1 is None or r2 is None:
+        return None
+    if r1 is r2:
+        return r1
+    ancestors1: set[int] = set()
+    cur: "Region | None" = r1
+    while cur is not None:
+        ancestors1.add(id(cur))
+        cur = cur.parent
+    cur = r2
+    while cur is not None:
+        if id(cur) in ancestors1:
+            return cur
+        cur = cur.parent
+    return None
+
+
 def _snap_nudges_to_column(
     nudges: list[float],
     dummies: list[str],
@@ -388,7 +434,10 @@ def _snap_nudges_to_column(
     return nudges
 
 
-def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_layers, edges):
+def _straighten_long_edges(
+    x_of, edge_chains, layer_of, ext_nmap, layers, num_layers, edges,
+    node_region: dict[str, "Region"] | None = None,
+):
     """Post-process long-edge dummy positions for visual quality.
 
     Strategy per chain:
@@ -398,19 +447,56 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
 
     Parallel edges from the same source get consistent spacing.
     Uses actual target-port arrival x (not node center) for smooth interpolation.
+
+    When ``node_region`` is provided, the obstacle field is filtered per
+    source-group so an edge inside a residual block doesn't see nodes
+    from unrelated parts of the network as obstacles.
     """
-    # Build real-node intervals per layer for overlap checking.
-    # Corridor obstacles are tracked separately so they influence
-    # resolution (no collision) but not initial boundary computation
-    # (prevents distant corridors from pulling local edges away).
+    # Build real-node intervals per layer for overlap checking. Each
+    # interval also remembers its node id so we can filter the field
+    # per source-group later.
     layer_intervals: list[list[tuple[float, float]]] = [[] for _ in range(num_layers)]
+    layer_intervals_with_id: list[list[tuple[float, float, str]]] = (
+        [[] for _ in range(num_layers)]
+    )
     corridor_obstacles: list[list[tuple[float, float]]] = [[] for _ in range(num_layers)]
     for L in range(num_layers):
+        rows: list[tuple[float, float, str]] = []
         for nid in layers[L]:
             w = ext_nmap[nid]["width"]
             if w > 0:
-                layer_intervals[L].append((x_of[nid], x_of[nid] + w))
-        layer_intervals[L].sort()
+                rows.append((x_of[nid], x_of[nid] + w, nid))
+        rows.sort()
+        layer_intervals_with_id[L] = rows
+        layer_intervals[L] = [(l, r) for (l, r, _) in rows]
+
+    # Cache of per-scope filtered intervals so each unique scope only
+    # pays the filter cost once.
+    _scope_cache: dict[int, list[list[tuple[float, float]]]] = {}
+
+    def _intervals_for_scope(scope: "Region | None") -> list[list[tuple[float, float]]]:
+        if scope is None:
+            return layer_intervals
+        key = id(scope)
+        cached = _scope_cache.get(key)
+        if cached is not None:
+            return cached
+        scope_nodes = scope.nodes
+        filtered = [
+            [(l, r) for (l, r, nid) in layer_intervals_with_id[L] if nid in scope_nodes]
+            for L in range(num_layers)
+        ]
+        _scope_cache[key] = filtered
+        return filtered
+
+    def _scope_for(src_n: str, tgt_n: str) -> "Region | None":
+        if node_region is None:
+            return None
+        rs = node_region.get(src_n)
+        rt = node_region.get(tgt_n)
+        if rs is None or rt is None:
+            return None
+        return _region_lca(rs, rt)
 
     # Pre-compute target port counts for accurate arrival positions
     tgt_port_cnt: dict[str, int] = defaultdict(int)
@@ -469,6 +555,13 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
             else:
                 tgt_cx = x_of[tgt_n] + ext_nmap[tgt_n]["width"] / 2
 
+            # Region-scoped obstacle field: an edge inside a residual
+            # block (or any nested SESE region) only "sees" obstacles
+            # in its smallest enclosing region. Outside that scope the
+            # edge_intervals fall back to the global layer_intervals.
+            edge_scope = _scope_for(src_n, tgt_n)
+            edge_intervals = _intervals_for_scope(edge_scope)
+
             # Try step-routing strategies and pick the first that clears
             # all intermediate layers.  For major fan-out groups (≥4
             # parallel long edges), only try the standard step — we want
@@ -489,7 +582,7 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                     dL = layer_of[did]
                     t = (dL - src_L) / span
                     check_x = strat(t)
-                    for left, right in layer_intervals[dL]:
+                    for left, right in edge_intervals[dL]:
                         if left - NODE_SPACING <= check_x <= right + NODE_SPACING:
                             ok = False
                             break
@@ -526,8 +619,8 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                         t = (dL - src_L) / span
                         baseline = strat(t)
                         raw = baseline - par_off  # remove par_off for baseline nudge
-                        nudged = _nudge_clear(raw, layer_intervals[dL])
-                        final = _nudge_clear(nudged + par_off, layer_intervals[dL])
+                        nudged = _nudge_clear(raw, edge_intervals[dL])
+                        final = _nudge_clear(nudged + par_off, edge_intervals[dL])
                         xs.append(final)
                         max_disp = max(max_disp, abs(final - baseline))
                     if max_disp < best_max_disp:
@@ -544,7 +637,18 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                     # safe, so the rendered spline traces a straight vertical
                     # segment instead of weaving between obstacles.
                     best_nudge = _snap_nudges_to_column(
-                        best_nudge, dummies, layer_of, layer_intervals,
+                        best_nudge, dummies, layer_of, edge_intervals,
+                    )
+                    # Skip the demote-to-corridor fallback for edges
+                    # whose enclosing SESE region is small. The per-edge
+                    # nudge already lives inside a tiny obstacle field,
+                    # so even a wavy result stays local — and the
+                    # corridor branch wouldn't use the scope filter,
+                    # which would walk the route across the diagram.
+                    scope_is_small = (
+                        edge_scope is not None
+                        and edge_scope.parent is not None  # not the root
+                        and len(edge_scope.nodes) <= 50
                     )
                     # If the snapped path still wiggles (more than one
                     # local direction change in x), prefer a corridor:
@@ -552,7 +656,7 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                     # is visually cleaner than a long per-layer zigzag.
                     # Major fan-out groups skip this because they have
                     # their own corridor-bundling logic upstream.
-                    if not is_major:
+                    if not is_major and not scope_is_small:
                         eps = 0.5
                         last_dir = 0
                         changes = 0
@@ -565,7 +669,41 @@ def _straighten_long_edges(x_of, edge_chains, layer_of, ext_nmap, layers, num_la
                                 changes += 1
                             last_dir = d
                         if changes >= 2:
-                            accept_nudge = False
+                            # Peek-ahead: only demote when corridor mode
+                            # would actually land near the endpoints. The
+                            # corridor branch's conflict-resolution loop
+                            # walks the base past every blocker on its
+                            # preferred side, which can drag a long edge
+                            # thousands of pixels sideways.
+                            #
+                            # `_nudge_clear` on the flattened intermediate
+                            # obstacle field gives a strict *lower bound*
+                            # on how far the corridor base will end up
+                            # from src_cx / tgt_cx (corridor is more
+                            # constrained — picks one side — so it can
+                            # only end further). If even that lower bound
+                            # exceeds the budget, demoting will only make
+                            # the route worse: keep the wavy nudge.
+                            flat_obs: list[tuple[float, float]] = []
+                            for did in dummies:
+                                flat_obs.extend(edge_intervals[layer_of[did]])
+                            DEMOTE_BUDGET = 12 * NODE_SPACING  # 240 px
+                            peek_src = _nudge_clear(src_cx, flat_obs)
+                            peek_tgt = _nudge_clear(tgt_cx, flat_obs)
+                            closest_to_src = min(
+                                abs(peek_src - src_cx),
+                                abs(peek_tgt - src_cx),
+                            )
+                            closest_to_tgt = min(
+                                abs(peek_src - tgt_cx),
+                                abs(peek_tgt - tgt_cx),
+                            )
+                            corridor_would_be_near = (
+                                closest_to_src <= DEMOTE_BUDGET
+                                or closest_to_tgt <= DEMOTE_BUDGET
+                            )
+                            if corridor_would_be_near:
+                                accept_nudge = False
 
                 if accept_nudge:
                     edge_routes.append({
