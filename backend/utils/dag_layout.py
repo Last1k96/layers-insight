@@ -104,6 +104,17 @@ def compute_dag_layout(
     # Phase 4: Brandes-Köpf coordinate assignment (4 variants, median)
     x_of = _brandes_kopf(layers, num_layers, ext_nmap, ext_adj, ext_rev, pos)
 
+    # Phase 4a': Pull single-input "auxiliary" nodes back toward their
+    # predecessor's column when the median-of-4 placement drifted
+    # because of a long-edge skip child. The Slice_1368-style case:
+    # one short input from Shape_1364, one long output to Concat_1370.
+    # Brandes-Köpf balances between the two, leaving the node 1000+
+    # px from its only visible input. The snap only fires when the
+    # target column is empty in the node's layer.
+    _snap_aux_nodes_to_input_column(
+        x_of, node_ids, edges, layer_of, layers, ext_nmap,
+    )
+
     # Phase 4a: Detect Single-Entry Single-Exit regions so the
     # straightening pass can restrict its obstacle field per edge to
     # nodes that are structurally relevant. A bypass that lives inside
@@ -191,8 +202,16 @@ def compute_dag_layout(
         if p > port_counts[e["source"]]:
             port_counts[e["source"]] = p
 
-    # Target port counts (max target_port + 1 per node)
+    # Target port counts (max target_port + 1 per node).
+    # Prefer the original input count from the model when available
+    # (passed as `total_inputs` on each node) so edges arrive at their
+    # correct port slot even when sibling inputs are constants that
+    # were filtered from the visible graph. Falls back to scanning
+    # visible edges otherwise.
     target_port_counts: dict[str, int] = defaultdict(int)
+    for nid, n in node_map.items():
+        if n.get("total_inputs"):
+            target_port_counts[nid] = n["total_inputs"]
     for e in edges:
         p = e.get("target_port", 0) + 1
         if p > target_port_counts[e["target"]]:
@@ -276,12 +295,28 @@ def compute_dag_layout(
             # Span-1 edge with offset: convert to 4-point step routing
             # (vertical exit, smooth transition, vertical entry) so the
             # cubic B-spline settles at target x before the arrow.
-            gap = ey - sy
-            margin = gap * 0.35
-            wps.append({"x": sx, "y": sy + margin})
-            wps.append({"x": ex, "y": ey - margin})
-            # Remove the bare start — rebuild with step pattern
-            wps[0] = {"x": sx, "y": sy}
+            #
+            # Skip the step pattern when at least one sibling in this
+            # fan-out group is a long edge (has dummies). Mixing step-
+            # patterned span-1 edges with diagonal long edges in the
+            # same group causes the rendered curves to cross because
+            # the step's horizontal jump happens at a y where the
+            # diagonal sibling is still moving.
+            sibling_has_dummies = False
+            if fan_count > 1:
+                for j in fan_list:
+                    if j == i:
+                        continue
+                    if len(edge_chains[j]) > 2:
+                        sibling_has_dummies = True
+                        break
+            if not sibling_has_dummies:
+                gap = ey - sy
+                margin = gap * 0.35
+                wps.append({"x": sx, "y": sy + margin})
+                wps.append({"x": ex, "y": ey - margin})
+                # Remove the bare start — rebuild with step pattern
+                wps[0] = {"x": sx, "y": sy}
         wps.append({"x": ex, "y": ey})
 
         ewp[f"e{i}"] = {"waypoints": wps}
@@ -359,22 +394,150 @@ EDGE_SPACING = 8  # px between parallel long-edge corridors
 def _nudge_clear(ideal_x: float, intervals: list[tuple[float, float]]) -> float:
     """Find the nearest x to *ideal_x* that clears all node intervals.
 
-    Each interval is (left, right) of a real node.  The returned x
-    satisfies ``x <= left - NODE_SPACING`` or ``x >= right + NODE_SPACING``
-    for every interval.  Iterates to resolve cascading overlaps.
+    Each interval is (left, right) of a real node. The returned x is
+    NOT inside any padded interval ``[left-NODE_SPACING, right+NODE_SPACING]``.
+
+    Builds the union of padded intervals, finds the gaps between them,
+    and returns the closest gap-edge or unbounded extent to *ideal_x*.
+    Handles tightly-packed obstacles (where adjacent padded intervals
+    overlap) by skipping past the merged obstacle entirely.
     """
-    best = ideal_x
-    for _ in range(10):  # iterate to resolve cascading overlaps
-        blocked = False
-        for left, right in intervals:
-            if left - NODE_SPACING <= best <= right + NODE_SPACING:
-                dl = best - (left - NODE_SPACING)
-                dr = (right + NODE_SPACING) - best
-                best = (left - NODE_SPACING) if dl <= dr else (right + NODE_SPACING)
-                blocked = True
-        if not blocked:
+    if not intervals:
+        return ideal_x
+
+    padded = sorted(
+        (l - NODE_SPACING, r + NODE_SPACING) for l, r in intervals
+    )
+    # Merge overlapping padded intervals
+    merged: list[tuple[float, float]] = []
+    for l, r in padded:
+        if merged and l <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], r))
+        else:
+            merged.append((l, r))
+
+    # Check if ideal is inside any merged blocked range
+    blocking: tuple[float, float] | None = None
+    for l, r in merged:
+        if l < ideal_x < r:
+            blocking = (l, r)
             break
-    return best
+    if blocking is None:
+        return ideal_x
+
+    # Pick the closer side of the blocking interval
+    dl = ideal_x - blocking[0]
+    dr = blocking[1] - ideal_x
+    return blocking[0] if dl <= dr else blocking[1]
+
+
+def _snap_aux_nodes_to_input_column(
+    x_of: dict[str, float],
+    node_ids: list[str],
+    edges: list[dict],
+    layer_of: dict,
+    layers: list[list[str]],
+    ext_nmap: dict,
+) -> None:
+    """Pull single-input nodes back to their input's column when safe.
+
+    Targets the Slice_1368 pattern: a node with one real input from
+    the immediately preceding layer plus one or more long-edge outputs
+    that pulled it horizontally far from its input. Snaps the node to
+    align with the input only if the target slot is empty in the
+    node's layer (no overlap with siblings).
+    """
+    # Build adjacency: node -> list of (real) predecessors
+    pred_of: dict[str, list[str]] = defaultdict(list)
+    succ_of: dict[str, list[str]] = defaultdict(list)
+    node_set = set(node_ids)
+    for e in edges:
+        s, t = e["source"], e["target"]
+        if s in node_set and t in node_set:
+            pred_of[t].append(s)
+            succ_of[s].append(t)
+
+    SNAP_THRESHOLD = 300  # only snap when misalignment exceeds this
+    SEARCH_WINDOW = 4 * 100  # 400 px around the ideal column
+    MIN_IMPROVEMENT = 200    # snap must reduce misalignment by at least this
+    for nid in node_ids:
+        preds = pred_of.get(nid, [])
+        succs = succ_of.get(nid, [])
+        if not preds or not succs:
+            continue
+        # Allow 1 or 2 real inputs, all from the immediately preceding
+        # layer. Two inputs covers tail subgraphs that take a value and
+        # an axis from the same parent block.
+        if len(preds) > 2:
+            continue
+        if any(layer_of[p] != layer_of[nid] - 1 for p in preds):
+            continue
+        # Only fire when every successor is a long edge (target is at
+        # least 2 layers below). A node with short successors should
+        # stay where Brandes-Köpf placed it for the local routing.
+        if any(layer_of[c] - layer_of[nid] < 2 for c in succs):
+            continue
+
+        n = ext_nmap[nid]
+        node_w = n["width"]
+        cur_cx = x_of[nid] + node_w / 2
+        # Target is the centroid of the (1 or 2) parents
+        target_cx = sum(
+            x_of[p] + ext_nmap[p]["width"] / 2 for p in preds
+        ) / len(preds)
+        cur_misalign = abs(cur_cx - target_cx)
+        if cur_misalign < SNAP_THRESHOLD:
+            continue
+
+        L = layer_of[nid]
+        # Build sibling intervals for collision detection
+        siblings: list[tuple[float, float]] = []
+        for other in layers[L]:
+            if other == nid:
+                continue
+            o = ext_nmap.get(other, {})
+            ow = o.get("width", 0)
+            if ow == 0:
+                continue
+            ox = x_of.get(other)
+            if ox is None:
+                continue
+            siblings.append((ox - NODE_SPACING, ox + ow + NODE_SPACING))
+        siblings.sort()
+
+        ideal_x = target_cx - node_w / 2
+
+        def is_clear(x: float) -> bool:
+            left = x
+            right = x + node_w
+            for ol, or_ in siblings:
+                if right < ol or left > or_:
+                    continue
+                return False
+            return True
+
+        # Generate candidate positions near the ideal: ideal itself,
+        # plus the just-right-of and just-left-of every sibling.
+        candidates: list[float] = [ideal_x]
+        for ol, or_ in siblings:
+            candidates.append(or_ + 0.01)
+            candidates.append(ol - node_w - 0.01)
+        # Restrict to candidates that are within SEARCH_WINDOW of the
+        # ideal AND would move the node by at least MIN_IMPROVEMENT
+        # closer to ideal.
+        candidates = [
+            c for c in candidates
+            if abs(c - ideal_x) <= SEARCH_WINDOW
+            and abs(c + node_w / 2 - target_cx) <= cur_misalign - MIN_IMPROVEMENT
+        ]
+        if not candidates:
+            continue
+
+        candidates.sort(key=lambda c: abs(c - ideal_x))
+        for c in candidates:
+            if is_clear(c):
+                x_of[nid] = c
+                break
 
 
 def _find_nearest_clear_corridor_base(
@@ -468,34 +631,54 @@ def _snap_nudges_to_column(
     dummies: list[str],
     layer_of: dict,
     layer_intervals: list[list[tuple[float, float]]],
+    anchor: float | None = None,
 ) -> list[float]:
     """Collapse a per-dummy nudge list to a single x when geometrically safe.
 
-    Tries every distinct nudge value as a candidate single column,
-    sorted by distance from the median, and picks the first one that
-    clears every dummy's layer obstacles. Returns the original list
-    unchanged when no clean column exists.
+    Builds the union of padded blocked intervals across every dummy
+    layer, then picks the closest gap edge (or unbounded extent) to
+    ``anchor`` (defaults to the nudge median). Gap-aware so a column
+    can be found even when no per-layer nudge value happens to clear
+    every other layer.
     """
     if len(nudges) < 2:
         return nudges
     if max(nudges) == min(nudges):
         return nudges
 
-    distinct = sorted(set(nudges))
-    median = sorted(nudges)[len(nudges) // 2]
-    distinct.sort(key=lambda x: abs(x - median))
+    median = anchor if anchor is not None else sorted(nudges)[len(nudges) // 2]
 
-    def clears_all(candidate: float) -> bool:
-        for did in dummies:
-            for left, right in layer_intervals[layer_of[did]]:
-                if left - NODE_SPACING < candidate < right + NODE_SPACING:
-                    return False
-        return True
+    # Collect every padded blocked interval across all dummy layers
+    blocks: list[tuple[float, float]] = []
+    for did in dummies:
+        for left, right in layer_intervals[layer_of[did]]:
+            blocks.append((left - NODE_SPACING, right + NODE_SPACING))
+    if not blocks:
+        return [median] * len(nudges)
+    blocks.sort()
 
-    for candidate in distinct:
-        if clears_all(candidate):
-            return [candidate] * len(nudges)
-    return nudges
+    # Merge overlapping intervals
+    merged: list[tuple[float, float]] = []
+    for l, r in blocks:
+        if merged and l <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], r))
+        else:
+            merged.append((l, r))
+
+    # If median is in a clear gap, use it directly
+    in_blocked: tuple[float, float] | None = None
+    for l, r in merged:
+        if l < median < r:
+            in_blocked = (l, r)
+            break
+    if in_blocked is None:
+        return [median] * len(nudges)
+
+    # Pick the nearer side of the blocking interval
+    dl = median - in_blocked[0]
+    dr = in_blocked[1] - median
+    candidate = in_blocked[0] if dl <= dr else in_blocked[1]
+    return [candidate] * len(nudges)
 
 
 def _straighten_long_edges(
@@ -562,8 +745,14 @@ def _straighten_long_edges(
             return None
         return _region_lca(rs, rt)
 
-    # Pre-compute target port counts for accurate arrival positions
+    # Pre-compute target port counts for accurate arrival positions.
+    # Use the model's original input count when available so edges
+    # arrive at their actual port slot even when sibling inputs are
+    # constants that were filtered from the visible graph.
     tgt_port_cnt: dict[str, int] = defaultdict(int)
+    for nid, n in ext_nmap.items():
+        if isinstance(n, dict) and n.get("total_inputs"):
+            tgt_port_cnt[nid] = n["total_inputs"]
     for e in edges:
         p = e.get("target_port", 0) + 1
         if p > tgt_port_cnt[e["target"]]:
@@ -714,60 +903,14 @@ def _straighten_long_edges(
                         and edge_scope.parent is not None  # not the root
                         and len(edge_scope.nodes) <= 50
                     )
-                    # If the snapped path still wiggles (more than one
-                    # local direction change in x), prefer a corridor:
-                    # a single shared column with brief entry/exit ramps
-                    # is visually cleaner than a long per-layer zigzag.
-                    # Major fan-out groups skip this because they have
-                    # their own corridor-bundling logic upstream.
-                    if not is_major and not scope_is_small:
-                        eps = 0.5
-                        last_dir = 0
-                        changes = 0
-                        for i in range(len(best_nudge) - 1):
-                            dx = best_nudge[i + 1] - best_nudge[i]
-                            if abs(dx) < eps:
-                                continue
-                            d = 1 if dx > 0 else -1
-                            if last_dir != 0 and d != last_dir:
-                                changes += 1
-                            last_dir = d
-                        if changes >= 2:
-                            # Peek-ahead: only demote when corridor mode
-                            # would actually land near the endpoints. The
-                            # corridor branch's conflict-resolution loop
-                            # walks the base past every blocker on its
-                            # preferred side, which can drag a long edge
-                            # thousands of pixels sideways.
-                            #
-                            # `_nudge_clear` on the flattened intermediate
-                            # obstacle field gives a strict *lower bound*
-                            # on how far the corridor base will end up
-                            # from src_cx / tgt_cx (corridor is more
-                            # constrained — picks one side — so it can
-                            # only end further). If even that lower bound
-                            # exceeds the budget, demoting will only make
-                            # the route worse: keep the wavy nudge.
-                            flat_obs: list[tuple[float, float]] = []
-                            for did in dummies:
-                                flat_obs.extend(edge_intervals[layer_of[did]])
-                            DEMOTE_BUDGET = 12 * NODE_SPACING  # 240 px
-                            peek_src = _nudge_clear(src_cx, flat_obs)
-                            peek_tgt = _nudge_clear(tgt_cx, flat_obs)
-                            closest_to_src = min(
-                                abs(peek_src - src_cx),
-                                abs(peek_tgt - src_cx),
-                            )
-                            closest_to_tgt = min(
-                                abs(peek_src - tgt_cx),
-                                abs(peek_tgt - tgt_cx),
-                            )
-                            corridor_would_be_near = (
-                                closest_to_src <= DEMOTE_BUDGET
-                                or closest_to_tgt <= DEMOTE_BUDGET
-                            )
-                            if corridor_would_be_near:
-                                accept_nudge = False
+                    # No demote-to-corridor: the gap-aware snap above
+                    # already collapses zigzags into a single column
+                    # whenever feasible (using the union of blocked
+                    # intervals across every dummy layer), so the wavy
+                    # mode that motivated the demote rarely happens.
+                    # Skipping demote keeps long bypasses from being
+                    # pushed into far corridors.
+                    pass
 
                 if accept_nudge:
                     edge_routes.append({

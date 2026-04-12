@@ -223,7 +223,17 @@ async def compute_layout(graph_data: GraphData) -> dict:
     'edges' mapping edge index to {waypoints: [{x,y}]}.
     """
     layout_nodes = [
-        {"id": n.id, "width": n.width or 100, "height": n.height or NODE_HEIGHT}
+        {
+            "id": n.id,
+            "width": n.width or 100,
+            "height": n.height or NODE_HEIGHT,
+            # Total input count from the original model (including
+            # constant inputs that get filtered from the displayed
+            # graph). Lets the layout place the visible edge at its
+            # original port slot rather than centering when other
+            # ports are constants.
+            "total_inputs": len(n.inputs or []),
+        }
         for n in graph_data.nodes
     ]
     layout_edges = [
