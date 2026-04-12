@@ -1570,15 +1570,12 @@
   .field-warn {
     color: #E8A849;
     cursor: help;
-    background: rgba(232, 168, 73, 0.12);
-    border-radius: 50%;
-    padding: 3px;
-    animation: field-warn-pulse 2s ease-in-out infinite;
   }
 
-  @keyframes field-warn-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(232, 168, 73, 0.3); }
-    50% { box-shadow: 0 0 0 4px rgba(232, 168, 73, 0); }
+  .field-hint.field-warn {
+    background: rgba(232, 168, 73, 0.08);
+    border-radius: 0.25rem;
+    padding: 0.3rem 0.5rem;
   }
 
   .status-spin {
