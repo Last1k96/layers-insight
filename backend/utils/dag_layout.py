@@ -377,6 +377,73 @@ def _nudge_clear(ideal_x: float, intervals: list[tuple[float, float]]) -> float:
     return best
 
 
+def _find_nearest_clear_corridor_base(
+    center: float,
+    budget: float,
+    max_extent: float,
+    dummies: list[str],
+    layer_intervals: list[list[tuple[float, float]]],
+    layer_of: dict,
+    side: int = 0,
+) -> float | None:
+    """Find the nearest x to `center` (within ±budget) that allows a
+    corridor of half-width `max_extent` to clear every dummy layer's
+    obstacles. ``side`` constrains the search direction:
+        +1 → only positions ≥ center (right of source)
+        −1 → only positions ≤ center (left of source)
+         0 → either side
+    Returns None if no clean position exists in the search range.
+    """
+    if side > 0:
+        lo = center
+        hi = center + budget
+    elif side < 0:
+        lo = center - budget
+        hi = center
+    else:
+        lo = center - budget
+        hi = center + budget
+    blocks: list[tuple[float, float]] = []
+    for did in dummies:
+        for left, right in layer_intervals[layer_of[did]]:
+            l_padded = left - NODE_SPACING - max_extent
+            r_padded = right + NODE_SPACING + max_extent
+            if l_padded > hi or r_padded < lo:
+                continue
+            blocks.append((max(l_padded, lo), min(r_padded, hi)))
+    blocks.sort()
+
+    merged: list[tuple[float, float]] = []
+    for l, r in blocks:
+        if merged and l <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], r))
+        else:
+            merged.append((l, r))
+
+    # Build clear ranges between blocked intervals
+    candidates: list[tuple[float, float]] = []
+    cur = lo
+    for l, r in merged:
+        if cur < l:
+            candidates.append((cur, l))
+        cur = max(cur, r)
+    if cur < hi:
+        candidates.append((cur, hi))
+
+    if not candidates:
+        return None
+
+    best_x: float | None = None
+    best_dist = float("inf")
+    for l, r in candidates:
+        x = max(l, min(center, r))  # closest point in [l, r] to center
+        d = abs(x - center)
+        if d < best_dist:
+            best_dist = d
+            best_x = x
+    return best_x
+
+
 def _region_lca(r1: "Region", r2: "Region") -> "Region | None":
     """Lowest common ancestor of two regions in the region tree."""
     if r1 is None or r2 is None:
@@ -404,32 +471,29 @@ def _snap_nudges_to_column(
 ) -> list[float]:
     """Collapse a per-dummy nudge list to a single x when geometrically safe.
 
-    Independent per-layer nudges produce slightly different x values that
-    the renderer's B-spline traces as a wavy line. If the most extreme
-    nudge (the rightmost when nudges went right, leftmost when they went
-    left) clears every dummy's intermediate-layer obstacles, we use it
-    for all dummies — yielding a perfectly vertical segment with the
-    same overall displacement as the original tightest nudge.
-    Returns the original list unchanged when snapping isn't feasible.
+    Tries every distinct nudge value as a candidate single column,
+    sorted by distance from the median, and picks the first one that
+    clears every dummy's layer obstacles. Returns the original list
+    unchanged when no clean column exists.
     """
     if len(nudges) < 2:
         return nudges
     if max(nudges) == min(nudges):
         return nudges
 
-    for candidate in (max(nudges), min(nudges)):
-        clear = True
+    distinct = sorted(set(nudges))
+    median = sorted(nudges)[len(nudges) // 2]
+    distinct.sort(key=lambda x: abs(x - median))
+
+    def clears_all(candidate: float) -> bool:
         for did in dummies:
             for left, right in layer_intervals[layer_of[did]]:
-                # Strict <: a value sitting exactly on the padded
-                # boundary is treated as clear (matches what _nudge_clear
-                # produces when it pushes a point to the edge).
                 if left - NODE_SPACING < candidate < right + NODE_SPACING:
-                    clear = False
-                    break
-            if not clear:
-                break
-        if clear:
+                    return False
+        return True
+
+    for candidate in distinct:
+        if clears_all(candidate):
             return [candidate] * len(nudges)
     return nudges
 
@@ -864,6 +928,25 @@ def _straighten_long_edges(
                                 clear = False
                 if clear:
                     break
+
+            # Smart re-anchoring: replace the walked-outward base with
+            # the closest overlap-free position to src_cx within a
+            # ±budget window. The conflict-resolution loop above
+            # settles on the FIRST clean position in one direction;
+            # smart re-anchor checks for any closer clean position on
+            # either side. If no clean position exists in the window,
+            # fall back to the walked-far base (lesser evil — far but
+            # no overlap). Major groups get a wider budget because
+            # their parallel-edge spread is large.
+            CORRIDOR_DRIFT_BUDGET = (
+                20 * NODE_SPACING if is_major else 25 * NODE_SPACING
+            )
+            closer = _find_nearest_clear_corridor_base(
+                src_cx, CORRIDOR_DRIFT_BUDGET, max_extent,
+                all_dummies, layer_intervals, layer_of,
+            )
+            if closer is not None and abs(closer - src_cx) < abs(base - src_cx):
+                base = closer
 
             # Assign par_off by peel-off order
             order = sorted(range(side_count), key=lambda k: side_routes[k]["tgt_L"])
