@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from backend.schemas.graph import GraphData, GraphEdge, GraphNode, NodeInput
+from backend.utils.block_detection import detect_blocks
+from backend.utils.block_layout import compute_block_layout as _compute_block_layout_sync
 from backend.utils.dag_layout import compute_dag_layout
 from backend.utils.op_categories import get_op_category, get_op_color
 
@@ -241,6 +243,49 @@ async def compute_layout(graph_data: GraphData) -> dict:
         for e in graph_data.edges
     ]
     return await asyncio.to_thread(compute_dag_layout, layout_nodes, layout_edges)
+
+
+def should_use_block_layout(graph_data: GraphData) -> bool:
+    """Detect whether a graph should use block-aware layout.
+
+    Returns True when the graph has many nodes AND a block-structured
+    naming pattern covering a significant fraction of the graph.
+    """
+    if len(graph_data.nodes) < 1500:
+        return False
+    nodes_dicts = [{"id": n.id, "name": n.name} for n in graph_data.nodes]
+    edges_dicts = [{"source": e.source, "target": e.target} for e in graph_data.edges]
+    bs = detect_blocks(nodes_dicts, edges_dicts, max_absorption_rounds=0)
+    # Only count regex-matched nodes (no absorption) for the quick check
+    if len(bs.blocks) < 3:
+        return False
+    coverage = sum(len(b.node_ids) for b in bs.blocks.values()) / len(graph_data.nodes)
+    return coverage > 0.3
+
+
+async def compute_block_aware_layout(graph_data: GraphData) -> dict:
+    """Compute two-level block-aware layout for large transformer models.
+
+    Returns dict with same format as compute_layout.
+    """
+    layout_nodes = [
+        {
+            "id": n.id,
+            "name": n.name,
+            "type": n.type,
+            "width": n.width or 100,
+            "height": n.height or NODE_HEIGHT,
+            "total_inputs": len(n.inputs or []),
+            "inputs": [inp.model_dump() for inp in n.inputs] if n.inputs else [],
+        }
+        for n in graph_data.nodes
+    ]
+    layout_edges = [
+        {"source": e.source, "target": e.target,
+         "source_port": e.source_port, "target_port": e.target_port}
+        for e in graph_data.edges
+    ]
+    return await asyncio.to_thread(_compute_block_layout_sync, layout_nodes, layout_edges)
 
 
 def _find_node_binary() -> str:

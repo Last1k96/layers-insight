@@ -35,7 +35,8 @@ class SessionConfig(BaseModel):
     original_format: Optional[str] = None  # original model format before conversion (e.g. "onnx")
     plugin_config: dict[str, str] = {}  # main device plugin properties
     ref_plugin_config: dict[str, str] = {}  # reference device plugin properties
-    use_elk_layout: bool = False  # use elkjs reference layout (slower) instead of pure-Python DAG layout
+    use_elk_layout: bool = False  # deprecated — use layout_mode instead
+    layout_mode: str = "auto"  # "auto", "dag", "elk", or "block"
 
 
 class SessionInfo(BaseModel):

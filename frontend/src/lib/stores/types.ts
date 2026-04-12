@@ -60,6 +60,7 @@ export interface SessionConfig {
   plugin_config?: Record<string, string>;
   ref_plugin_config?: Record<string, string>;
   use_elk_layout?: boolean;
+  layout_mode?: 'auto' | 'dag' | 'elk' | 'block';
 }
 
 export interface DeviceProperty {

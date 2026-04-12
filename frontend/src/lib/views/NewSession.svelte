@@ -31,6 +31,7 @@
   let mainDevice = $state('CPU');
   let refDevice = $state('CPU');
   let useElkLayout = $state(false);
+  let layoutMode = $state<'auto' | 'dag' | 'elk' | 'block'>('auto');
   let submitting = $state(false);
   let error = $state<string | null>(null);
 
@@ -687,6 +688,7 @@
         plugin_config: Object.keys(pluginCfg).length > 0 ? pluginCfg : undefined,
         ref_plugin_config: Object.keys(refPluginCfg).length > 0 ? refPluginCfg : undefined,
         use_elk_layout: useElkLayout || undefined,
+        layout_mode: layoutMode !== 'auto' ? layoutMode : undefined,
       });
 
       submitting = false;
@@ -1030,13 +1032,36 @@
             </svg>
             Layout
           </div>
-          <label class="layout-toggle">
-            <input type="checkbox" bind:checked={useElkLayout} />
-            <span class="layout-toggle-text">
-              <span class="layout-toggle-title">Use ELK reference layout</span>
-              <span class="layout-toggle-hint">Slower, but sometimes produces better layout</span>
-            </span>
-          </label>
+          <div class="layout-mode-selector">
+            <label class="layout-option">
+              <input type="radio" bind:group={layoutMode} value="auto" />
+              <span class="layout-option-text">
+                <span class="layout-toggle-title">Auto</span>
+                <span class="layout-toggle-hint">Block-aware for large LLMs, DAG for others</span>
+              </span>
+            </label>
+            <label class="layout-option">
+              <input type="radio" bind:group={layoutMode} value="dag" />
+              <span class="layout-option-text">
+                <span class="layout-toggle-title">DAG</span>
+                <span class="layout-toggle-hint">Sugiyama layered layout (fast, good for most models)</span>
+              </span>
+            </label>
+            <label class="layout-option">
+              <input type="radio" bind:group={layoutMode} value="block" />
+              <span class="layout-option-text">
+                <span class="layout-toggle-title">Block-aware</span>
+                <span class="layout-toggle-hint">Two-level layout optimized for transformers/LLMs</span>
+              </span>
+            </label>
+            <label class="layout-option">
+              <input type="radio" bind:group={layoutMode} value="elk" />
+              <span class="layout-option-text">
+                <span class="layout-toggle-title">ELK</span>
+                <span class="layout-toggle-hint">Reference engine (slowest)</span>
+              </span>
+            </label>
+          </div>
         </div>
       {/if}
 
@@ -1378,7 +1403,43 @@
     gap: 0.3rem;
   }
 
-  /* ── Layout toggle ── */
+  /* ── Layout mode selector ── */
+  .layout-mode-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .layout-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    padding: 0.35rem 0.55rem;
+    background: var(--bg-primary);
+    border: 1px solid transparent;
+    border-radius: 0.4rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .layout-option:hover {
+    border-color: rgba(76, 141, 255, 0.45);
+  }
+
+  .layout-option input[type="radio"] {
+    margin-top: 0.15rem;
+    cursor: pointer;
+    accent-color: rgba(76, 141, 255, 0.85);
+  }
+
+  .layout-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    user-select: none;
+  }
+
+  /* ── Layout toggle (legacy) ── */
   .layout-toggle {
     display: flex;
     align-items: flex-start;

@@ -7,11 +7,13 @@ from fastapi.responses import JSONResponse
 
 from backend.services.graph_service import (
     apply_layout,
+    compute_block_aware_layout,
     compute_elk_layout,
     compute_layout,
     extract_graph,
     load_model,
     search_nodes,
+    should_use_block_layout,
 )
 
 router = APIRouter(prefix="/api/sessions/{session_id}/graph", tags=["graph"])
@@ -131,7 +133,23 @@ async def get_graph(session_id: str, request: Request) -> JSONResponse:
     node_count = len(graph_data.nodes)
     edge_count = len(graph_data.edges)
 
-    if session.config.use_elk_layout:
+    # Resolve layout mode: explicit setting or auto-detect
+    layout_mode = session.config.layout_mode
+    if layout_mode == "auto":
+        if session.config.use_elk_layout:
+            layout_mode = "elk"
+        elif should_use_block_layout(graph_data):
+            layout_mode = "block"
+        else:
+            layout_mode = "dag"
+
+    if layout_mode == "block":
+        await _progress(
+            "layout", f"Computing block-aware layout for {node_count} nodes…",
+            node_count=node_count, backend="block",
+        )
+        positions = await compute_block_aware_layout(graph_data)
+    elif layout_mode == "elk":
         await _progress(
             "layout", f"Computing ELK layout for {node_count} nodes…",
             node_count=node_count, backend="elk",
