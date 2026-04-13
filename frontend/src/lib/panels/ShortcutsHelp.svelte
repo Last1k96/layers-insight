@@ -60,9 +60,43 @@
           <kbd class="shortcut-key">Alt (hold)</kbd>
           <span class="shortcut-desc">Accuracy view mode</span>
         </div>
+
+        <div class="section-label">Navigation</div>
         <div class="shortcut-row">
-          <kbd class="shortcut-key">Arrow keys</kbd>
-          <span class="shortcut-desc">Navigate queue / graph (with Ctrl)</span>
+          <kbd class="shortcut-key">↑ / ↓</kbd>
+          <span class="shortcut-desc">Navigate queue list</span>
+        </div>
+        <div class="shortcut-row">
+          <kbd class="shortcut-key">Ctrl + ↑</kbd>
+          <span class="shortcut-desc">Go to predecessor node</span>
+        </div>
+        <div class="shortcut-row">
+          <kbd class="shortcut-key">Ctrl + ↓</kbd>
+          <span class="shortcut-desc">Go to successor node</span>
+        </div>
+        <div class="shortcut-row">
+          <kbd class="shortcut-key">Ctrl + ← / →</kbd>
+          <span class="shortcut-desc">Go to sibling node</span>
+        </div>
+
+        <div class="section-label">Mouse</div>
+        <div class="shortcut-row">
+          <kbd class="shortcut-key">Ctrl + Click</kbd>
+          <span class="shortcut-desc">Select and center on node</span>
+        </div>
+        <div class="shortcut-row">
+          <kbd class="shortcut-key">Double-click</kbd>
+          <span class="shortcut-desc">Enqueue inference</span>
+        </div>
+        <div class="shortcut-row">
+          <kbd class="shortcut-key">Shift + Dbl-click</kbd>
+          <span class="shortcut-desc">Re-enqueue inference (force)</span>
+        </div>
+
+        <div class="section-label">Search</div>
+        <div class="shortcut-row">
+          <kbd class="shortcut-key">↑ / ↓</kbd>
+          <span class="shortcut-desc">Cycle through results</span>
         </div>
       </div>
     </div>
@@ -147,5 +181,16 @@
     font-size: 12px;
     color: var(--text-secondary);
     opacity: 0.6;
+  }
+
+  .section-label {
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    opacity: 0.4;
+    margin-top: 10px;
+    margin-bottom: 2px;
   }
 </style>
