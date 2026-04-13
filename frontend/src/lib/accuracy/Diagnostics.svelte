@@ -49,15 +49,11 @@
     }
 
     const rect = canvas.getBoundingClientRect();
-    // Account for zoom: the canvas is scaled via CSS transform, so
-    // getBoundingClientRect() returns the scaled size. We need coords
-    // in the unscaled canvas pixel space.
     const mx = (e.clientX - rect.left) / zoomLevel;
     const my = (e.clientY - rect.top) / zoomLevel;
 
     const { panelW, panelH, blocksPerRow, channelCount, blockW, blockH, blockGap, labelH, gap } = layout;
 
-    // Determine which block column and row the mouse is in
     const cellW = blockW + blockGap;
     const cellH = blockH + blockGap;
     const col = Math.floor(mx / cellW);
@@ -74,13 +70,11 @@
       return;
     }
 
-    // Local coordinates within the block
     const bx = col * cellW;
     const by = row * cellH;
     const lx = mx - bx;
     const ly = my - by;
 
-    // Check if within the label row at the top
     if (ly < labelH) {
       tooltipVisible = false;
       return;
@@ -89,16 +83,13 @@
     const panelY = ly - labelH;
     let panelType: string | null = null;
 
-    // Top row: ref (left) | main (right)
     if (panelY >= 0 && panelY < panelH) {
       if (lx >= 0 && lx < panelW) {
         panelType = refLabel;
       } else if (lx >= panelW + gap && lx < panelW + gap + panelW) {
         panelType = mainLabel;
       }
-    }
-    // Bottom row: diff (left) | density (right)
-    else if (panelY >= panelH + gap && panelY < panelH + gap + panelH) {
+    } else if (panelY >= panelH + gap && panelY < panelH + gap + panelH) {
       if (lx >= 0 && lx < panelW) {
         panelType = 'Diff';
       } else if (lx >= panelW + gap && lx < panelW + gap + panelW) {

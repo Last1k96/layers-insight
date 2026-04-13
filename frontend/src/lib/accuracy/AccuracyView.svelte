@@ -1,29 +1,20 @@
 <script lang="ts">
-  import Heatmap from './Heatmap.svelte';
-  import ChannelView from './ChannelView.svelte';
+  import ErrorMap from './ErrorMap.svelte';
   import SideBySide from './SideBySide.svelte';
+  import ChannelStats from './ChannelStats.svelte';
   import ErrorTreemap from './ErrorTreemap.svelte';
-  import Volume3D from './Volume3D.svelte';
   import Diagnostics from './Diagnostics.svelte';
-  import RelativeError from './RelativeError.svelte';
-  import LogError from './LogError.svelte';
-  import SignedDiff from './SignedDiff.svelte';
-  import ThresholdError from './ThresholdError.svelte';
-  import FlickerCompare from './FlickerCompare.svelte';
-  import NanInfInspector from './NanInfInspector.svelte';
-  import SwipeCompare from './SwipeCompare.svelte';
-  import FeatureGrid from './FeatureGrid.svelte';
-  import ScatterPlot from './ScatterPlot.svelte';
-  import CheckerboardCompare from './CheckerboardCompare.svelte';
-  import SparsityMap from './SparsityMap.svelte';
-  import MetricsDashboard from './MetricsDashboard.svelte';
-  import SSIMMap from './SSIMMap.svelte';
-  import SpatialCosine from './SpatialCosine.svelte';
-  import QQPlot from './QQPlot.svelte';
+  import Volume3D from './Volume3D.svelte';
+  import CompareView from './CompareView.svelte';
+  import SimilarityMap from './SimilarityMap.svelte';
   import ULPError from './ULPError.svelte';
+  import DistributionView from './DistributionView.svelte';
+  import FeatureGrid from './FeatureGrid.svelte';
   import ChannelCorrelation from './ChannelCorrelation.svelte';
-  import GradientCompare from './GradientCompare.svelte';
+  import SparsityMap from './SparsityMap.svelte';
+  import NanInfInspector from './NanInfInspector.svelte';
   import FrequencyView from './FrequencyView.svelte';
+  import GradientCompare from './GradientCompare.svelte';
   import { getSpatialDims } from './tensorUtils';
   import { tensorStore } from '../stores/tensors.svelte';
   import { sessionStore } from '../stores/session.svelte';
@@ -48,22 +39,22 @@
   } = $props();
 
   type TabKey =
-    | 'heatmap' | 'sidebyside' | 'channel' | 'treemap' | 'volume3d' | 'diagnostics'
-    | 'relativeError' | 'logError' | 'signedDiff' | 'thresholdError' | 'ssim' | 'spatialCosine' | 'ulpError'
-    | 'flicker' | 'swipe' | 'checkerboard' | 'scatter'
+    | 'errorMap' | 'sidebyside' | 'channelStats' | 'treemap' | 'diagnostics' | 'volume3d'
+    | 'similarity' | 'ulpError'
+    | 'compare'
     | 'featureGrid' | 'channelCorrelation' | 'sparsity'
-    | 'qqPlot' | 'metricsDashboard'
+    | 'distribution'
     | 'nanInf' | 'fft' | 'gradient';
 
-  let activeTab = $state<TabKey>('heatmap');
-  let visitedTabs = $state<Set<TabKey>>(new Set<TabKey>(['heatmap']));
+  let activeTab = $state<TabKey>('errorMap');
+  let visitedTabs = $state<Set<TabKey>>(new Set<TabKey>(['errorMap']));
   let mainTensor = $state<Float32Array | null>(null);
   let refTensor = $state<Float32Array | null>(null);
   let tensorShape = $state<number[]>([]);
   let loadingTensors = $state(true);
 
   // Collapsed group state
-  let expandedGroups = $state<Set<string>>(new Set(['current', 'error', 'compare', 'channels', 'stats', 'special']));
+  let expandedGroups = $state<Set<string>>(new Set(['core', 'analysis', 'channels', 'special']));
 
   function toggleGroup(group: string) {
     const next = new Set(expandedGroups);
@@ -98,15 +89,6 @@
     loadingTensors = false;
   }
 
-  let diffTensor = $derived.by(() => {
-    if (!mainTensor || !refTensor || mainTensor.length !== refTensor.length) return null;
-    const diff = new Float32Array(mainTensor.length);
-    for (let i = 0; i < mainTensor.length; i++) {
-      diff[i] = Math.abs(mainTensor[i] - refTensor[i]);
-    }
-    return diff;
-  });
-
   // Volume 3D is available for 3D tensors [C,H,W] or 4D [B,C,H,W]
   let canShow3D = $derived.by(() => {
     if (tensorShape.length === 3) return true;
@@ -137,9 +119,9 @@
     tensorShape.length === 4 ? tensorShape.slice(1) : tensorShape
   );
 
-  // Spatial cosine needs >= 2 channels
   let dims = $derived(getSpatialDims(tensorShape));
   let hasSpatial = $derived(dims.height > 1 && dims.width > 1);
+  let hasSimilarity = $derived(hasSpatial || dims.channels > 1);
 
   interface TabGroup {
     id: string;
@@ -150,38 +132,25 @@
   let tabGroups = $derived.by((): TabGroup[] => {
     const groups: TabGroup[] = [
       {
-        id: 'current',
+        id: 'core',
         label: 'Core',
         tabs: [
-          { key: 'heatmap', label: 'Heatmap' },
+          { key: 'errorMap', label: 'Error Map' },
           { key: 'sidebyside', label: 'Side-by-Side' },
-          { key: 'channel', label: 'Per-Channel' },
-          { key: 'treemap', label: 'Error Map' },
+          { key: 'channelStats', label: 'Channels' },
+          { key: 'treemap', label: 'Treemap' },
           { key: 'diagnostics', label: 'Diagnostics' },
           ...(canShow3D ? [{ key: 'volume3d' as TabKey, label: '3D Volume' }] : []),
         ],
       },
       {
-        id: 'error',
-        label: 'Error Analysis',
+        id: 'analysis',
+        label: 'Analysis',
         tabs: [
-          { key: 'relativeError', label: 'Relative Error' },
-          { key: 'logError', label: 'Log Error' },
-          { key: 'signedDiff', label: 'Signed Diff' },
-          { key: 'thresholdError', label: 'Threshold' },
-          ...(hasSpatial ? [{ key: 'ssim' as TabKey, label: 'SSIM' }] : []),
-          ...(dims.channels > 1 ? [{ key: 'spatialCosine' as TabKey, label: 'Spatial Cosine' }] : []),
+          { key: 'compare', label: 'Compare' },
+          { key: 'distribution', label: 'Distribution' },
+          ...(hasSimilarity ? [{ key: 'similarity' as TabKey, label: 'Similarity' }] : []),
           { key: 'ulpError', label: 'ULP Error' },
-        ],
-      },
-      {
-        id: 'compare',
-        label: 'Compare',
-        tabs: [
-          { key: 'flicker', label: 'Flicker' },
-          { key: 'swipe', label: 'Swipe/Blend' },
-          { key: 'checkerboard', label: 'Checkerboard' },
-          { key: 'scatter', label: 'Scatter Plot' },
         ],
       },
       {
@@ -196,14 +165,6 @@
         ],
       },
       {
-        id: 'stats',
-        label: 'Statistics',
-        tabs: [
-          { key: 'qqPlot', label: 'Q-Q Plot' },
-          { key: 'metricsDashboard', label: 'Metrics' },
-        ],
-      },
-      {
         id: 'special',
         label: 'Special',
         tabs: [
@@ -213,15 +174,14 @@
         ],
       },
     ];
-    // Filter out empty groups
     return groups.filter(g => g.tabs.length > 0);
   });
 
-  // If active tab becomes unavailable, reset to heatmap
+  // If active tab becomes unavailable, reset to errorMap
   $effect(() => {
     const allKeys = tabGroups.flatMap(g => g.tabs.map(t => t.key));
     if (!allKeys.includes(activeTab)) {
-      activeTab = 'heatmap';
+      activeTab = 'errorMap';
     }
   });
 
@@ -230,9 +190,13 @@
 
   // Handle legacy tab values
   $effect(() => {
-    if ((activeTab as string) === 'histogram') {
-      activeTab = 'channel';
-    }
+    const legacy = activeTab as string;
+    if (legacy === 'histogram' || legacy === 'channel') activeTab = 'channelStats';
+    if (legacy === 'heatmap' || legacy === 'relativeError' || legacy === 'logError' || legacy === 'signedDiff' || legacy === 'thresholdError') activeTab = 'errorMap';
+    if (legacy === 'flicker' || legacy === 'swipe' || legacy === 'checkerboard') activeTab = 'compare';
+    if (legacy === 'scatter' || legacy === 'qqPlot') activeTab = 'distribution';
+    if (legacy === 'metricsDashboard') activeTab = 'channelStats';
+    if (legacy === 'ssim' || legacy === 'spatialCosine') activeTab = 'similarity';
   });
 </script>
 
@@ -292,9 +256,8 @@
       </div>
     {:else}
       <!-- Core tabs -->
-      <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'heatmap' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'heatmap' ? 'auto' : 'none'}>
-        <Heatmap
-          diff={diffTensor}
+      <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'errorMap' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'errorMap' ? 'auto' : 'none'}>
+        <ErrorMap
           main={mainTensor}
           ref={refTensor}
           shape={tensorShape}
@@ -313,9 +276,9 @@
           />
         </div>
       {/if}
-      {#if visitedTabs.has('channel')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'channel' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'channel' ? 'auto' : 'none'}>
-          <ChannelView
+      {#if visitedTabs.has('channelStats')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'channelStats' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'channelStats' ? 'auto' : 'none'}>
+          <ChannelStats
             main={mainTensor}
             ref={refTensor}
             shape={tensorShape}
@@ -373,62 +336,25 @@
         </div>
       {/if}
 
-      <!-- Error Analysis tabs -->
-      {#if visitedTabs.has('relativeError')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'relativeError' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'relativeError' ? 'auto' : 'none'}>
-          <RelativeError main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
+      <!-- Analysis tabs -->
+      {#if visitedTabs.has('compare')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'compare' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'compare' ? 'auto' : 'none'}>
+          <CompareView main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if visitedTabs.has('logError')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'logError' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'logError' ? 'auto' : 'none'}>
-          <LogError main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
+      {#if visitedTabs.has('distribution')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'distribution' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'distribution' ? 'auto' : 'none'}>
+          <DistributionView main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
-      {#if visitedTabs.has('signedDiff')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'signedDiff' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'signedDiff' ? 'auto' : 'none'}>
-          <SignedDiff main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
-        </div>
-      {/if}
-      {#if visitedTabs.has('thresholdError')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'thresholdError' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'thresholdError' ? 'auto' : 'none'}>
-          <ThresholdError main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
-        </div>
-      {/if}
-      {#if visitedTabs.has('ssim')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'ssim' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'ssim' ? 'auto' : 'none'}>
-          <SSIMMap main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
-        </div>
-      {/if}
-      {#if visitedTabs.has('spatialCosine')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'spatialCosine' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'spatialCosine' ? 'auto' : 'none'}>
-          <SpatialCosine main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
+      {#if visitedTabs.has('similarity')}
+        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'similarity' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'similarity' ? 'auto' : 'none'}>
+          <SimilarityMap main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
       {#if visitedTabs.has('ulpError')}
         <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'ulpError' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'ulpError' ? 'auto' : 'none'}>
           <ULPError main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
-        </div>
-      {/if}
-
-      <!-- Compare tabs -->
-      {#if visitedTabs.has('flicker')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'flicker' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'flicker' ? 'auto' : 'none'}>
-          <FlickerCompare main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
-        </div>
-      {/if}
-      {#if visitedTabs.has('swipe')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'swipe' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'swipe' ? 'auto' : 'none'}>
-          <SwipeCompare main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
-        </div>
-      {/if}
-      {#if visitedTabs.has('checkerboard')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'checkerboard' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'checkerboard' ? 'auto' : 'none'}>
-          <CheckerboardCompare main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
-        </div>
-      {/if}
-      {#if visitedTabs.has('scatter')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'scatter' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'scatter' ? 'auto' : 'none'}>
-          <ScatterPlot main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
 
@@ -446,18 +372,6 @@
       {#if visitedTabs.has('sparsity')}
         <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'sparsity' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'sparsity' ? 'auto' : 'none'}>
           <SparsityMap main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
-        </div>
-      {/if}
-
-      <!-- Statistics tabs -->
-      {#if visitedTabs.has('qqPlot')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'qqPlot' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'qqPlot' ? 'auto' : 'none'}>
-          <QQPlot main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
-        </div>
-      {/if}
-      {#if visitedTabs.has('metricsDashboard')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'metricsDashboard' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'metricsDashboard' ? 'auto' : 'none'}>
-          <MetricsDashboard main={mainTensor} ref={refTensor} shape={tensorShape} mainLabel={mainDeviceName} refLabel={refDeviceName} />
         </div>
       {/if}
 
