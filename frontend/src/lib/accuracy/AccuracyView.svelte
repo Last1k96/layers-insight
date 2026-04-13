@@ -2,7 +2,6 @@
   import ErrorMap from './ErrorMap.svelte';
   import SideBySide from './SideBySide.svelte';
   import ChannelStats from './ChannelStats.svelte';
-  import ErrorTreemap from './ErrorTreemap.svelte';
   import Diagnostics from './Diagnostics.svelte';
   import Volume3D from './Volume3D.svelte';
   import CompareView from './CompareView.svelte';
@@ -39,7 +38,7 @@
   } = $props();
 
   type TabKey =
-    | 'errorMap' | 'sidebyside' | 'channelStats' | 'treemap' | 'diagnostics' | 'volume3d'
+    | 'errorMap' | 'sidebyside' | 'channelStats' | 'diagnostics' | 'volume3d'
     | 'similarity' | 'ulpError'
     | 'compare'
     | 'featureGrid' | 'channelCorrelation' | 'sparsity'
@@ -138,7 +137,6 @@
           { key: 'errorMap', label: 'Error Map' },
           { key: 'sidebyside', label: 'Side-by-Side' },
           { key: 'channelStats', label: 'Channels' },
-          { key: 'treemap', label: 'Treemap' },
           { key: 'diagnostics', label: 'Density Grid' },
           ...(canShow3D ? [{ key: 'volume3d' as TabKey, label: '3D Volume' }] : []),
         ],
@@ -279,17 +277,6 @@
       {#if visitedTabs.has('channelStats')}
         <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'channelStats' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'channelStats' ? 'auto' : 'none'}>
           <ChannelStats
-            main={mainTensor}
-            ref={refTensor}
-            shape={tensorShape}
-            mainLabel={mainDeviceName}
-            refLabel={refDeviceName}
-          />
-        </div>
-      {/if}
-      {#if visitedTabs.has('treemap')}
-        <div class="absolute inset-0 p-4 overflow-auto" style:visibility={activeTab === 'treemap' ? 'visible' : 'hidden'} style:pointer-events={activeTab === 'treemap' ? 'auto' : 'none'}>
-          <ErrorTreemap
             main={mainTensor}
             ref={refTensor}
             shape={tensorShape}
