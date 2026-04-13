@@ -60,6 +60,7 @@ export interface DiagLayout {
   blockGap: number;
   labelH: number;
   gap: number;
+  pad: number;
   channelMetrics: ChannelMetrics[];
   channelOrder: number[];
   xMap: Int32Array;
@@ -157,12 +158,15 @@ export function renderDiagnostics(
   const gap = 2;
   const blockGap = 8;
   const labelH = 26;
+  const pad = 4; // padding around the entire grid to prevent label clipping
 
-  // Responsive column count
+  // Responsive column count — subtract padding from available width
+  const availW = containerWidth - pad * 2;
   const minBlockPx = 200;
-  const blocksPerRow = Math.max(2, Math.min(8, Math.floor(containerWidth / (minBlockPx + blockGap))));
+  const blocksPerRow = Math.max(2, Math.min(8, Math.floor(availW / (minBlockPx + blockGap))));
 
-  const panelW = Math.max(16, ((containerWidth - (blocksPerRow - 1) * blockGap) / blocksPerRow / 2) | 0);
+  // panelW: account for inner gap between left/right panels, and blockGap between blocks
+  const panelW = Math.max(16, ((availW - blocksPerRow * gap - (blocksPerRow - 1) * blockGap) / (blocksPerRow * 2)) | 0);
   const panelH = Math.max(16, (panelW * H / W + 0.5) | 0);
   const blockW = panelW * 2 + gap;
   const blockH = panelH * 2 + gap + labelH;
@@ -171,8 +175,8 @@ export function renderDiagnostics(
   const order = orderParam ?? Array.from({ length: C }, (_, i) => i);
   const displayCount = order.length;
   const rows = Math.ceil(displayCount / blocksPerRow);
-  const totalW = blocksPerRow * blockW + (blocksPerRow - 1) * blockGap;
-  const totalH = rows * blockH + (rows - 1) * blockGap;
+  const totalW = blocksPerRow * blockW + (blocksPerRow - 1) * blockGap + pad * 2;
+  const totalH = rows * blockH + (rows - 1) * blockGap + pad * 2;
 
   canvas.width = totalW;
   canvas.height = totalH;
@@ -245,8 +249,8 @@ export function renderDiagnostics(
     const c = order[displayIdx];
     const row = (displayIdx / blocksPerRow) | 0;
     const col = displayIdx % blocksPerRow;
-    const bx = col * (blockW + blockGap);
-    const by = row * (blockH + blockGap);
+    const bx = pad + col * (blockW + blockGap);
+    const by = pad + row * (blockH + blockGap);
     const panelY = by + labelH;
 
     const refSlice = extractSlice(ref, shape, batch, c).data;
@@ -383,8 +387,8 @@ export function renderDiagnostics(
       if (color) {
         const row = (displayIdx / blocksPerRow) | 0;
         const col = displayIdx % blocksPerRow;
-        const bx = col * (blockW + blockGap);
-        const by = row * (blockH + blockGap);
+        const bx = pad + col * (blockW + blockGap);
+        const by = pad + row * (blockH + blockGap);
         ctx.strokeStyle = color;
         ctx.lineWidth = 2;
         ctx.strokeRect(bx + 1, by + 1, blockW - 2, blockH - 2);
@@ -418,7 +422,7 @@ export function renderDiagnostics(
   }
 
   return {
-    panelW, panelH, blocksPerRow, channelCount: C, blockW, blockH, blockGap, labelH, gap,
+    panelW, panelH, blocksPerRow, channelCount: C, blockW, blockH, blockGap, labelH, gap, pad,
     channelMetrics, channelOrder: order, xMap, yMap,
     grayMin, graySpan, globalDiffMax, mainMin, mainSpan: mainSpan,
     H, W,

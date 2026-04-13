@@ -9,12 +9,14 @@
     shape,
     mainLabel = 'Main',
     refLabel = 'Reference',
+    channelIndex = $bindable(0),
   }: {
     main: Float32Array;
     ref: Float32Array;
     shape: number[];
     mainLabel?: string;
     refLabel?: string;
+    channelIndex?: number;
   } = $props();
 
   let dims = $derived(getSpatialDims(shape));
@@ -22,8 +24,6 @@
   function getChannelData(tensor: Float32Array, ch: number): Float32Array {
     return extractSlice(tensor, shape, 0, ch).data;
   }
-
-  let channelIndex = $state(0);
   let expandedHist = $state<'main' | 'ref' | 'diff' | null>(null);
 
   let mainChannel = $derived(getChannelData(main, channelIndex));
@@ -339,12 +339,6 @@
       <canvas bind:this={histExpanded} class="w-full h-[300px] rounded"></canvas>
     </div>
   {/if}
-
-  <!-- Cosine similarity -->
-  <div class="text-xs text-gray-400 shrink-0">
-    Cosine similarity (ch {channelIndex}): <span class="font-mono text-gray-200">{cosSim.toFixed(6)}</span>
-    | Spatial size: {dims.height * dims.width} elements
-  </div>
 
   <!-- Per-channel summary table — fills remaining space -->
   {#if dims.channels > 1}

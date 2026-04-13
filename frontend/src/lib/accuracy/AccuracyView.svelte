@@ -139,7 +139,7 @@
           { key: 'sidebyside', label: 'Side-by-Side' },
           { key: 'channelStats', label: 'Channels' },
           { key: 'treemap', label: 'Treemap' },
-          { key: 'diagnostics', label: 'Diagnostics' },
+          { key: 'diagnostics', label: 'Density Grid' },
           ...(canShow3D ? [{ key: 'volume3d' as TabKey, label: '3D Volume' }] : []),
         ],
       },

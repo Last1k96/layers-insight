@@ -127,12 +127,12 @@
     const mx = (e.clientX - rect.left) / zoomLevel;
     const my = (e.clientY - rect.top) / zoomLevel;
 
-    const { panelW, panelH, blocksPerRow, blockW, blockH, blockGap, labelH, gap, channelOrder: order, xMap, yMap, H, W, channelMetrics } = layout;
+    const { panelW, panelH, blocksPerRow, blockW, blockH, blockGap, labelH, gap, pad, channelOrder: order, xMap, yMap, H, W, channelMetrics } = layout;
 
     const cellW = blockW + blockGap;
     const cellH = blockH + blockGap;
-    const col = Math.floor(mx / cellW);
-    const row = Math.floor(my / cellH);
+    const col = Math.floor((mx - pad) / cellW);
+    const row = Math.floor((my - pad) / cellH);
 
     if (col < 0 || col >= blocksPerRow || row < 0) { tooltipVisible = false; return; }
 
@@ -140,8 +140,8 @@
     if (displayIdx >= order.length) { tooltipVisible = false; return; }
     const ch = order[displayIdx];
 
-    const bx = col * cellW;
-    const by = row * cellH;
+    const bx = pad + col * cellW;
+    const by = pad + row * cellH;
     const lx = mx - bx;
     const ly = my - by;
 
@@ -201,8 +201,8 @@
 
     const cellW = layout.blockW + layout.blockGap;
     const cellH = layout.blockH + layout.blockGap;
-    const col = Math.floor(mx / cellW);
-    const row = Math.floor(my / cellH);
+    const col = Math.floor((mx - layout.pad) / cellW);
+    const row = Math.floor((my - layout.pad) / cellH);
 
     if (col < 0 || col >= layout.blocksPerRow || row < 0) return;
     const displayIdx = row * layout.blocksPerRow + col;
@@ -322,7 +322,7 @@
   {/if}
 
   <!-- Canvas -->
-  <div class="flex-1 overflow-auto border border-gray-700 rounded min-h-0">
+  <div class="flex-1 overflow-auto rounded min-h-0">
     {#if expandedChannel !== null}
       <canvas
         bind:this={expandedCanvas}
