@@ -250,7 +250,7 @@
                   {/if}
                 </div>
                 <div class="card-date-size">
-                  {new Date(session.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  {new Date(session.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, {new Date(session.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false })}
                   {#if session.folder_size > 0}
                     <span class="size-dot">&middot;</span>
                     {formatSize(session.folder_size)}
