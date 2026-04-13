@@ -9,6 +9,13 @@
   import type { AccuracyMetrics } from '../stores/types';
   import type { ConstantData } from '../stores/types';
 
+  /** Svelte action: if the cursor is already over the element on mount, fire the callback. */
+  function hoverOnMount(node: HTMLElement, onHover: () => void) {
+    requestAnimationFrame(() => {
+      if (node.matches(':hover')) onHover();
+    });
+  }
+
   let selectedNode = $derived(graphStore.selectedNode);
   let nodeStatus = $derived(graphStore.selectedNodeStatus);
   let selectedEdge = $derived(graphStore.selectedEdge);
@@ -212,6 +219,7 @@
           class="mb-2 bg-surface-base rounded-lg p-2.5 cursor-pointer hover:bg-surface-hover transition-all ring-1 ring-transparent hover:ring-[#4C8DFF]/50"
           role="button"
           tabindex={0}
+          use:hoverOnMount={() => setHoveredNode(srcNode.id)}
           onmouseenter={() => setHoveredNode(srcNode.id)}
           onmouseleave={() => setHoveredNode(null)}
           onmouseup={() => { if (!window.getSelection()?.toString()) centerOnNode(srcNode.id); }}
@@ -276,6 +284,7 @@
           class="mb-2 bg-surface-base rounded-lg p-2.5 cursor-pointer hover:bg-surface-hover transition-all ring-1 ring-transparent hover:ring-[#4C8DFF]/50"
           role="button"
           tabindex={0}
+          use:hoverOnMount={() => setHoveredNode(tgtNode.id)}
           onmouseenter={() => setHoveredNode(tgtNode.id)}
           onmouseleave={() => setHoveredNode(null)}
           onmouseup={() => { if (!window.getSelection()?.toString()) centerOnNode(tgtNode.id); }}
@@ -328,6 +337,7 @@
       class="mb-4 bg-surface-base rounded-lg p-2.5 cursor-pointer hover:bg-surface-hover transition-all ring-1 ring-transparent hover:ring-[#4C8DFF]/50"
       role="button"
       tabindex={0}
+      use:hoverOnMount={() => setHoveredNode(selectedNode.id)}
       onmouseenter={() => { setHoveredNode(selectedNode.id); }}
       onmouseleave={() => { setHoveredNode(null); }}
       onmouseup={() => {
