@@ -22,13 +22,14 @@
 
 	let mode: 'density' | 'channel' | 'metrics' = $state('density');
 	let channelIndex = $state(0);
+	let batch = $state(0);
 	let densityBins = $state(128);
 	const BIN_OPTIONS = [32, 64, 128, 256] as const;
 
 	let dims = $derived(getSpatialDims(shape));
 
 	function getChannelData(tensor: Float32Array, ch: number): Float32Array {
-		return extractSlice(tensor, shape, 0, ch).data;
+		return extractSlice(tensor, shape, batch, ch).data;
 	}
 
 	let mainChannel = $derived(getChannelData(main, channelIndex));
@@ -106,16 +107,26 @@
 	onNextChannel: () => { channelIndex = Math.min(channelIndex + 1, dims.channels - 1); },
 	onPrevChannel: () => { channelIndex = Math.max(channelIndex - 1, 0); },
 }}>
-	<!-- Sub-tabs -->
-	<div class="flex items-center gap-1 shrink-0">
-		{#each [['density', 'Density'], ['channel', 'Per-Channel'], ['metrics', 'Metrics']] as [m, label]}
-			<button
-				class="px-2.5 py-1 rounded text-xs border border-edge"
-				class:bg-accent={mode === m} class:text-white={mode === m}
-				class:text-gray-400={mode !== m}
-				onclick={() => mode = m as typeof mode}
-			>{label}</button>
-		{/each}
+	<!-- Sub-tabs + batch -->
+	<div class="flex items-center gap-2 shrink-0">
+		<div class="flex items-center gap-1">
+			{#each [['density', 'Density'], ['channel', 'Per-Channel'], ['metrics', 'Metrics']] as [m, label]}
+				<button
+					class="px-2.5 py-1 rounded text-xs border border-edge"
+					class:bg-accent={mode === m} class:text-white={mode === m}
+					class:text-gray-400={mode !== m}
+					onclick={() => mode = m as typeof mode}
+				>{label}</button>
+			{/each}
+		</div>
+		{#if dims.batches > 1}
+			<span class="border-l border-gray-600 h-4"></span>
+			<div class="flex items-center gap-1 text-xs text-gray-300">
+				<span class="text-gray-400">Batch:</span>
+				<input use:rangeScroll type="range" min="0" max={dims.batches - 1} bind:value={batch} class="w-20" />
+				<span>{batch} / {dims.batches}</span>
+			</div>
+		{/if}
 	</div>
 
 	<!-- Content -->
@@ -207,9 +218,9 @@
 				{/if}
 			</div>
 		{:else if mode === 'channel'}
-			<ChannelView {main} {ref} {shape} {mainLabel} {refLabel} bind:channelIndex />
+			<ChannelView {main} {ref} {shape} {mainLabel} {refLabel} {batch} bind:channelIndex />
 		{:else}
-			<MetricsDashboard {main} {ref} {shape} {mainLabel} {refLabel} />
+			<MetricsDashboard {main} {ref} {shape} {mainLabel} {refLabel} {batch} />
 		{/if}
 	</div>
 </div>

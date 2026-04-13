@@ -7,7 +7,7 @@
 		formatValue,
 		computePercentiles,
 	} from './tensorUtils';
-	import { rangeScroll } from './rangeScroll';
+
 
 	let {
 		main,
@@ -15,15 +15,15 @@
 		shape,
 		mainLabel = 'Main',
 		refLabel = 'Reference',
+		batch = 0,
 	}: {
 		main: Float32Array;
 		ref: Float32Array;
 		shape: number[];
 		mainLabel?: string;
 		refLabel?: string;
+		batch?: number;
 	} = $props();
-
-	let batch = $state(0);
 	let sortBy: 'index' | 'psnr' | 'mse' | 'cosine' | 'maxdiff' | 'relL2' = $state('psnr');
 	let sortAsc = $state(true);
 
@@ -244,13 +244,6 @@
 
 <div class="flex flex-col gap-3 relative h-full overflow-auto">
 	<div class="flex flex-wrap gap-4 items-center text-xs">
-		{#if dims.batches > 1}
-			<label class="flex items-center gap-2">
-				<span class="text-gray-400 shrink-0">Batch:</span>
-				<input use:rangeScroll type="range" min="0" max={dims.batches - 1} bind:value={batch} class="w-20" />
-				<span class="text-gray-300 w-6 shrink-0">{batch}</span>
-			</label>
-		{/if}
 		<span class="text-gray-500">{dims.channels} channels</span>
 		<button
 			onclick={exportCSV}

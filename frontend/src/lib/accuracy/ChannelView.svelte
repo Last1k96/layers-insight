@@ -10,6 +10,7 @@
     mainLabel = 'Main',
     refLabel = 'Reference',
     channelIndex = $bindable(0),
+    batch = 0,
   }: {
     main: Float32Array;
     ref: Float32Array;
@@ -17,12 +18,13 @@
     mainLabel?: string;
     refLabel?: string;
     channelIndex?: number;
+    batch?: number;
   } = $props();
 
   let dims = $derived(getSpatialDims(shape));
 
   function getChannelData(tensor: Float32Array, ch: number): Float32Array {
-    return extractSlice(tensor, shape, 0, ch).data;
+    return extractSlice(tensor, shape, batch, ch).data;
   }
   let expandedHist = $state<'main' | 'ref' | 'diff' | null>(null);
 
