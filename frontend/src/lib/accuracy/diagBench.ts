@@ -33,7 +33,7 @@ export async function runBench(log: (msg: string) => void): Promise<void> {
 
   for (let i = 0; i < RUNS; i++) {
     const t0 = performance.now();
-    renderDiagnostics(ctx as unknown as CanvasRenderingContext2D, canvasProxy, main, ref, SHAPE, 1200);
+    renderDiagnostics(ctx as unknown as CanvasRenderingContext2D, canvasProxy, main, ref, SHAPE, 1200, 'main', 'ref');
     const dt = performance.now() - t0;
     if (i === 0) {
       log(`Warmup: ${dt.toFixed(1)} ms`);
