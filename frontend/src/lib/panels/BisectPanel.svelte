@@ -16,10 +16,9 @@
     initialSearchFor?: 'accuracy_drop' | 'compilation_failure' | null;
   } = $props();
 
-  type BisectTab = 'all-outputs' | 'full-model' | 'from-node';
+  type BisectTab = 'all-outputs' | 'from-node';
   const TAB_LABELS: Record<BisectTab, string> = {
     'all-outputs': 'All Outputs',
-    'full-model': 'Full Model',
     'from-node': 'From Node',
   };
 
@@ -79,8 +78,7 @@
     if (activeTab === 'all-outputs') {
       ok = await bisectStore.startAllOutputs(session.id, graphStore.activeSubSessionId);
     } else {
-      const endNode = activeTab === 'from-node' ? endNodeId : null;
-      ok = await bisectStore.start(session.id, graphStore.activeSubSessionId, endNode);
+      ok = await bisectStore.start(session.id, graphStore.activeSubSessionId, endNodeId);
     }
     if (ok) {
       onclose();
@@ -107,7 +105,7 @@
 
     <!-- Tabs -->
     <div class="flex bg-surface-base/50">
-      {#each (['all-outputs', 'full-model', 'from-node'] as const) as tab (tab)}
+      {#each (['all-outputs', 'from-node'] as const) as tab (tab)}
         <button
           class="flex-1 px-2 py-2.5 text-xs text-center transition-all duration-100 {activeTab === tab ? 'text-accent border-b-2 border-accent' : 'text-content-secondary/40 hover:text-content-secondary'}"
           disabled={tab === 'from-node' && !endNodeId}
@@ -178,8 +176,6 @@
             Mode: per-output graph-aware bisect
           {:else if activeTab === 'from-node' && endNodeName}
             Range: start &rarr; {endNodeName}
-          {:else}
-            Range: {graphStore.activeSubSessionId ? 'sub-model' : 'full model'} (auto)
           {/if}
         </div>
 
