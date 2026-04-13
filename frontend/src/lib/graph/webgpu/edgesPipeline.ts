@@ -253,6 +253,34 @@ export function uploadEdgeColors(
 }
 
 /**
+ * Patch a single edge's color in the live color buffer. Used for incremental
+ * highlight changes — writes only the vertices belonging to one edge instead
+ * of rebuilding the entire color array.
+ */
+export function patchEdgeColor(
+  state: EdgesPipelineState,
+  device: GPUDevice,
+  edgeRanges: Uint32Array,
+  edgeIndex: number,
+  color: { r: number; g: number; b: number; a: number },
+): void {
+  const start = edgeRanges[edgeIndex * 2];
+  const end = edgeRanges[edgeIndex * 2 + 1];
+  if (start >= end) return;
+  const count = end - start;
+  const data = new Float32Array(count * COLOR_FLOATS);
+  for (let i = 0; i < count; i++) {
+    const off = i * COLOR_FLOATS;
+    data[off] = color.r;
+    data[off + 1] = color.g;
+    data[off + 2] = color.b;
+    data[off + 3] = color.a;
+  }
+  device.queue.writeBuffer(state.liveColorBuffer, start * COLOR_BYTES, data as Float32Array<ArrayBuffer>);
+  state.colorBuffer = state.liveColorBuffer;
+}
+
+/**
  * Activate a cached uniform-color buffer by name (e.g. "default", "dim").
  * Builds + uploads the buffer once on first use; subsequent calls are O(1)
  * — they just swap which buffer drawEdges() reads from.

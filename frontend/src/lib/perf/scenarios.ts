@@ -14,7 +14,7 @@ import type { WebGPURenderer } from '../graph/webgpu/WebGPURenderer';
 import type { PanZoom } from '../graph/panZoom';
 import type { GraphData } from '../stores/types';
 import { graphStore } from '../stores/graph.svelte';
-import { setHoveredNode, refreshRenderer, getMinimapTarget } from '../graph/renderer';
+import { setHoveredNode, setHoveredEdge, refreshRenderer, getMinimapTarget } from '../graph/renderer';
 import type { FrameStats, HotspotProfile } from './instrumentation';
 
 export interface BenchContext {
@@ -268,11 +268,39 @@ export const minimapCostScenario: ScenarioFn = async (ctx) => {
   };
 };
 
+export const edgeHoverSweepScenario: ScenarioFn = async (ctx) => {
+  ctx.log('edgeHoverSweep: simulate hover over 50 edges');
+  ctx.stats.reset();
+  const edges = ctx.graphData.edges;
+  const SAMPLES = Math.min(50, edges.length);
+  const stride = Math.max(1, Math.floor(edges.length / SAMPLES));
+
+  const t0 = performance.now();
+  for (let i = 0; i < SAMPLES; i++) {
+    const edgeIdx = (i * stride) % edges.length;
+    setHoveredEdge(edgeIdx);
+    refreshRenderer();
+    await renderAndWait(ctx.renderer);
+  }
+  setHoveredEdge(null);
+  refreshRenderer();
+  await renderAndWait(ctx.renderer);
+  const dur = performance.now() - t0;
+
+  return {
+    name: 'edgeHoverSweep',
+    durationMs: dur,
+    frames: SAMPLES,
+    profile: ctx.stats.snapshot({ windowFrames: SAMPLES }),
+  };
+};
+
 export const SCENARIOS: Record<string, ScenarioFn> = {
   idle: idleScenario,
   panSweep: panSweepScenario,
   zoomSweep: zoomSweepScenario,
   hoverSweep: hoverSweepScenario,
+  edgeHoverSweep: edgeHoverSweepScenario,
   accuracyToggle: accuracyToggleScenario,
   selectionThrash: selectionThrashScenario,
   minimapCost: minimapCostScenario,
@@ -283,6 +311,7 @@ export const DEFAULT_SCENARIO_ORDER: string[] = [
   'panSweep',
   'zoomSweep',
   'hoverSweep',
+  'edgeHoverSweep',
   'selectionThrash',
   'accuracyToggle',
   'minimapCost',

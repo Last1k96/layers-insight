@@ -14,6 +14,7 @@ import {
   createEdgesPipeline,
   uploadEdgeData,
   uploadEdgeColors,
+  patchEdgeColor,
   useCachedEdgeColors,
   updateEdgeViewport,
   drawEdges,
@@ -522,7 +523,6 @@ export class WebGPURenderer {
     const edgeHighlightChanged = highlightEdge !== prevHighlight;
     const grayedChanged = grayedNodes !== this._lastGrayedNodes;
     if (!accuracyViewActive) {
-      // Only rebuild when edge coloring actually changes — not every frame
       const hasGrayed = grayedNodes.size > 0;
       const hasOverrides = nodeOverrides !== undefined && nodeOverrides.size > 0;
       const isColored = searchActive || highlightEdge !== null || hasGrayed || hasOverrides;
@@ -530,43 +530,56 @@ export class WebGPURenderer {
       const needsRebuild = edgeHighlightChanged || grayedChanged || (isColored !== wasColored);
 
       if (needsRebuild && this.edgeGeometry) {
-        fs?.beginPhase('appearance.edgeColorRebuild');
-        const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 }; // #4C8DFF
-        const dim = { r: 0.184, g: 0.200, b: 0.255, a: 0.3 };
-        const grayDim = { r: 0.353, g: 0.376, b: 0.502, a: 0.35 };
-        const colors = buildEdgeColors(
-          this.edgeGeometry.edgeRanges,
-          this.graphData.edges,
-          this.edgeGeometry.vertexCount,
-          (edge, idx) => {
-            if (idx === highlightEdge) return { start: hl, end: hl };
-            if (grayedNodes.has(edge.source) || grayedNodes.has(edge.target)) return { start: grayDim, end: grayDim };
-            // Gray incoming edges to Parameter nodes (cut-as-input overrides)
-            if (hasOverrides && nodeOverrides!.has(edge.target)) return { start: grayDim, end: grayDim };
-            if (searchActive) return { start: dim, end: dim };
-            return undefined;
-          },
-        );
-        uploadEdgeColors(this.edgesPipeline, this.device, colors, this.edgeGeometry.vertexCount);
-        fs?.endPhase('appearance.edgeColorRebuild');
+        // Fast path: pure highlight change with no search/grayed/overrides —
+        // patch only the 2 affected edges instead of rebuilding all edge colors.
+        const pureHighlight = edgeHighlightChanged && !grayedChanged
+          && !searchActive && !hasGrayed && !hasOverrides
+          && wasColored;
+        if (pureHighlight) {
+          fs?.beginPhase('appearance.edgeColorRebuild');
+          const ranges = this.edgeGeometry.edgeRanges;
+          const defColor = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b, a: EDGE_COLOR.a };
+          const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 };
+          if (prevHighlight !== null && prevHighlight < edges.length) {
+            patchEdgeColor(this.edgesPipeline, this.device, ranges, prevHighlight, defColor);
+          }
+          if (highlightEdge !== null && highlightEdge < edges.length) {
+            patchEdgeColor(this.edgesPipeline, this.device, ranges, highlightEdge, hl);
+          }
+          fs?.endPhase('appearance.edgeColorRebuild');
+        } else {
+          fs?.beginPhase('appearance.edgeColorRebuild');
+          const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 };
+          const dim = { r: 0.184, g: 0.200, b: 0.255, a: 0.3 };
+          const grayDim = { r: 0.353, g: 0.376, b: 0.502, a: 0.35 };
+          const colors = buildEdgeColors(
+            this.edgeGeometry.edgeRanges,
+            this.graphData.edges,
+            this.edgeGeometry.vertexCount,
+            (edge, idx) => {
+              if (idx === highlightEdge) return { start: hl, end: hl };
+              if (grayedNodes.has(edge.source) || grayedNodes.has(edge.target)) return { start: grayDim, end: grayDim };
+              if (hasOverrides && nodeOverrides!.has(edge.target)) return { start: grayDim, end: grayDim };
+              if (searchActive) return { start: dim, end: dim };
+              return undefined;
+            },
+          );
+          uploadEdgeColors(this.edgesPipeline, this.device, colors, this.edgeGeometry.vertexCount);
+          fs?.endPhase('appearance.edgeColorRebuild');
+        }
       }
       this._lastEdgeMode = isColored ? 'search' : 'default';
-    } else if (edgeHighlightChanged && highlightEdge !== null && this.edgeGeometry) {
-      // In accuracy view, rewrite base edge colors so the highlighted edge
-      // pops over the dimmed background. Geometry stays cached.
+    } else if (edgeHighlightChanged && this.edgeGeometry) {
+      // Accuracy view: incremental patch when just changing highlight
       fs?.beginPhase('appearance.edgeColorRebuild');
       const dimColor = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b, a: 0.15 };
       const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 };
-      const colors = buildEdgeColors(
-        this.edgeGeometry.edgeRanges,
-        this.graphData.edges,
-        this.edgeGeometry.vertexCount,
-        (_edge, idx) => {
-          if (idx === highlightEdge) return { start: hl, end: hl };
-          return { start: dimColor, end: dimColor };
-        },
-      );
-      uploadEdgeColors(this.edgesPipeline, this.device, colors, this.edgeGeometry.vertexCount);
+      if (prevHighlight !== null && prevHighlight < edges.length) {
+        patchEdgeColor(this.edgesPipeline, this.device, this.edgeGeometry.edgeRanges, prevHighlight, dimColor);
+      }
+      if (highlightEdge !== null && highlightEdge < edges.length) {
+        patchEdgeColor(this.edgesPipeline, this.device, this.edgeGeometry.edgeRanges, highlightEdge, hl);
+      }
       fs?.endPhase('appearance.edgeColorRebuild');
     }
     this._lastHoveredEdge = hoveredEdgeIndex;
@@ -902,8 +915,10 @@ export class WebGPURenderer {
 
     const bounds: typeof this.ghostBounds = [];
     // Estimate max vertices per ghost: 6 bg + 24 border + 3 arrow + 6*labelLen text
-    const srcNode = nodes.find(n => n.id === edge.source);
-    const tgtNode = nodes.find(n => n.id === edge.target);
+    const srcIdx = this.nodeIndexMap.get(edge.source);
+    const tgtIdx = this.nodeIndexMap.get(edge.target);
+    const srcNode = srcIdx !== undefined ? nodes[srcIdx] : undefined;
+    const tgtNode = tgtIdx !== undefined ? nodes[tgtIdx] : undefined;
     const maxLabelLen = Math.max(srcNode?.type.length ?? 0, tgtNode?.type.length ?? 0);
     const maxVertsPerGhost = 33 + 6 * maxLabelLen;
     const verts = new Float32Array(2 * maxVertsPerGhost * GHOST_VERTEX_FLOATS);
@@ -943,8 +958,9 @@ export class WebGPURenderer {
     const labelScale = FONT_SIZE / atlas.fontSize;
 
     for (const nodeId of [edge.source, edge.target]) {
-      const node = nodes.find(n => n.id === nodeId);
-      if (!node) continue;
+      const nodeIdx = this.nodeIndexMap.get(nodeId);
+      if (nodeIdx === undefined) continue;
+      const node = nodes[nodeIdx];
 
       const size = this.nodeSizeFn!(nodeId);
       const cx = node.x + size.width / 2;
