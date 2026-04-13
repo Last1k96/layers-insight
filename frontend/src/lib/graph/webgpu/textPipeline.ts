@@ -17,6 +17,7 @@ struct GlyphInstance {
 @group(0) @binding(1) var<storage, read> glyphs: array<GlyphInstance>;
 @group(0) @binding(2) var atlasTex: texture_2d<f32>;
 @group(0) @binding(3) var atlasSampler: sampler;
+@group(0) @binding(4) var<uniform> textAlpha: f32;
 
 struct VertexOutput {
   @builtin(position) position: vec4<f32>,
@@ -50,7 +51,7 @@ fn vertexMain(
 @fragment
 fn fragmentMain(in: VertexOutput) -> @location(0) vec4<f32> {
   let texColor = textureSample(atlasTex, atlasSampler, in.uv);
-  let alpha = texColor.a * in.color.a;
+  let alpha = texColor.a * in.color.a * textAlpha;
   if (alpha < 0.01) { discard; }
   return vec4(in.color.rgb, alpha);
 }
@@ -59,6 +60,7 @@ fn fragmentMain(in: VertexOutput) -> @location(0) vec4<f32> {
 export interface TextPipelineState {
   pipeline: GPURenderPipeline;
   storageBuffer: GPUBuffer;
+  textAlphaBuffer: GPUBuffer;
   bindGroup: GPUBindGroup;
   instanceCount: number;
   capacity: number;
@@ -78,6 +80,7 @@ export function createTextPipeline(
       { binding: 1, visibility: GPUShaderStage.VERTEX, buffer: { type: 'read-only-storage' } },
       { binding: 2, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float' } },
       { binding: 3, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+      { binding: 4, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
     ],
   });
 
@@ -105,6 +108,12 @@ export function createTextPipeline(
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
   });
 
+  const textAlphaBuffer = device.createBuffer({
+    size: 16, // minimum uniform alignment
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  device.queue.writeBuffer(textAlphaBuffer, 0, new Float32Array([1.0]) as Float32Array<ArrayBuffer>);
+
   const bindGroup = device.createBindGroup({
     layout: bindGroupLayout,
     entries: [
@@ -112,10 +121,11 @@ export function createTextPipeline(
       { binding: 1, resource: { buffer: storageBuffer } },
       { binding: 2, resource: atlas.texture.createView() },
       { binding: 3, resource: sampler },
+      { binding: 4, resource: { buffer: textAlphaBuffer } },
     ],
   });
 
-  return { pipeline, storageBuffer, bindGroup, instanceCount: 0, capacity: initialCapacity };
+  return { pipeline, storageBuffer, textAlphaBuffer, bindGroup, instanceCount: 0, capacity: initialCapacity };
 }
 
 export function updateGlyphInstances(
@@ -147,6 +157,7 @@ export function updateGlyphInstances(
         { binding: 1, resource: { buffer: storageBuffer } },
         { binding: 2, resource: atlas.texture.createView() },
         { binding: 3, resource: sampler },
+        { binding: 4, resource: { buffer: state.textAlphaBuffer } },
       ],
     });
 
@@ -158,6 +169,10 @@ export function updateGlyphInstances(
   }
   state.instanceCount = count;
   return state;
+}
+
+export function updateTextAlpha(state: TextPipelineState, device: GPUDevice, alpha: number): void {
+  device.queue.writeBuffer(state.textAlphaBuffer, 0, new Float32Array([alpha]) as Float32Array<ArrayBuffer>);
 }
 
 export function drawText(pass: GPURenderPassEncoder, state: TextPipelineState): void {

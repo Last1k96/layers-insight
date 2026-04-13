@@ -22,7 +22,7 @@ import {
   buildPathGeometry,
 } from './edgesPipeline';
 import type { AccuracyPath, EdgeGeometry, EdgesPipelineState } from './edgesPipeline';
-import { createTextPipeline, updateGlyphInstances, drawText } from './textPipeline';
+import { createTextPipeline, updateGlyphInstances, updateTextAlpha, drawText } from './textPipeline';
 import type { TextPipelineState } from './textPipeline';
 import { createGhostPipeline, updateGhostVertices, updateGhostViewport, drawGhosts } from './ghostPipeline';
 import type { GhostPipelineState } from './ghostPipeline';
@@ -70,6 +70,9 @@ export class WebGPURenderer {
   private _lastSelectedEdge: number | null = null;
   private _lastGrayedNodes: Set<string> = new Set();
   private _lastInferredCount = 0;
+  private _lastTextGrayed: Set<string> | null = null;
+  private _lastTextOverrides: Map<string, { name: string; type: string; color: string }> | undefined = undefined;
+  private _lastAccuracyIds: Set<string> | undefined = undefined;
 
   // ---- Performance instrumentation ----
   private frameStats: FrameStats | null = null;
@@ -315,9 +318,6 @@ export class WebGPURenderer {
    */
   rebuildCameraDependentParts(
     zoomRatio: number,
-    grayedNodes: Set<string>,
-    nodeOverrides: Map<string, { name: string; type: string; color: string }> | undefined,
-    accuracyInferredIds: Set<string> | undefined,
     selectedEdgeIndex: number | null,
     hoveredEdgeIndex: number | null = null,
   ): void {
@@ -327,9 +327,7 @@ export class WebGPURenderer {
     fs?.beginPhase('appearance.total');
     this.currentZoom = zoomRatio;
 
-    fs?.beginPhase('appearance.textRebuild');
-    this.rebuildText(grayedNodes, zoomRatio, nodeOverrides, accuracyInferredIds);
-    fs?.endPhase('appearance.textRebuild');
+    this.updateTextAlphaUniform(zoomRatio);
 
     const ghostEdge = selectedEdgeIndex ?? hoveredEdgeIndex;
     if (ghostEdge !== null) {
@@ -607,8 +605,8 @@ export class WebGPURenderer {
     this._lastSelectedEdge = selectedEdgeIndex;
     this._lastGrayedNodes = grayedNodes;
 
-    // Build text glyph instances (skip if zoomed out)
-    // In accuracy view, pass the set of inferred node IDs so non-inferred text is hidden
+    // Build text glyph instances only when text-affecting state changed.
+    // Hover/selection don't affect text — only grayed, overrides, accuracy mode do.
     let accuracyInferredIds: Set<string> | undefined;
     if (accuracyViewActive) {
       accuracyInferredIds = new Set<string>();
@@ -616,8 +614,17 @@ export class WebGPURenderer {
         if (status.status === 'success' && status.metrics) accuracyInferredIds.add(nodeId);
       }
     }
+    const textDirty = grayedNodes !== this._lastTextGrayed
+      || nodeOverrides !== this._lastTextOverrides
+      || accuracyInferredIds !== this._lastAccuracyIds;
     fs?.beginPhase('appearance.textRebuild');
-    this.rebuildText(grayedNodes, zoomRatio, nodeOverrides, accuracyInferredIds);
+    if (textDirty) {
+      this.rebuildText(grayedNodes, nodeOverrides, accuracyInferredIds);
+      this._lastTextGrayed = grayedNodes;
+      this._lastTextOverrides = nodeOverrides;
+      this._lastAccuracyIds = accuracyInferredIds;
+    }
+    this.updateTextAlphaUniform(zoomRatio);
     fs?.endPhase('appearance.textRebuild');
 
     fs?.beginPhase('appearance.ghostRebuild');
@@ -630,19 +637,21 @@ export class WebGPURenderer {
     this.markDirty();
   }
 
-  private rebuildText(grayedNodes: Set<string>, zoomRatio: number, nodeOverrides?: Map<string, { name: string; type: string; color: string }>, accuracyInferredIds?: Set<string>): void {
-    if (!this.graphData || zoomRatio < 0.05) {
+  private updateTextAlphaUniform(zoomRatio: number): void {
+    const alpha = zoomRatio >= 0.3 ? 1.0
+      : zoomRatio <= 0.1 ? 0.0
+      : (zoomRatio - 0.1) / 0.2;
+    updateTextAlpha(this.textPipeline, this.device, alpha);
+  }
+
+  private rebuildText(grayedNodes: Set<string>, nodeOverrides?: Map<string, { name: string; type: string; color: string }>, accuracyInferredIds?: Set<string>): void {
+    if (!this.graphData) {
       this.textPipeline = updateGlyphInstances(
         this.textPipeline, this.device, this.cameraBuffer, this.atlas,
         new Float32Array(0), 0,
       );
       return;
     }
-
-    // Alpha fade: fully opaque above 0.3, linear fade to 0 between 0.3 and 0.1
-    const textAlpha = zoomRatio >= 0.3 ? 1.0
-      : zoomRatio <= 0.1 ? 0.0
-      : (zoomRatio - 0.1) / 0.2;
 
     const nodes = this.graphData.nodes;
     const atlas = this.atlas;
@@ -699,7 +708,7 @@ export class WebGPURenderer {
         }
       }
       const fillColor = override ? override.color : isGrayed ? '#232636' : node.color;
-      const glyphAlpha = isGrayed ? textAlpha * 0.35 : textAlpha;
+      const glyphAlpha = isGrayed ? 0.35 : 1.0;
       // In accuracy view, use white text with dark halo for legibility
       const isAccuracyNode = accuracyInferredIds?.has(node.id) ?? false;
       const textColor = isAccuracyNode
@@ -1258,6 +1267,7 @@ export class WebGPURenderer {
       this.overlayEdgesPipeline.zoomBuffer.destroy();
     }
     this.textPipeline.storageBuffer.destroy();
+    this.textPipeline.textAlphaBuffer.destroy();
     this.ghostPipeline.vertexBuffer.destroy();
     this.ghostPipeline.viewportBuffer.destroy();
     this.atlas.texture.destroy();

@@ -189,18 +189,8 @@ export async function initRenderer(container: HTMLElement, graphData: GraphData)
     const ghostsNeedRebuild = graphStore.selectedEdgeIndex !== null;
     if (!textNeedsRebuild && !ghostsNeedRebuild) return;
 
-    let inferredIds: Set<string> | undefined;
-    if (graphStore.accuracyViewActive) {
-      inferredIds = new Set();
-      for (const [nodeId, status] of graphStore.nodeStatusMap) {
-        if (status.status === 'success' && status.metrics) inferredIds.add(nodeId);
-      }
-    }
     renderer.rebuildCameraDependentParts(
       newZoom,
-      graphStore.grayedNodes,
-      graphStore.nodeOverrides,
-      inferredIds,
       graphStore.selectedEdgeIndex,
       hoveredEdgeIndex,
     );
