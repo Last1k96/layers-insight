@@ -81,7 +81,7 @@
 
     <label class="flex items-center gap-1">
       Sort
-      <select bind:value={sortBy} class="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-xs text-gray-200">
+      <select use:rangeScroll bind:value={sortBy} class="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-xs text-gray-200">
         <option value="index">Index</option>
         <option value="cosSim">Worst Cosine</option>
         <option value="meanDiff">Mean |Diff|</option>
@@ -93,7 +93,7 @@
 
     <label class="flex items-center gap-1">
       Colormap
-      <select bind:value={cmapDensity} class="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-xs text-gray-200">
+      <select use:rangeScroll bind:value={cmapDensity} class="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-xs text-gray-200">
         {#each ALL_COLORMAP_OPTIONS as opt}
           <option value={opt.value}>{opt.label}</option>
         {/each}
@@ -102,7 +102,7 @@
 
     <label class="flex items-center gap-1">
       Bins
-      <select bind:value={densityBins} class="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-xs text-gray-200">
+      <select use:rangeScroll bind:value={densityBins} class="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-xs text-gray-200">
         {#each BIN_OPTIONS as b}
           <option value={b}>{b}</option>
         {/each}

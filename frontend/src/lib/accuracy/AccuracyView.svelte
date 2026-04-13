@@ -15,6 +15,7 @@
   import FrequencyView from './FrequencyView.svelte';
   import GradientCompare from './GradientCompare.svelte';
   import { getSpatialDims } from './tensorUtils';
+  import { rangeScroll } from './rangeScroll';
   import { tensorStore } from '../stores/tensors.svelte';
   import { sessionStore } from '../stores/session.svelte';
 
@@ -302,6 +303,7 @@
             <div class="flex items-center gap-2 mb-2 text-sm text-content-secondary">
               <span>Batch:</span>
               <select
+                use:rangeScroll
                 class="bg-surface-panel border border-edge rounded px-2 py-1 text-content-primary text-sm"
                 value={selectedBatch3D}
                 onchange={(e) => selectedBatch3D = Number((e.target as HTMLSelectElement).value)}

@@ -142,7 +142,7 @@
 						<span class="border-l border-gray-600 h-4"></span>
 					{/if}
 					<span class="text-gray-400 shrink-0">Bins:</span>
-					<select bind:value={densityBins} class="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-xs text-gray-200">
+					<select use:rangeScroll bind:value={densityBins} class="bg-gray-800 border border-gray-600 rounded px-1.5 py-0.5 text-xs text-gray-200">
 						{#each BIN_OPTIONS as b}
 							<option value={b}>{b}</option>
 						{/each}

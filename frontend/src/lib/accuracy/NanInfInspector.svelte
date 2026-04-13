@@ -359,7 +359,7 @@
 		</label>
 		<label class="flex items-center gap-2">
 			<span class="text-gray-400">Filter:</span>
-			<select bind:value={filterClass} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
+			<select use:rangeScroll bind:value={filterClass} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
 				<option value="all">All classes</option>
 				<option value="nan">NaN only</option>
 				<option value="inf">+Inf only</option>

@@ -77,7 +77,7 @@
 	let criticalThreshold = $derived(Math.pow(10, criticalExp));
 
 	// Histogram canvas for relative mode
-	let histCanvas: HTMLCanvasElement;
+	let histCanvas = $state<HTMLCanvasElement>();
 
 	let dims = $derived(getSpatialDims(shape));
 
@@ -404,7 +404,7 @@
 	<div class="flex flex-wrap gap-3 items-center text-xs w-full">
 		<label class="flex items-center gap-2">
 			<span class="text-gray-400">Mode:</span>
-			<select bind:value={mode} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
+			<select use:rangeScroll bind:value={mode} class="bg-surface-base border border-edge rounded px-1.5 py-0.5 text-xs text-gray-300">
 				<option value="absolute">Absolute</option>
 				<option value="relative">Relative</option>
 				<option value="log">Log</option>

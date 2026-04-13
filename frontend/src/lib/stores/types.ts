@@ -23,6 +23,7 @@ export interface InputConfig {
   resolved_shape?: number[];
   lower_bounds?: number[];
   upper_bounds?: number[];
+  port_names?: string[];
 }
 
 export interface ModelInputInfo {

@@ -3,6 +3,7 @@
   import { bisectStore } from '../stores/bisect.svelte';
   import { graphStore } from '../stores/graph.svelte';
   import { sessionStore } from '../stores/session.svelte';
+  import { rangeScroll } from '../accuracy/rangeScroll';
 
   let {
     onclose,
@@ -130,6 +131,7 @@
         <label class="block text-xs">
           <span class="text-gray-300">Search for:</span>
           <select
+            use:rangeScroll
             value={bisectStore.searchFor}
             onchange={onSearchForChange}
             class="w-full mt-1 px-2 py-1.5 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
@@ -144,6 +146,7 @@
           <label class="block text-xs">
             <span class="text-gray-300">Metric:</span>
             <select
+              use:rangeScroll
               value={bisectStore.metric}
               onchange={onMetricChange}
               class="w-full mt-1 px-2 py-1.5 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"

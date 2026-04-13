@@ -1,5 +1,6 @@
 <script lang="ts">
   import { FILTER_FIELD_META, type FilterField, type FilterOperator, type FilterRule } from '../stores/types';
+  import { rangeScroll } from '../accuracy/rangeScroll';
 
   let {
     rule,
@@ -73,6 +74,7 @@
 <div class="flex items-center gap-1.5 px-2.5 py-2 bg-surface-elevated rounded-lg">
   <!-- Field selector -->
   <select
+    use:rangeScroll
     class="px-1.5 py-1 bg-[--bg-input] rounded-md text-xs text-[--text-primary] focus:outline-none focus:ring-2 focus:ring-accent/30 min-w-0 transition-shadow"
     value={rule.field}
     onchange={handleFieldChange}
@@ -84,6 +86,7 @@
 
   <!-- Operator selector -->
   <select
+    use:rangeScroll
     class="px-1.5 py-1 bg-[--bg-input] rounded-md text-xs text-[--text-primary] focus:outline-none focus:ring-2 focus:ring-accent/30 shrink-0 transition-shadow"
     value={rule.operator}
     onchange={handleOperatorChange}
@@ -96,6 +99,7 @@
   <!-- Value input -->
   {#if meta.type === 'enum'}
     <select
+      use:rangeScroll
       class="flex-1 px-1.5 py-1 bg-[--bg-input] rounded-md text-xs text-[--text-primary] focus:outline-none focus:ring-2 focus:ring-accent/30 min-w-0 transition-shadow"
       value={rule.value}
       onchange={handleEnumChange}

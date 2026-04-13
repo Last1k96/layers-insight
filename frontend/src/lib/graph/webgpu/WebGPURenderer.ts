@@ -432,7 +432,7 @@ export class WebGPURenderer {
 
     const nodes = this.graphData.nodes;
     const edges = this.graphData.edges;
-    const searchActive = searchVisible && searchResults && searchResults.length > 0;
+    const searchActive = !!(searchVisible && searchResults && searchResults.length > 0);
     const searchSet = searchActive ? new Set(searchResults!.map(r => r.id)) : null;
 
     // Edge-connected node highlighting

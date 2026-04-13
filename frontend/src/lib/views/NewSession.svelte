@@ -3,6 +3,7 @@
   import { configStore } from '../stores/config.svelte';
   import { onMount } from 'svelte';
   import type { InputConfig, ModelInputInfo, DeviceProperty } from '../stores/types';
+  import { rangeScroll } from '../accuracy/rangeScroll';
   import FileBrowser from '../components/FileBrowser.svelte';
   import PathInput from '../components/PathInput.svelte';
   import SourceField from '../components/SourceField.svelte';
@@ -840,6 +841,7 @@
                 <div class="input-controls">
                   <div class="input-ctrl">
                     <select
+                      use:rangeScroll
                       id="source-{i}"
                       bind:value={modelInputs[i].source}
                       onchange={() => onInputSourceChange(i)}
@@ -852,6 +854,7 @@
                   </div>
                   <div class="input-ctrl">
                     <select
+                      use:rangeScroll
                       id="dtype-{i}"
                       bind:value={modelInputs[i].data_type}
                       title="Data Type"
@@ -864,6 +867,7 @@
                   </div>
                   <div class="input-ctrl">
                     <select
+                      use:rangeScroll
                       id="layout-{i}"
                       bind:value={modelInputs[i].layout}
                       title="Layout"
@@ -998,7 +1002,7 @@
                 <span class="changed-badge">changed</span>
               {/if}
             </label>
-            <select id="main-device" bind:value={mainDevice} onchange={onMainDeviceChange} class="device-select {changedFields.has('main_device') ? 'is-changed' : ''}">
+            <select use:rangeScroll id="main-device" bind:value={mainDevice} onchange={onMainDeviceChange} class="device-select {changedFields.has('main_device') ? 'is-changed' : ''}">
               {#each configStore.devices as device (device)}
                 <option value={device}>{device}</option>
               {/each}
@@ -1012,7 +1016,7 @@
                 <span class="changed-badge">changed</span>
               {/if}
             </label>
-            <select id="ref-device" bind:value={refDevice} onchange={onRefDeviceChange} class="device-select {changedFields.has('ref_device') ? 'is-changed' : ''}">
+            <select use:rangeScroll id="ref-device" bind:value={refDevice} onchange={onRefDeviceChange} class="device-select {changedFields.has('ref_device') ? 'is-changed' : ''}">
               {#each configStore.devices as device (device)}
                 <option value={device}>{device}</option>
               {/each}
@@ -1114,6 +1118,7 @@
                       {@const trueVal = isCaps ? 'YES' : isPython ? 'True' : 'true'}
                       {@const falseVal = isCaps ? 'NO' : isPython ? 'False' : 'false'}
                       <select
+                        use:rangeScroll
                         id="{prefix}-{prop.name}"
                         value={currentVal}
                         onchange={(e) => onValueChange(prop.name, (e.target as HTMLSelectElement).value)}
@@ -1124,6 +1129,7 @@
                       </select>
                     {:else if prop.type === 'enum' && prop.options.length > 0}
                       <select
+                        use:rangeScroll
                         id="{prefix}-{prop.name}"
                         value={currentVal}
                         onchange={(e) => onValueChange(prop.name, (e.target as HTMLSelectElement).value)}
