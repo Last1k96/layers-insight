@@ -73,6 +73,17 @@ export class WebGPURenderer {
   private _lastTextGrayed: Set<string> | null = null;
   private _lastTextOverrides: Map<string, { name: string; type: string; color: string }> | undefined = undefined;
   private _lastAccuracyIds: Set<string> | undefined = undefined;
+  // Incremental node-build tracking: skip full 50k rebuild on hover/selection
+  private nodeIndexMap: Map<string, number> = new Map();
+  private _prevHoveredNodeId: string | null = null;
+  private _prevSelectedNodeId: string | null = null;
+  private _prevEdgeEndpoints: Set<string> = new Set();
+  private _prevNodeStatusMap: Map<string, any> | null = null;
+  private _prevNodeGrayed: Set<string> | null = null;
+  private _prevNodeOverrides: Map<string, { name: string; type: string; color: string }> | undefined = undefined;
+  private _prevSearchActive = false;
+  private _prevSearchResults: { id: string }[] | null = null;
+  private _prevAccuracyView = false;
 
   // ---- Performance instrumentation ----
   private frameStats: FrameStats | null = null;
@@ -263,6 +274,12 @@ export class WebGPURenderer {
     this.graphData = graphData;
     this.nodeSizeFn = nodeSize;
 
+    // Build id→index map for incremental node patching
+    this.nodeIndexMap.clear();
+    for (let i = 0; i < graphData.nodes.length; i++) {
+      this.nodeIndexMap.set(graphData.nodes[i].id, i);
+    }
+
     // Build spatial grid for hit testing
     this.hitGrid.build(graphData.nodes.map(n => ({
       id: n.id,
@@ -424,9 +441,17 @@ export class WebGPURenderer {
       edgeEndpoints.add(edges[selectedEdgeIndex].target);
     }
 
-    // Build node instances. Scratch buffer is reused across frames; grown
-    // geometrically when the node count exceeds capacity. Slice handed to
-    // updateNodeInstances has the exact length the GPU upload needs.
+    // Detect whether a full rebuild is needed, or only transient state
+    // (hover/selection/edge-endpoints) changed — in which case we patch
+    // only the ~2-6 affected nodes instead of rebuilding all 50k.
+    const heavyChanged =
+      nodeStatusMap !== this._prevNodeStatusMap ||
+      grayedNodes !== this._prevNodeGrayed ||
+      nodeOverrides !== this._prevNodeOverrides ||
+      accuracyViewActive !== this._prevAccuracyView ||
+      searchActive !== this._prevSearchActive ||
+      searchResults !== this._prevSearchResults;
+
     fs?.beginPhase('appearance.nodeBuild');
     const nodeFloatsNeeded = nodes.length * NODE_FLOATS;
     if (nodeFloatsNeeded > this.nodeDataScratch.length) {
@@ -434,121 +459,64 @@ export class WebGPURenderer {
       this.nodeDataScratch = new Float32Array(newCap);
     }
     const nodeData = this.nodeDataScratch;
-    for (let i = 0; i < nodes.length; i++) {
-      const node = nodes[i];
-      const off = i * NODE_FLOATS;
-      let size = this.nodeSizeFn!(node.id);
-      const override = nodeOverrides?.get(node.id);
-      const isGrayed = grayedNodes.has(node.id);
-      const isSelected = selectedNodeId === node.id;
-      const isHovered = hoveredNodeId === node.id;
-      const isEdgeEndpoint = edgeEndpoints.has(node.id);
-      const nodeStatus = nodeStatusMap.get(node.id);
 
-      // Widen node if override label needs more space
-      let dx = 0;
-      if (override) {
-        const pad = 16;
-        const labelWidth = measureText(this.atlas, override.type, GRAPH_FONT_SIZE);
-        if (labelWidth + pad > size.width) {
-          const newWidth = labelWidth + pad;
-          dx = (newWidth - size.width) / 2;
-          size = { width: newWidth, height: size.height };
-        }
+    if (heavyChanged) {
+      // Full rebuild — iterate all nodes
+      for (let i = 0; i < nodes.length; i++) {
+        this.buildNodeData(i, nodeData, selectedNodeId, hoveredNodeId, edgeEndpoints,
+          nodeStatusMap, grayedNodes, nodeOverrides, accuracyViewActive, searchActive, searchSet);
+      }
+      this._prevNodeStatusMap = nodeStatusMap;
+      this._prevNodeGrayed = grayedNodes;
+      this._prevNodeOverrides = nodeOverrides;
+      this._prevAccuracyView = accuracyViewActive;
+      this._prevSearchActive = searchActive;
+      this._prevSearchResults = searchResults;
+
+      fs?.endPhase('appearance.nodeBuild');
+      fs?.beginPhase('appearance.nodeUpload');
+      this.nodesPipeline = updateNodeInstances(
+        this.nodesPipeline, this.device, this.cameraBuffer,
+        nodeData, nodes.length,
+      );
+      fs?.endPhase('appearance.nodeUpload');
+    } else {
+      // Incremental patch — only rebuild nodes whose transient state changed
+      const dirty = new Set<string>();
+      if (hoveredNodeId !== this._prevHoveredNodeId) {
+        if (this._prevHoveredNodeId) dirty.add(this._prevHoveredNodeId);
+        if (hoveredNodeId) dirty.add(hoveredNodeId);
+      }
+      if (selectedNodeId !== this._prevSelectedNodeId) {
+        if (this._prevSelectedNodeId) dirty.add(this._prevSelectedNodeId);
+        if (selectedNodeId) dirty.add(selectedNodeId);
+      }
+      for (const id of this._prevEdgeEndpoints) {
+        if (!edgeEndpoints.has(id)) dirty.add(id);
+      }
+      for (const id of edgeEndpoints) {
+        if (!this._prevEdgeEndpoints.has(id)) dirty.add(id);
       }
 
-      const fillColor = override ? override.color : isGrayed ? '#232636' : node.color;
-      // Local fill RGB scalars instead of mutating an object — keeps the
-      // hexToRgb cache from being corrupted and avoids per-node allocations.
-      let fillR = 0, fillG = 0, fillB = 0;
-
-      let strokeR = 0.2, strokeG = 0.2, strokeB = 0.2;
-      let strokeWidth = 1;
-
-      if (accuracyViewActive) {
-        // Accuracy view: inferred nodes filled with accuracy color, others gray
-        if (nodeStatus?.status === 'success' && nodeStatus.metrics) {
-          const c = getMetricColor(nodeStatus.metrics);
-          fillR = c.r; fillG = c.g; fillB = c.b;
-        } else {
-          fillR = EDGE_COLOR.r; fillG = EDGE_COLOR.g; fillB = EDGE_COLOR.b;
-        }
-      } else {
-        const fc = hexToRgb(fillColor);
-        fillR = fc.r; fillG = fc.g; fillB = fc.b;
-
-        // Status colors — neutral outline for inferred, status color for others
-        if (nodeStatus && !isGrayed) {
-          if (nodeStatus.status === 'success') {
-            // Neutral light gray — distinct from accuracy colors and selection blue
-            strokeR = 0.75; strokeG = 0.75; strokeB = 0.78;
-            strokeWidth = isSelected ? 4 : 3;
-          } else {
-            const statusColor = STATUS_COLORS[nodeStatus.status];
-            if (statusColor) {
-              const c = hexToRgb(statusColor);
-              strokeR = c.r; strokeG = c.g; strokeB = c.b;
-              strokeWidth = isSelected ? 3 : 2;
-            }
-          }
-          if (nodeStatus.status === 'executing') strokeWidth = 3;
-        }
+      for (const id of dirty) {
+        const idx = this.nodeIndexMap.get(id);
+        if (idx === undefined) continue;
+        this.buildNodeData(idx, nodeData, selectedNodeId, hoveredNodeId, edgeEndpoints,
+          nodeStatusMap, grayedNodes, nodeOverrides, accuracyViewActive, searchActive, searchSet);
+        this.device.queue.writeBuffer(
+          this.nodesPipeline.storageBuffer,
+          idx * NODE_FLOATS * 4,
+          nodeData as Float32Array<ArrayBuffer>,
+          idx * NODE_FLOATS,
+          NODE_FLOATS,
+        );
       }
-
-      // Selection / hover / edge-endpoint tint — mutate locals only
-      if (isSelected) {
-        fillR = fillR + (1.0 - fillR) * 0.4;
-        fillG = fillG + (1.0 - fillG) * 0.4;
-        fillB = fillB + (1.0 - fillB) * 0.4;
-        strokeR = 0.298; strokeG = 0.553; strokeB = 1.0; // #4C8DFF
-        strokeWidth = 3;
-      } else if (isHovered) {
-        fillR = fillR + (1.0 - fillR) * 0.12;
-        fillG = fillG + (1.0 - fillG) * 0.12;
-        fillB = fillB + (1.0 - fillB) * 0.12;
-        strokeR = 0.298; strokeG = 0.553; strokeB = 1.0;
-        strokeWidth = 3;
-      } else if (isEdgeEndpoint) {
-        fillR = fillR + (1.0 - fillR) * 0.25;
-        fillG = fillG + (1.0 - fillG) * 0.25;
-        fillB = fillB + (1.0 - fillB) * 0.25;
-        strokeR = 0.298; strokeG = 0.553; strokeB = 1.0;
-        strokeWidth = 3;
-      }
-
-      // Opacity: grayed nodes semi-transparent, search dims non-matches
-      let opacity = 1;
-      if (isGrayed) {
-        opacity = 0.35;
-      } else if (searchActive && searchSet && !searchSet.has(node.id)) {
-        opacity = 0.15;
-      }
-
-      nodeData[off + 0] = node.x - dx;
-      nodeData[off + 1] = node.y;
-      nodeData[off + 2] = size.width;
-      nodeData[off + 3] = size.height;
-      nodeData[off + 4] = fillR;
-      nodeData[off + 5] = fillG;
-      nodeData[off + 6] = fillB;
-      nodeData[off + 7] = 1.0;
-      nodeData[off + 8] = strokeR;
-      nodeData[off + 9] = strokeG;
-      nodeData[off + 10] = strokeB;
-      nodeData[off + 11] = 1.0;
-      nodeData[off + 12] = strokeWidth;
-      nodeData[off + 13] = NODE_RADIUS;
-      nodeData[off + 14] = opacity;
-      nodeData[off + 15] = 0; // padding
+      fs?.endPhase('appearance.nodeBuild');
     }
 
-    fs?.endPhase('appearance.nodeBuild');
-    fs?.beginPhase('appearance.nodeUpload');
-    this.nodesPipeline = updateNodeInstances(
-      this.nodesPipeline, this.device, this.cameraBuffer,
-      nodeData, nodes.length,
-    );
-    fs?.endPhase('appearance.nodeUpload');
+    this._prevHoveredNodeId = hoveredNodeId;
+    this._prevSelectedNodeId = selectedNodeId;
+    this._prevEdgeEndpoints = edgeEndpoints;
 
     // Rebuild edges for search dimming / edge highlighting / grayed nodes (skip if accuracy view handles it)
     const edgeHighlightChanged = highlightEdge !== prevHighlight;
@@ -635,6 +603,105 @@ export class WebGPURenderer {
 
     if (this.minimapTarget) this.minimapTarget.invalidate();
     this.markDirty();
+  }
+
+  private buildNodeData(
+    i: number, nodeData: Float32Array,
+    selectedNodeId: string | null, hoveredNodeId: string | null,
+    edgeEndpoints: Set<string>,
+    nodeStatusMap: Map<string, NodeStatus>, grayedNodes: Set<string>,
+    nodeOverrides: Map<string, { name: string; type: string; color: string }> | undefined,
+    accuracyViewActive: boolean, searchActive: boolean, searchSet: Set<string> | null,
+  ): void {
+    const node = this.graphData!.nodes[i];
+    const off = i * NODE_FLOATS;
+    let size = this.nodeSizeFn!(node.id);
+    const override = nodeOverrides?.get(node.id);
+    const isGrayed = grayedNodes.has(node.id);
+    const isSelected = selectedNodeId === node.id;
+    const isHovered = hoveredNodeId === node.id;
+    const isEdgeEndpoint = edgeEndpoints.has(node.id);
+    const nodeStatus = nodeStatusMap.get(node.id);
+
+    let dx = 0;
+    if (override) {
+      const pad = 16;
+      const labelWidth = measureText(this.atlas, override.type, GRAPH_FONT_SIZE);
+      if (labelWidth + pad > size.width) {
+        const newWidth = labelWidth + pad;
+        dx = (newWidth - size.width) / 2;
+        size = { width: newWidth, height: size.height };
+      }
+    }
+
+    const fillColor = override ? override.color : isGrayed ? '#232636' : node.color;
+    let fillR = 0, fillG = 0, fillB = 0;
+    let strokeR = 0.2, strokeG = 0.2, strokeB = 0.2;
+    let strokeWidth = 1;
+
+    if (accuracyViewActive) {
+      if (nodeStatus?.status === 'success' && nodeStatus.metrics) {
+        const c = getMetricColor(nodeStatus.metrics);
+        fillR = c.r; fillG = c.g; fillB = c.b;
+      } else {
+        fillR = EDGE_COLOR.r; fillG = EDGE_COLOR.g; fillB = EDGE_COLOR.b;
+      }
+    } else {
+      const fc = hexToRgb(fillColor);
+      fillR = fc.r; fillG = fc.g; fillB = fc.b;
+      if (nodeStatus && !isGrayed) {
+        if (nodeStatus.status === 'success') {
+          strokeR = 0.75; strokeG = 0.75; strokeB = 0.78;
+          strokeWidth = isSelected ? 4 : 3;
+        } else {
+          const statusColor = STATUS_COLORS[nodeStatus.status];
+          if (statusColor) {
+            const c = hexToRgb(statusColor);
+            strokeR = c.r; strokeG = c.g; strokeB = c.b;
+            strokeWidth = isSelected ? 3 : 2;
+          }
+        }
+        if (nodeStatus.status === 'executing') strokeWidth = 3;
+      }
+    }
+
+    if (isSelected) {
+      fillR += (1.0 - fillR) * 0.4; fillG += (1.0 - fillG) * 0.4; fillB += (1.0 - fillB) * 0.4;
+      strokeR = 0.298; strokeG = 0.553; strokeB = 1.0;
+      strokeWidth = 3;
+    } else if (isHovered) {
+      fillR += (1.0 - fillR) * 0.12; fillG += (1.0 - fillG) * 0.12; fillB += (1.0 - fillB) * 0.12;
+      strokeR = 0.298; strokeG = 0.553; strokeB = 1.0;
+      strokeWidth = 3;
+    } else if (isEdgeEndpoint) {
+      fillR += (1.0 - fillR) * 0.25; fillG += (1.0 - fillG) * 0.25; fillB += (1.0 - fillB) * 0.25;
+      strokeR = 0.298; strokeG = 0.553; strokeB = 1.0;
+      strokeWidth = 3;
+    }
+
+    let opacity = 1;
+    if (isGrayed) {
+      opacity = 0.35;
+    } else if (searchActive && searchSet && !searchSet.has(node.id)) {
+      opacity = 0.15;
+    }
+
+    nodeData[off + 0] = node.x - dx;
+    nodeData[off + 1] = node.y;
+    nodeData[off + 2] = size.width;
+    nodeData[off + 3] = size.height;
+    nodeData[off + 4] = fillR;
+    nodeData[off + 5] = fillG;
+    nodeData[off + 6] = fillB;
+    nodeData[off + 7] = 1.0;
+    nodeData[off + 8] = strokeR;
+    nodeData[off + 9] = strokeG;
+    nodeData[off + 10] = strokeB;
+    nodeData[off + 11] = 1.0;
+    nodeData[off + 12] = strokeWidth;
+    nodeData[off + 13] = NODE_RADIUS;
+    nodeData[off + 14] = opacity;
+    nodeData[off + 15] = 0;
   }
 
   private updateTextAlphaUniform(zoomRatio: number): void {
