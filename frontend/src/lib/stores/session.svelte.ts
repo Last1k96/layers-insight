@@ -38,7 +38,7 @@ class SessionStore {
       });
       if (!res.ok) throw new Error(await extractError(res));
       const info: SessionInfo = await res.json();
-      this.sessions = [...this.sessions, info];
+      this.sessions = [info, ...this.sessions];
       return info;
     } catch (e: any) {
       this.error = e.message;
@@ -121,7 +121,7 @@ class SessionStore {
       });
       if (!res.ok) throw new Error(await extractError(res));
       const data: CloneResponse = await res.json();
-      this.sessions = [...this.sessions, data.session];
+      this.sessions = [data.session, ...this.sessions];
       return data;
     } catch (e: any) {
       this.error = e.message;
