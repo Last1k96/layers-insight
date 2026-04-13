@@ -201,34 +201,62 @@
   {#if selectedEdge}
     <!-- Edge Info -->
     <div class="mb-4">
-      <h4 class="text-[10px] font-medium text-muted-soft uppercase tracking-wider mb-2">Edge Connection</h4>
+      <h4 class="text-[10px] font-medium text-muted-soft uppercase tracking-wider mb-2">Source — port {selectedEdge.edge.source_port}</h4>
 
-      <!-- Source Node -->
-      <div class="bg-surface-base rounded-lg p-2.5 text-xs">
-        <div class="text-[10px] text-muted-soft uppercase tracking-wider mb-1">Source</div>
-        <div class="flex items-center gap-1.5">
-          <span class="text-muted-soft font-mono w-4 shrink-0">:{selectedEdge.edge.source_port}</span>
-          {#if selectedEdge.sourceNode}
-            <button
-              class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
-              onmouseenter={() => setHoveredNode(selectedEdge!.sourceNode!.id)}
-              onmouseleave={() => setHoveredNode(null)}
-              onclick={() => centerOnNode(selectedEdge!.sourceNode!.id)}
-            >{selectedEdge.sourceNode.name}</button>
-          {:else}
-            <span class="text-muted font-mono truncate">{selectedEdge.edge.source}</span>
-          {/if}
-        </div>
-        {#if selectedEdge.sourceNode}
-          <div class="text-muted-soft ml-5 mt-0.5">{selectedEdge.sourceNode.type}</div>
-          {#if selectedEdge.sourceNode.shape}
-            <div class="text-muted-soft ml-5 mt-0.5">
-              [{#each selectedEdge.sourceNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]
-              {#if selectedEdge.sourceNode.element_type}<span class="text-muted-soft"> {selectedEdge.sourceNode.element_type}</span>{/if}
+      <!-- Source Node Card -->
+      {#if selectedEdge.sourceNode}
+        {@const srcNode = selectedEdge.sourceNode}
+        {@const srcPropagated = graphStore.graphData?.propagated_shapes?.[srcNode.name] ?? null}
+        {@const srcChipTextDark = isLightNodeColor(srcNode.color)}
+        <div
+          class="mb-2 bg-surface-base rounded-lg p-2.5 cursor-pointer hover:bg-surface-hover transition-all ring-1 ring-transparent hover:ring-[#4C8DFF]/50"
+          role="button"
+          tabindex={0}
+          onmouseenter={() => setHoveredNode(srcNode.id)}
+          onmouseleave={() => setHoveredNode(null)}
+          onmouseup={() => { if (!window.getSelection()?.toString()) centerOnNode(srcNode.id); }}
+        >
+          <span class="font-mono font-medium text-[13px] text-content-primary break-all leading-snug">{srcNode.name}</span>
+          <div
+            class="block w-fit text-xs font-medium mt-1 px-2 py-0.5 rounded-md"
+            style="background-color: {srcNode.color}; color: {srcChipTextDark ? '#1B1E2B' : '#E1E4ED'};"
+          >{srcNode.type}</div>
+          {#if (srcNode.inputs && srcNode.inputs.length > 0) || srcNode.shape}
+            <div class="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs items-baseline">
+              {#if srcNode.inputs}
+                {#each srcNode.inputs as inp}
+                  {@const inpPropagated = graphStore.graphData?.propagated_shapes?.[inp.name] ?? null}
+                  {@const inpOrigShape = inp.shape}
+                  <span class="text-muted-soft shrink-0">{inp.is_const ? 'const' : 'input'}</span>
+                  <span>
+                    {#if inpPropagated && inpOrigShape}
+                      <span class="font-mono text-muted">[{#each inpPropagated as dim, idx}{#if idx > 0}, {/if}{#if inpOrigShape[idx] !== undefined && typeof inpOrigShape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
+                    {:else if inpOrigShape}
+                      <span class="font-mono text-muted">[{#each inpOrigShape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
+                    {/if}
+                    {#if inp.element_type}<span class="text-muted-soft ml-1">{inp.element_type}</span>{/if}
+                  </span>
+                {/each}
+              {/if}
+              {#if srcNode.shape}
+                <span class="text-muted-soft shrink-0">output</span>
+                <span>
+                  {#if srcPropagated}
+                    <span class="font-mono text-muted">[{#each srcPropagated as dim, idx}{#if idx > 0}, {/if}{#if srcNode.shape[idx] !== undefined && typeof srcNode.shape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
+                  {:else}
+                    <span class="font-mono text-muted">[{#each srcNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
+                  {/if}
+                  {#if srcNode.element_type}<span class="text-muted-soft ml-1">{srcNode.element_type}</span>{/if}
+                </span>
+              {/if}
             </div>
           {/if}
-        {/if}
-      </div>
+        </div>
+      {:else}
+        <div class="mb-2 bg-surface-base rounded-lg p-2.5 text-xs">
+          <span class="text-muted font-mono truncate">{selectedEdge.edge.source}</span>
+        </div>
+      {/if}
 
       <!-- Arrow -->
       <div class="flex justify-center py-1">
@@ -237,32 +265,62 @@
         </svg>
       </div>
 
-      <!-- Target Node -->
-      <div class="bg-surface-base rounded-lg p-2.5 text-xs">
-        <div class="text-[10px] text-muted-soft uppercase tracking-wider mb-1">Target</div>
-        <div class="flex items-center gap-1.5">
-          <span class="text-muted-soft font-mono w-4 shrink-0">:{selectedEdge.edge.target_port}</span>
-          {#if selectedEdge.targetNode}
-            <button
-              class="text-accent hover:text-accent-hover font-mono truncate transition-colors text-left"
-              onmouseenter={() => setHoveredNode(selectedEdge!.targetNode!.id)}
-              onmouseleave={() => setHoveredNode(null)}
-              onclick={() => centerOnNode(selectedEdge!.targetNode!.id)}
-            >{selectedEdge.targetNode.name}</button>
-          {:else}
-            <span class="text-muted font-mono truncate">{selectedEdge.edge.target}</span>
-          {/if}
-        </div>
-        {#if selectedEdge.targetNode}
-          <div class="text-muted-soft ml-5 mt-0.5">{selectedEdge.targetNode.type}</div>
-          {#if selectedEdge.targetNode.shape}
-            <div class="text-muted-soft ml-5 mt-0.5">
-              [{#each selectedEdge.targetNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]
-              {#if selectedEdge.targetNode.element_type}<span class="text-muted-soft"> {selectedEdge.targetNode.element_type}</span>{/if}
+      <h4 class="text-[10px] font-medium text-muted-soft uppercase tracking-wider mb-2">Target — port {selectedEdge.edge.target_port}</h4>
+
+      <!-- Target Node Card -->
+      {#if selectedEdge.targetNode}
+        {@const tgtNode = selectedEdge.targetNode}
+        {@const tgtPropagated = graphStore.graphData?.propagated_shapes?.[tgtNode.name] ?? null}
+        {@const tgtChipTextDark = isLightNodeColor(tgtNode.color)}
+        <div
+          class="mb-2 bg-surface-base rounded-lg p-2.5 cursor-pointer hover:bg-surface-hover transition-all ring-1 ring-transparent hover:ring-[#4C8DFF]/50"
+          role="button"
+          tabindex={0}
+          onmouseenter={() => setHoveredNode(tgtNode.id)}
+          onmouseleave={() => setHoveredNode(null)}
+          onmouseup={() => { if (!window.getSelection()?.toString()) centerOnNode(tgtNode.id); }}
+        >
+          <span class="font-mono font-medium text-[13px] text-content-primary break-all leading-snug">{tgtNode.name}</span>
+          <div
+            class="block w-fit text-xs font-medium mt-1 px-2 py-0.5 rounded-md"
+            style="background-color: {tgtNode.color}; color: {tgtChipTextDark ? '#1B1E2B' : '#E1E4ED'};"
+          >{tgtNode.type}</div>
+          {#if (tgtNode.inputs && tgtNode.inputs.length > 0) || tgtNode.shape}
+            <div class="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 text-xs items-baseline">
+              {#if tgtNode.inputs}
+                {#each tgtNode.inputs as inp}
+                  {@const inpPropagated = graphStore.graphData?.propagated_shapes?.[inp.name] ?? null}
+                  {@const inpOrigShape = inp.shape}
+                  <span class="text-muted-soft shrink-0">{inp.is_const ? 'const' : 'input'}</span>
+                  <span>
+                    {#if inpPropagated && inpOrigShape}
+                      <span class="font-mono text-muted">[{#each inpPropagated as dim, idx}{#if idx > 0}, {/if}{#if inpOrigShape[idx] !== undefined && typeof inpOrigShape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
+                    {:else if inpOrigShape}
+                      <span class="font-mono text-muted">[{#each inpOrigShape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
+                    {/if}
+                    {#if inp.element_type}<span class="text-muted-soft ml-1">{inp.element_type}</span>{/if}
+                  </span>
+                {/each}
+              {/if}
+              {#if tgtNode.shape}
+                <span class="text-muted-soft shrink-0">output</span>
+                <span>
+                  {#if tgtPropagated}
+                    <span class="font-mono text-muted">[{#each tgtPropagated as dim, idx}{#if idx > 0}, {/if}{#if tgtNode.shape[idx] !== undefined && typeof tgtNode.shape[idx] === 'string'}<span class="text-yellow-400">{dim}</span>{:else}{dim}{/if}{/each}]</span>
+                  {:else}
+                    <span class="font-mono text-muted">[{#each tgtNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-yellow-400">?</span>{:else}{dim}{/if}{/each}]</span>
+                  {/if}
+                  {#if tgtNode.element_type}<span class="text-muted-soft ml-1">{tgtNode.element_type}</span>{/if}
+                </span>
+              {/if}
             </div>
           {/if}
-        {/if}
-      </div>
+        </div>
+      {:else}
+        <div class="mb-2 bg-surface-base rounded-lg p-2.5 text-xs">
+          <span class="text-muted font-mono truncate">{selectedEdge.edge.target}</span>
+        </div>
+      {/if}
     </div>
   {:else if selectedNode}
     <!-- Node Info -->
