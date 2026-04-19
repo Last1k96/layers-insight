@@ -121,13 +121,72 @@ async def delete_session(session_id: str, request: Request) -> dict:
 
 @router.patch("/{session_id}/rename")
 async def rename_session(session_id: str, req: RenameRequest, request: Request) -> dict:
-    """Rename a session."""
+    """Rename a session and its on-disk folder.
+
+    If renaming changes the session id (new name sanitizes to a different
+    suffix), in-memory state keyed by the old id is remapped to the new id and
+    the new id is returned so the client can update its references.
+    """
     svc = _get_session_service(request)
-    if not req.name.strip():
+    new_name = req.name.strip()
+    if not new_name:
         raise HTTPException(status_code=400, detail="Name cannot be empty")
-    if svc.rename_session(session_id, req.name.strip()):
-        return {"renamed": True, "name": req.name.strip()}
-    raise HTTPException(status_code=404, detail="Session not found")
+
+    app = request.app
+    queue_svc = app.state.queue_service
+    bisect_svc = app.state.bisect_service
+
+    # Reject while work is actively running — the executing subprocess has
+    # absolute paths baked into its argv, and pulling the folder out from
+    # under it would break the run.
+    executing_id = queue_svc._executing_task_id
+    if executing_id:
+        exec_task = queue_svc.get_task(executing_id)
+        if exec_task and exec_task.session_id == session_id:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot rename while an inference is executing. Pause the queue first.",
+            )
+
+    from backend.schemas.bisect import BisectStatus
+    for job in bisect_svc.get_jobs(session_id):
+        if job.status == BisectStatus.RUNNING:
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot rename while a bisect job is running. Pause or stop it first.",
+            )
+
+    async with app.state.pause_resume_lock:
+        try:
+            new_id = svc.rename_session(session_id, new_name)
+        except OSError as e:
+            raise HTTPException(status_code=500, detail=f"Failed to rename folder: {e}")
+        if new_id is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        if new_id != session_id:
+            from backend.ws.handler import ws_manager
+
+            models = app.state.models
+            if session_id in models:
+                models[new_id] = models.pop(session_id)
+
+            if session_id in ws_manager._connections:
+                ws_manager._connections[new_id] = ws_manager._connections.pop(session_id)
+
+            for task in queue_svc.get_all_tasks(session_id):
+                task.session_id = new_id
+
+            for job_state in bisect_svc._jobs.values():
+                if job_state.job.session_id == session_id:
+                    job_state.job.session_id = new_id
+                    if job_state.request is not None:
+                        try:
+                            job_state.request.session_id = new_id
+                        except Exception:
+                            pass
+
+    return {"renamed": True, "name": new_name, "id": new_id}
 
 
 @router.post("/{session_id}/clone")

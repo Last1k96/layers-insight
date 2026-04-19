@@ -71,11 +71,18 @@
 
   async function commitRenameSession() {
     const trimmed = renameValue.trim();
-    const sessionId = sessionStore.currentSession?.id;
-    if (trimmed && sessionId) {
-      await sessionStore.renameSession(sessionId, trimmed);
-      if (sessionStore.currentSession) {
-        sessionStore.currentSession.info.model_name = trimmed;
+    const oldId = sessionStore.currentSession?.id;
+    if (trimmed && oldId) {
+      const result = await sessionStore.renameSession(oldId, trimmed);
+      if (result && result.id !== oldId) {
+        // Session folder was renamed on disk; the id changed with it.
+        // Rewire the WebSocket and the URL hash so reconnects target the new id.
+        disconnect();
+        await connect(result.id);
+        const hash = `#/session/${result.id}`;
+        if (location.hash !== hash) {
+          history.replaceState(null, '', hash);
+        }
       }
     }
     renamingSession = false;

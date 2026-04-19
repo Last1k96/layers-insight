@@ -92,7 +92,7 @@ class SessionStore {
     }
   }
 
-  async renameSession(sessionId: string, name: string): Promise<boolean> {
+  async renameSession(sessionId: string, name: string): Promise<{ id: string } | null> {
     try {
       const res = await fetch(`/api/sessions/${sessionId}/rename`, {
         method: 'PATCH',
@@ -100,13 +100,29 @@ class SessionStore {
         body: JSON.stringify({ name }),
       });
       if (!res.ok) throw new Error(await extractError(res));
+      const data = await res.json() as { renamed: boolean; name: string; id: string };
+      const newId = data.id;
+
       this.sessions = this.sessions.map(s =>
-        s.id === sessionId ? { ...s, model_name: name } : s
+        s.id === sessionId ? { ...s, id: newId, model_name: name } : s
       );
-      return true;
+
+      if (this.currentSession?.id === sessionId) {
+        this.currentSession = {
+          ...this.currentSession,
+          id: newId,
+          info: { ...this.currentSession.info, id: newId, model_name: name },
+        };
+      }
+
+      if (localStorage.getItem(SESSION_STORAGE_KEY) === sessionId) {
+        localStorage.setItem(SESSION_STORAGE_KEY, newId);
+      }
+
+      return { id: newId };
     } catch (e: any) {
       this.error = e.message;
-      return false;
+      return null;
     }
   }
 

@@ -842,14 +842,55 @@ class SessionService:
         if changed:
             self._write_metadata(session_id, meta)
 
-    def rename_session(self, session_id: str, new_name: str) -> bool:
-        """Rename a session (update model_name in metadata). Returns True on success."""
-        if not self._session_path(session_id).exists():
-            return False
-        meta = self._read_metadata(session_id)
+    def rename_session(self, session_id: str, new_name: str) -> Optional[str]:
+        """Rename a session's display name and, when possible, its folder on disk.
+
+        The session id has the form ``YYYYMMDD_HHMMSS_{safe_name}`` — the timestamp
+        prefix stays put while ``{safe_name}`` is recomputed from ``new_name``.
+        Tasks, bisect jobs, and sub-sessions referencing the old id in metadata
+        are rewritten.
+
+        Returns the resulting session id (unchanged if the name sanitizes to the
+        same suffix or the id has no parseable timestamp), or ``None`` if the
+        session does not exist.
+        """
+        import re
+
+        old_path = self._session_path(session_id)
+        if not old_path.exists():
+            return None
+
+        ts_match = re.match(r"^(\d{8}_\d{6})_", session_id)
+        if ts_match:
+            timestamp = ts_match.group(1)
+            new_id = f"{timestamp}_{self._sanitize_name(new_name)}"
+            if new_id != session_id:
+                base_new = new_id
+                counter = 2
+                while self._session_path(new_id).exists():
+                    new_id = f"{base_new}_{counter}"
+                    counter += 1
+                old_path.rename(self._session_path(new_id))
+        else:
+            new_id = session_id
+
+        meta = self._read_metadata(new_id)
+        meta["info"]["id"] = new_id
         meta["info"]["model_name"] = new_name
-        self._write_metadata(session_id, meta)
-        return True
+
+        if new_id != session_id:
+            for t in meta.get("tasks", {}).values():
+                if t.get("session_id") == session_id:
+                    t["session_id"] = new_id
+            for j in meta.get("bisect_jobs", {}).values():
+                if j.get("session_id") == session_id:
+                    j["session_id"] = new_id
+            for s in meta.get("sub_sessions", []):
+                if s.get("parent_id") == session_id:
+                    s["parent_id"] = new_id
+
+        self._write_metadata(new_id, meta)
+        return new_id
 
     def _write_metadata(self, session_id: str, metadata: dict) -> None:
         self._atomic_write(
