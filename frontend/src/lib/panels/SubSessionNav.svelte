@@ -18,6 +18,8 @@
   let downloading = $state(false);
   let relayouting = $state(false);
   let cancelAfterRelayout = $state(false);
+  let hydratedSessionId: string | null = null;
+  let hydratedSubId: string | null = null;
 
   let activeSub = $derived(
     activeSubSessionId
@@ -91,9 +93,32 @@
       const res = await fetch(`/api/sessions/${session.id}/sub-sessions`);
       if (res.ok) {
         subSessions = await res.json();
+        hydrateFromUrl(session.id);
       }
     } catch (e) {
       console.error('Failed to fetch sub-sessions:', e);
+    }
+  }
+
+  function hydrateFromUrl(sessionId: string): void {
+    const pending = graphStore.activeSubSessionId;
+    if (!pending) {
+      hydratedSessionId = sessionId;
+      hydratedSubId = null;
+      return;
+    }
+    if (hydratedSessionId === sessionId && hydratedSubId === pending) return;
+
+    const match = subSessions.find(s => s.id === pending);
+    if (match) {
+      hydratedSessionId = sessionId;
+      hydratedSubId = pending;
+      activateSubSession(match, true);
+    } else {
+      // Stale id from URL — drop it and let the URL effect clear the hash.
+      hydratedSessionId = sessionId;
+      hydratedSubId = null;
+      graphStore.setActiveSubSession(null);
     }
   }
 

@@ -7,6 +7,7 @@
   import ErrorBanner from './lib/panels/ErrorBanner.svelte';
   import PerfHud from './lib/perf/PerfHud.svelte';
   import { sessionStore } from './lib/stores/session.svelte';
+  import { graphStore } from './lib/stores/graph.svelte';
   import { configStore } from './lib/stores/config.svelte';
   import type { SessionConfig } from './lib/stores/types';
   import {
@@ -38,7 +39,11 @@
   function syncHash(view: View): void {
     let route: Route;
     if (view === 'main' && sessionStore.currentSession) {
-      route = { kind: 'session', id: sessionStore.currentSession.id };
+      route = {
+        kind: 'session',
+        id: sessionStore.currentSession.id,
+        subSessionId: graphStore.activeSubSessionId ?? undefined,
+      };
     } else if (view === 'compare' && compareSessionA && compareSessionB) {
       route = { kind: 'compare', a: compareSessionA, b: compareSessionB };
     } else if (view === 'new-session') {
@@ -77,10 +82,15 @@
       compareSessionB = route.b;
       setView('compare');
     } else if (route.kind === 'session') {
+      const desiredSub = route.subSessionId ?? null;
       if (sessionStore.currentSession?.id === route.id) {
+        if (graphStore.activeSubSessionId !== desiredSub) {
+          graphStore.setActiveSubSession(desiredSub);
+        }
         setView('main');
         return;
       }
+      graphStore.setActiveSubSession(desiredSub);
       await sessionStore.loadSession(route.id);
       if (sessionStore.currentSession) {
         setView('main');
@@ -110,6 +120,7 @@
       if (decision.banner) initBanner = decision.banner;
 
       if (decision.view === 'main' && decision.sessionId) {
+        graphStore.setActiveSubSession(decision.subSessionId ?? null);
         await sessionStore.loadSession(decision.sessionId);
         if (sessionStore.currentSession) {
           setView('main');
@@ -137,7 +148,15 @@
     });
   });
 
+  $effect(() => {
+    const _sub = graphStore.activeSubSessionId;
+    if (currentView === 'main' && sessionStore.currentSession) {
+      syncHash('main');
+    }
+  });
+
   function onSessionSelected(sessionId: string) {
+    graphStore.setActiveSubSession(null);
     sessionStore.loadSession(sessionId).then(() => {
       if (sessionStore.currentSession) setView('main');
     });
@@ -172,6 +191,7 @@
     cloneSourceId = undefined;
     cloneSourceConfig = undefined;
     cloneSourceName = undefined;
+    graphStore.setActiveSubSession(null);
     sessionStore.loadSession(sessionId).then(() => {
       if (sessionStore.currentSession) setView('main');
     });
@@ -218,6 +238,7 @@
       sessionBId={compareSessionB}
       onback={onBackToPicker}
       onnodeselected={(sessionId, _nodeName) => {
+        graphStore.setActiveSubSession(null);
         sessionStore.loadSession(sessionId).then(() => {
           if (sessionStore.currentSession) setView('main');
         });

@@ -22,6 +22,7 @@
   import { cacheMetrics } from '../stores/metrics.svelte';
   import { connect, disconnect, setConnectionCallbacks } from '../ws/client';
   import { refreshRenderer } from '../graph/renderer';
+  import { formatHash } from '../router';
   import { installShortcuts, uninstallShortcuts, registerShortcut, toggleHelp, setHelpVisible } from '../shortcuts';
   import { onMount, onDestroy } from 'svelte';
 
@@ -79,7 +80,11 @@
         // Rewire the WebSocket and the URL hash so reconnects target the new id.
         disconnect();
         await connect(result.id);
-        const hash = `#/session/${result.id}`;
+        const hash = formatHash({
+          kind: 'session',
+          id: result.id,
+          subSessionId: graphStore.activeSubSessionId ?? undefined,
+        });
         if (location.hash !== hash) {
           history.replaceState(null, '', hash);
         }

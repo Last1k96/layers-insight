@@ -10,6 +10,7 @@ export const CLI_CONSUMED_KEY = 'li.cliConsumed';
 export interface InitDecision {
   view: View;
   sessionId?: string;
+  subSessionId?: string;
   compare?: { a: string; b: string };
   banner?: string;
 }
@@ -40,7 +41,7 @@ export function pickInitialView(
   if (route) {
     if (route.kind === 'session') {
       if (sessions.some(s => s.id === route.id)) {
-        return { view: 'main', sessionId: route.id };
+        return { view: 'main', sessionId: route.id, subSessionId: route.subSessionId };
       }
       return { view: sessions.length > 0 ? 'picker' : 'new-session', banner: `Session ${route.id} no longer exists.` };
     }
