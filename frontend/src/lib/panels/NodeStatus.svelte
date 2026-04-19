@@ -409,16 +409,17 @@
         </button>
         <div class="flex gap-2">
           <button
-            class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
+            class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98] leading-tight"
             onclick={() => handleCut('input_random')}
           >
-            Make Parameter
+            <div>Cut as Input</div>
+            <div class="text-[10px] text-muted-soft mt-0.5">(random)</div>
           </button>
           <button
             class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
             onclick={() => handleCut('output')}
           >
-            Make Output
+            Cut as Output
           </button>
         </div>
       </div>
@@ -567,13 +568,13 @@
               class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
               onclick={() => handleCut('input')}
             >
-              Make Parameter
+              Cut as Input
             </button>
             <button
               class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
               onclick={() => handleCut('output')}
             >
-              Make Output
+              Cut as Output
             </button>
           </div>
         </div>
@@ -711,13 +712,13 @@
               class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
               onclick={() => handleCut('input')}
             >
-              Make Parameter
+              Cut as Input
             </button>
             <button
               class="flex-1 py-2 bg-surface-elevated hover:bg-edge rounded-lg text-xs transition-all duration-100 active:scale-[0.98]"
               onclick={() => handleCut('output')}
             >
-              Make Output
+              Cut as Output
             </button>
           </div>
         </div>
