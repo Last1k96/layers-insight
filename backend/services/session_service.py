@@ -470,6 +470,40 @@ class SessionService:
                 break
         self._write_metadata(session_id, meta)
 
+    def set_tight_mode(self, session_id: str, sub_session_id: str, enabled: bool) -> None:
+        self.update_sub_session_meta(session_id, sub_session_id, {"tight_mode": enabled})
+
+    def _sub_session_dir(self, session_id: str, sub_session_id: str) -> Path:
+        return self._session_path(session_id) / "sub_sessions" / sub_session_id
+
+    def save_sub_session_tight_graph(
+        self, session_id: str, sub_session_id: str, graph_data: dict,
+    ) -> str:
+        """Persist the sub-session's standalone tight graph to its own folder.
+
+        Returns the session-relative path so it can be stored in metadata.
+        """
+        sub_dir = self._sub_session_dir(session_id, sub_session_id)
+        sub_dir.mkdir(parents=True, exist_ok=True)
+        path = sub_dir / "tight_graph.json"
+        self._atomic_write(path, json.dumps(graph_data, default=str))
+        return Path("sub_sessions", sub_session_id, "tight_graph.json").as_posix()
+
+    def load_sub_session_tight_graph(
+        self, session_id: str, sub_session_id: str,
+    ) -> Optional[dict]:
+        """Load the persisted tight graph for a sub-session, or None."""
+        sub_meta = self.get_sub_session_meta(session_id, sub_session_id)
+        if sub_meta is None:
+            return None
+        rel = sub_meta.get("tight_graph_path")
+        if not rel:
+            return None
+        path = self._resolve_path(session_id, rel)
+        if not path.exists():
+            return None
+        return json.loads(path.read_text())
+
     def list_sub_sessions(self, session_id: str) -> list:
         """List sub-sessions for a session."""
         from backend.schemas.session import SubSessionInfo
@@ -477,7 +511,11 @@ class SessionService:
         results = []
         for s in meta.get("sub_sessions", []):
             payload = dict(s)
-            payload["has_tight_layout"] = bool(s.get("tight_layout"))
+            has_graph = bool(s.get("tight_graph_path"))
+            payload["has_tight_layout"] = has_graph
+            # Migration fallback: pre-tight_mode sub-sessions with a cached
+            # tight layout default to ON so users don't lose their view state.
+            payload["tight_mode"] = s.get("tight_mode", has_graph)
             results.append(SubSessionInfo(**payload))
         return results
 

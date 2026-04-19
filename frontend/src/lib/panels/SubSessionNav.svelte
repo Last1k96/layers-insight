@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { SubSessionInfo, TightLayout } from '../stores/types';
+  import type { SubSessionInfo, GraphData } from '../stores/types';
   import { sessionStore } from '../stores/session.svelte';
   import { graphStore } from '../stores/graph.svelte';
 
-  import { refreshRenderer, fitToSubSession, applyTightLayout, hideGrayedNodes } from '../graph/renderer';
+  import { refreshRenderer, fitToSubSession } from '../graph/renderer';
 
   interface TreeNode {
     sub: SubSessionInfo;
@@ -17,6 +17,7 @@
   let collapsed = $state(true);
   let downloading = $state(false);
   let relayouting = $state(false);
+  let cancelAfterRelayout = $state(false);
 
   let activeSub = $derived(
     activeSubSessionId
@@ -96,33 +97,49 @@
     }
   }
 
-  async function ensureTightLayout(sub: SubSessionInfo): Promise<TightLayout | null> {
-    const cached = graphStore.getTightLayout(sub.id);
+  async function ensureTightGraph(sub: SubSessionInfo): Promise<GraphData | null> {
+    const cached = graphStore.getTightGraph(sub.id);
     if (cached) return cached;
     if (!sub.has_tight_layout) return null;
 
     const session = sessionStore.currentSession;
     if (!session) return null;
     try {
-      const res = await fetch(`/api/sessions/${session.id}/sub-sessions/${sub.id}/tight-layout`);
+      const res = await fetch(`/api/sessions/${session.id}/sub-sessions/${sub.id}/tight-graph`);
       if (!res.ok) return null;
-      const data = await res.json();
-      if (!data || !data.positions) return null;
-      const layout = data as TightLayout;
-      graphStore.setTightLayout(sub.id, layout);
-      return layout;
+      const graph = await res.json() as GraphData;
+      if (!graph || !Array.isArray(graph.nodes)) return null;
+      graphStore.setTightGraph(sub.id, graph);
+      return graph;
     } catch (e) {
-      console.error('Failed to load tight layout:', e);
+      console.error('Failed to load tight graph:', e);
       return null;
     }
   }
 
-  async function activateSubSession(sub: SubSessionInfo, recenter: boolean = false) {
+  function applyFullModeForSub(sub: SubSessionInfo): void {
+    graphStore.activateFullGraph();
     graphStore.setGrayedNodes(sub.grayed_nodes, sub.cut_node, sub.cut_type, sub.ancestor_cuts);
+  }
+
+  async function activateSubSession(sub: SubSessionInfo, recenter: boolean = false) {
     graphStore.setActiveSubSession(sub.id);
     graphStore.selectNode(sub.cut_node);
-    const layout = await ensureTightLayout(sub);
-    applyTightLayout(layout);
+    // The rendered graph is determined by the persisted tight_mode
+    // preference. Tight mode loads a standalone subgraph file; full mode
+    // keeps the session graph visible with grayed dimming.
+    if (sub.tight_mode) {
+      const graph = await ensureTightGraph(sub);
+      if (graph && graphStore.activeSubSessionId === sub.id) {
+        graphStore.activateTightGraph(sub.id, graph);
+      } else {
+        // Tight graph missing — fall through to full view so the scene
+        // isn't left empty.
+        applyFullModeForSub(sub);
+      }
+    } else {
+      applyFullModeForSub(sub);
+    }
     refreshRenderer();
     if (recenter) {
       requestAnimationFrame(() => fitToSubSession());
@@ -132,7 +149,7 @@
   function activateRoot(recenter: boolean = false) {
     graphStore.clearGrayedNodes();
     graphStore.setActiveSubSession(null);
-    applyTightLayout(null);
+    graphStore.activateFullGraph();
     refreshRenderer();
     if (recenter) {
       requestAnimationFrame(() => fitToSubSession());
@@ -160,7 +177,7 @@
             activateRoot(true);
           }
         }
-        for (const id of deletedIds) graphStore.removeTightLayout(id);
+        for (const id of deletedIds) graphStore.removeTightGraph(id);
         subSessions = subSessions.filter(s => !deletedIds.has(s.id));
       }
     } catch (e) {
@@ -206,16 +223,85 @@
     }
   }
 
-  async function handleRelayout() {
-    const session = sessionStore.currentSession;
-    if (!session || !activeSub || downloading || relayouting) return;
-    relayouting = true;
-    const targetId = activeSub.id;
+  function setLocalTightMode(targetId: string, value: boolean): void {
+    subSessions = subSessions.map(s =>
+      s.id === targetId ? { ...s, tight_mode: value } : s,
+    );
+  }
 
-    // Drop grayed nodes/edges from the scene immediately so the user sees
-    // the subgraph cleanly while the backend is still computing positions.
-    const grayedAtStart = graphStore.grayedNodes;
-    hideGrayedNodes(grayedAtStart);
+  async function postTightMode(sessionId: string, targetId: string, enabled: boolean): Promise<boolean> {
+    try {
+      const res = await fetch(
+        `/api/sessions/${sessionId}/sub-sessions/${targetId}/tight-mode`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ enabled }),
+        },
+      );
+      if (!res.ok) {
+        console.error('tight-mode request failed:', await res.text());
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error('tight-mode request error:', e);
+      return false;
+    }
+  }
+
+  async function handleTightToggle() {
+    const session = sessionStore.currentSession;
+    if (!session || !activeSub || downloading) return;
+
+    // A click during an in-flight compute means "cancel" — we let the POST
+    // finish (so the server keeps the cached tight graph) but skip applying
+    // it, flip tight_mode off, and stay in full-model view.
+    if (relayouting) {
+      cancelAfterRelayout = true;
+      return;
+    }
+
+    const targetId = activeSub.id;
+    const sub = activeSub;
+    const currentlyOn = !!sub.tight_mode;
+
+    // ── Toggle OFF: swap back to the session's full graph ─────────────
+    if (currentlyOn) {
+      setLocalTightMode(targetId, false);
+      applyFullModeForSub(sub);
+      refreshRenderer();
+      const ok = await postTightMode(session.id, targetId, false);
+      if (!ok) setLocalTightMode(targetId, true);
+      return;
+    }
+
+    // ── Toggle ON, cached tight graph already exists ─────────────────
+    const cached = graphStore.getTightGraph(targetId);
+    if (cached || sub.has_tight_layout) {
+      setLocalTightMode(targetId, true);
+      const graph = cached ?? await ensureTightGraph(sub);
+      if (!graph) {
+        setLocalTightMode(targetId, false);
+        return;
+      }
+      if (graphStore.activeSubSessionId !== targetId) return;
+      graphStore.activateTightGraph(targetId, graph);
+      refreshRenderer();
+      const ok = await postTightMode(session.id, targetId, true);
+      if (!ok) {
+        setLocalTightMode(targetId, false);
+        if (graphStore.activeSubSessionId === targetId) {
+          applyFullModeForSub(sub);
+          refreshRenderer();
+        }
+      }
+      return;
+    }
+
+    // ── Toggle ON, no cached tight graph → compute ───────────────────
+    relayouting = true;
+    cancelAfterRelayout = false;
 
     let applied = false;
     try {
@@ -224,34 +310,53 @@
         { method: 'POST' },
       );
       if (!res.ok) {
-        const msg = await res.text();
-        console.error('Relayout failed:', msg);
+        console.error('Relayout failed:', await res.text());
         return;
       }
-      const layout = (await res.json()) as TightLayout;
-      graphStore.setTightLayout(targetId, layout);
+      const data = await res.json();
+      const graph = data?.graph as GraphData | undefined;
+      if (!graph || !Array.isArray(graph.nodes)) {
+        console.error('Relayout returned no graph');
+        return;
+      }
+      graphStore.setTightGraph(targetId, graph);
 
-      // Update the in-memory flag so the list reflects persistence.
+      const serverTightMode = data.tight_mode !== false;
       subSessions = subSessions.map(s =>
-        s.id === targetId ? { ...s, has_tight_layout: true } : s,
+        s.id === targetId
+          ? { ...s, has_tight_layout: true, tight_mode: serverTightMode }
+          : s,
       );
 
+      if (cancelAfterRelayout) {
+        // User asked to cancel while we were computing. Persist the flag
+        // flip (fire-and-forget) and stay in full view.
+        postTightMode(session.id, targetId, false).then(() => {
+          setLocalTightMode(targetId, false);
+        });
+        if (graphStore.activeSubSessionId === targetId) {
+          applyFullModeForSub(sub);
+          refreshRenderer();
+        }
+        applied = true;
+        return;
+      }
+
       if (graphStore.activeSubSessionId === targetId) {
-        applyTightLayout(layout);
+        graphStore.activateTightGraph(targetId, graph);
         refreshRenderer();
-        requestAnimationFrame(() => fitToSubSession());
         applied = true;
       }
     } catch (e) {
       console.error('Relayout error:', e);
     } finally {
       relayouting = false;
-      // Relayout bailed before we could apply a tight layout (error, or
-      // user switched away). Restore the full graph so the view isn't
-      // left in the mid-request filtered state.
+      cancelAfterRelayout = false;
+      // Relayout bailed before we could apply the tight graph (error or
+      // user switched away). Restore the full graph + grayed dimming so
+      // the view isn't stuck mid-toggle.
       if (!applied && graphStore.activeSubSessionId === targetId) {
-        const cached = graphStore.getTightLayout(targetId);
-        applyTightLayout(cached);
+        applyFullModeForSub(sub);
         refreshRenderer();
       }
     }
@@ -377,9 +482,12 @@
 
           <button
             class="action-btn"
-            onclick={handleRelayout}
-            disabled={downloading || relayouting}
-            title="Re-run layout on just the non-grayed subgraph for a tighter view"
+            class:active={activeSub.tight_mode}
+            onclick={handleTightToggle}
+            disabled={downloading}
+            title={activeSub.tight_mode
+              ? 'Show full-model layout with grayed out-of-subgraph nodes'
+              : 'Re-run layout on just the non-grayed subgraph for a tighter view'}
           >
             {#if relayouting}
               <svg class="icon spin" viewBox="0 0 24 24" fill="none">
@@ -394,7 +502,7 @@
                 <rect x="9" y="9" width="5" height="5" rx="0.7"/>
                 <path d="M7 5h2M5 7v2M11 7v2M7 11h2"/>
               </svg>
-              Tighter layout
+              {activeSub.tight_mode ? 'Full layout' : 'Tighter layout'}
             {/if}
           </button>
 
@@ -659,6 +767,17 @@
 
   .action-btn:active:not(:disabled) {
     transform: scale(0.98);
+  }
+
+  .action-btn.active {
+    background: var(--accent-bg-strong);
+    border-color: var(--accent);
+    color: var(--accent-hover);
+  }
+
+  .action-btn.active:hover:not(:disabled) {
+    background: var(--accent-bg-strong);
+    border-color: var(--accent-hover);
   }
 
   .action-btn:disabled {

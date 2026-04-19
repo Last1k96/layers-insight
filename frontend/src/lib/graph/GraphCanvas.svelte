@@ -1,26 +1,39 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { graphStore } from '../stores/graph.svelte';
-  import { initRenderer, destroyRenderer } from './renderer';
+  import { initRenderer, destroyRenderer, isRendererInitialized, setActiveGraph } from './renderer';
   import { setupInteractions } from './interactions';
 
   let container = $state<HTMLDivElement>(undefined!);
   let error = $state<string | null>(null);
+  let initializing = false;
 
   onMount(() => {
     const unwatch = $effect.root(() => {
       $effect(() => {
-        if (graphStore.graphData && container) {
-          error = null;
-          initRenderer(container, graphStore.graphData)
-            .then(() => {
-              setupInteractions();
-            })
-            .catch((err) => {
-              console.error('[GraphCanvas] Failed to init renderer:', err);
-              error = err?.message ?? String(err);
-            });
+        const graph = graphStore.graphData;
+        if (!graph || !container) return;
+        error = null;
+        if (isRendererInitialized()) {
+          // Subsequent graph swaps (tight <-> full) reuse the existing
+          // WebGPU pipeline — avoids tearing down the canvas and losing
+          // frame-to-frame state on every toggle.
+          setActiveGraph(graph);
+          return;
         }
+        if (initializing) return;
+        initializing = true;
+        initRenderer(container, graph)
+          .then(() => {
+            setupInteractions();
+          })
+          .catch((err) => {
+            console.error('[GraphCanvas] Failed to init renderer:', err);
+            error = err?.message ?? String(err);
+          })
+          .finally(() => {
+            initializing = false;
+          });
       });
     });
 

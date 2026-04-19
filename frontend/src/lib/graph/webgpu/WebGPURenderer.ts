@@ -267,6 +267,30 @@ export class WebGPURenderer {
   getGraphData(): GraphData | null { return this.graphData; }
   getNodeSizeFn(): ((id: string) => { width: number; height: number }) | null { return this.nodeSizeFn; }
 
+  /** Reset every appearance-diff cache to a sentinel value that cannot
+   *  match the next updateAppearance() call's inputs by reference. Used
+   *  to force a clean full rebuild after a graph swap. */
+  private resetAppearanceCaches(): void {
+    this._accuracyViewActive = false;
+    this._lastEdgeMode = 'default';
+    this._lastHoveredEdge = null;
+    this._lastSelectedEdge = null;
+    this._lastGrayedNodes = new Set();
+    this._lastInferredCount = 0;
+    this._lastTextGrayed = null;
+    this._lastTextOverrides = undefined;
+    this._lastAccuracyIds = undefined;
+    this._prevHoveredNodeId = null;
+    this._prevSelectedNodeId = null;
+    this._prevEdgeEndpoints = new Set();
+    this._prevNodeStatusMap = null;
+    this._prevNodeGrayed = null;
+    this._prevNodeOverrides = undefined;
+    this._prevSearchActive = false;
+    this._prevSearchResults = null;
+    this._prevAccuracyView = false;
+  }
+
   /** Load graph data and build GPU buffers */
   setGraph(
     graphData: GraphData,
@@ -274,6 +298,16 @@ export class WebGPURenderer {
   ): void {
     this.graphData = graphData;
     this.nodeSizeFn = nodeSize;
+
+    // The appearance-diff caches compare by reference to skip work when
+    // "nothing changed since last frame". When the entire graph swaps
+    // (full <-> tight sub-session), the instance buffers hold stale data
+    // for the PREVIOUS graph's nodes. If the caller happens to pass the
+    // same Set/Map references (empty, or reused), updateAppearance would
+    // decide "nothing changed" and skip rebuilding — leaving the old
+    // graph's labels/colors in the GPU scene. Reset the caches here so
+    // the next updateAppearance is guaranteed to do a full rebuild.
+    this.resetAppearanceCaches();
 
     // Build id→index map for incremental node patching
     this.nodeIndexMap.clear();

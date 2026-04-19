@@ -11,6 +11,7 @@ from typing import Iterator
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from backend.schemas.session import (
     CloneEnqueueRequest,
@@ -511,18 +512,19 @@ async def relayout_sub_session(
     sub_session_id: str,
     request: Request,
 ) -> dict:
-    """Re-run layout over the non-grayed nodes of a sub-session.
+    """Build the sub-session's standalone "tight" graph.
 
-    Uses the same layout backend (dag / elk / block) the root session
-    originally used, via ``session.config.layout_mode``. Result is
-    persisted onto the sub-session so it survives a reload.
+    The tight graph is a self-contained ``GraphData`` — a subset of the
+    session graph (non-grayed nodes + their edges) with freshly computed
+    positions/waypoints. It is persisted as ``sub_sessions/{ssid}/tight_graph.json``
+    so the frontend can load it as an independent graph, with no position
+    coupling to the full model's layout.
 
-    Response:
-        { "positions": { node_id: {x, y} },
-          "edges":     { "e<orig_idx>": {waypoints: [...]} } }
+    Response: the full ``GraphData`` dict plus ``tight_mode: True``.
     """
     from backend.schemas.graph import GraphData, GraphNode, GraphEdge
     from backend.services.graph_service import (
+        apply_layout,
         compute_block_aware_layout,
         compute_elk_layout,
         compute_layout,
@@ -551,17 +553,16 @@ async def relayout_sub_session(
         raise HTTPException(status_code=400, detail="Sub-session has no visible nodes")
 
     visible_ids = {n["id"] for n in visible_nodes}
-    visible_edges: list[tuple[int, dict]] = [
-        (i, e) for i, e in enumerate(all_edges)
+    visible_edges = [
+        e for e in all_edges
         if e.get("source") in visible_ids and e.get("target") in visible_ids
     ]
 
-    # Reconstruct a GraphData with only the visible subset. We only set
-    # the fields the layout backends actually read — position fields stay
-    # at defaults since those are exactly what we're (re)computing.
+    # Reconstruct a GraphData with only the visible subset. Position/size
+    # fields stay at defaults since those are exactly what we're computing.
     sub_graph = GraphData(
         nodes=[GraphNode(**n) for n in visible_nodes],
-        edges=[GraphEdge(**e) for _, e in visible_edges],
+        edges=[GraphEdge(**e) for e in visible_edges],
     )
 
     # Match the same resolution the initial graph route does.
@@ -584,37 +585,76 @@ async def relayout_sub_session(
     except RuntimeError as err:
         raise HTTPException(status_code=500, detail=f"Layout failed: {err}")
 
-    # Layout backends key edges by their position in the filtered input
-    # array. Re-key them back to the original graph edge index so the
-    # client can match them up.
-    raw_edges = result.get("edges", {})
-    remapped_edges: dict[str, dict] = {}
-    for filtered_idx, (orig_idx, _edge) in enumerate(visible_edges):
-        key = f"e{filtered_idx}"
-        if key in raw_edges:
-            remapped_edges[f"e{orig_idx}"] = raw_edges[key]
+    laid_out = apply_layout(sub_graph, result)
+    tight_graph = laid_out.model_dump()
 
-    tight_layout = {
-        "positions": result.get("nodes", {}),
-        "edges": remapped_edges,
-    }
+    # Preserve the subset of propagated_shapes for the visible nodes.
+    propagated = cached.get("propagated_shapes")
+    if propagated:
+        visible_names = {n.get("name") for n in visible_nodes}
+        tight_graph["propagated_shapes"] = {
+            name: shape for name, shape in propagated.items()
+            if name in visible_names
+        }
 
+    rel_path = svc.save_sub_session_tight_graph(
+        session_id, sub_session_id, tight_graph,
+    )
+
+    # Drop any legacy positions-only payload from older schemas — the
+    # standalone tight_graph.json is now the single source of truth.
     svc.update_sub_session_meta(session_id, sub_session_id, {
-        "tight_layout": tight_layout,
+        "tight_graph_path": rel_path,
+        "tight_mode": True,
+        "tight_layout": None,
     })
 
-    return tight_layout
+    return {"graph": tight_graph, "tight_mode": True}
 
 
-@router.get("/{session_id}/sub-sessions/{sub_session_id}/tight-layout")
-async def get_sub_session_tight_layout(
+@router.get("/{session_id}/sub-sessions/{sub_session_id}/tight-graph")
+async def get_sub_session_tight_graph(
     session_id: str,
     sub_session_id: str,
     request: Request,
 ) -> dict:
-    """Return the persisted tight layout for a sub-session, or {} if none."""
+    """Return the persisted standalone tight graph for a sub-session."""
     svc = _get_session_service(request)
     sub_meta = svc.get_sub_session_meta(session_id, sub_session_id)
     if sub_meta is None:
         raise HTTPException(status_code=404, detail="Sub-session not found")
-    return sub_meta.get("tight_layout") or {}
+    graph = svc.load_sub_session_tight_graph(session_id, sub_session_id)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Tight graph not computed yet")
+    return graph
+
+
+class TightModeRequest(BaseModel):
+    enabled: bool
+
+
+@router.post("/{session_id}/sub-sessions/{sub_session_id}/tight-mode")
+async def set_sub_session_tight_mode(
+    session_id: str,
+    sub_session_id: str,
+    body: TightModeRequest,
+    request: Request,
+) -> dict:
+    """Toggle tight-mode view preference for a sub-session.
+
+    Does not compute a layout. If enabling without a cached tight layout,
+    responds 400 and the client is expected to POST /relayout first.
+    """
+    svc = _get_session_service(request)
+    sub_meta = svc.get_sub_session_meta(session_id, sub_session_id)
+    if sub_meta is None:
+        raise HTTPException(status_code=404, detail="Sub-session not found")
+
+    if body.enabled and not sub_meta.get("tight_graph_path"):
+        raise HTTPException(
+            status_code=400,
+            detail="No cached tight graph; POST /relayout first",
+        )
+
+    svc.set_tight_mode(session_id, sub_session_id, body.enabled)
+    return {"tight_mode": body.enabled}

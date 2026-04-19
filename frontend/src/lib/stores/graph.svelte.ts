@@ -1,4 +1,4 @@
-import type { GraphData, GraphNode, GraphEdge, TaskStatus, AccuracyMetrics, DeviceResult, TightLayout } from './types';
+import type { GraphData, GraphNode, GraphEdge, TaskStatus, AccuracyMetrics, DeviceResult } from './types';
 import { queueStore } from './queue.svelte';
 
 export interface NodeStatus {
@@ -15,7 +15,12 @@ export interface NodeStatus {
 }
 
 class GraphStore {
+  /** The graph currently being rendered. Swaps between fullGraph and a
+   *  sub-session's tight graph depending on view mode. */
   graphData = $state<GraphData | null>(null);
+  /** The session's unmodified full graph — the source of truth for
+   *  "full layout" mode, never mutated. */
+  fullGraph = $state<GraphData | null>(null);
   selectedNodeId = $state<string | null>(null);
   /** Per-sub-session node status maps. Key: sub_session_id or null for root. */
   private _nodeStatusMaps = $state<Map<string | null, Map<string, NodeStatus>>>(new Map([[null, new Map()]]));
@@ -36,8 +41,8 @@ class GraphStore {
   nodeOverrides = $state<Map<string, { name: string; type: string; color: string }>>(new Map());
   /** Bumped when a sub-session is created/deleted so watchers can re-fetch. */
   subSessionVersion = $state(0);
-  /** Per-sub-session compact layouts (positions + edge waypoints). */
-  subSessionLayouts = $state<Map<string, TightLayout>>(new Map());
+  /** Per-sub-session standalone tight graphs (complete GraphData objects). */
+  subSessionTightGraphs = $state<Map<string, GraphData>>(new Map());
   /** True while Alt is held — switches to accuracy flow visualization. */
   accuracyViewActive = $state(false);
   /** Currently selected edge (index into graphData.edges[]). */
@@ -81,7 +86,9 @@ class GraphStore {
     try {
       const res = await fetch(`/api/sessions/${sessionId}/graph`);
       if (!res.ok) throw new Error(`Failed to fetch graph: ${res.statusText}`);
-      this.graphData = await res.json();
+      const graph = await res.json() as GraphData;
+      this.fullGraph = graph;
+      this.graphData = graph;
     } catch (e: any) {
       console.error('Failed to load graph:', e);
     } finally {
@@ -89,6 +96,30 @@ class GraphStore {
       this.loadingStage = '';
       this.loadingDetail = '';
     }
+  }
+
+  /** Swap rendered graph back to the session's full model. Callers are
+   *  responsible for (re)applying grayed-node state if a sub-session is active. */
+  activateFullGraph(): void {
+    if (!this.fullGraph) return;
+    this.graphData = this.fullGraph;
+    this.selectedEdgeIndex = null;
+    if (this.selectedNodeId && !this.fullGraph.nodes.find(n => n.id === this.selectedNodeId)) {
+      this.selectedNodeId = null;
+    }
+  }
+
+  /** Swap rendered graph to a sub-session's standalone tight graph. */
+  activateTightGraph(subSessionId: string, graph: GraphData): void {
+    this.setTightGraph(subSessionId, graph);
+    this.graphData = graph;
+    this.selectedEdgeIndex = null;
+    if (this.selectedNodeId && !graph.nodes.find(n => n.id === this.selectedNodeId)) {
+      this.selectedNodeId = null;
+    }
+    // Grayed-node dimming is meaningless in tight view: every node in the
+    // scene is part of the sub-session's subgraph.
+    this.grayedNodes = new Set();
   }
 
   selectNode(nodeId: string | null, syncQueue = true): void {
@@ -183,22 +214,22 @@ class GraphStore {
     this.activeSubSessionId = id;
   }
 
-  setTightLayout(subSessionId: string, layout: TightLayout): void {
-    const next = new Map(this.subSessionLayouts);
-    next.set(subSessionId, layout);
-    this.subSessionLayouts = next;
+  setTightGraph(subSessionId: string, graph: GraphData): void {
+    const next = new Map(this.subSessionTightGraphs);
+    next.set(subSessionId, graph);
+    this.subSessionTightGraphs = next;
   }
 
-  removeTightLayout(subSessionId: string): void {
-    if (!this.subSessionLayouts.has(subSessionId)) return;
-    const next = new Map(this.subSessionLayouts);
+  removeTightGraph(subSessionId: string): void {
+    if (!this.subSessionTightGraphs.has(subSessionId)) return;
+    const next = new Map(this.subSessionTightGraphs);
     next.delete(subSessionId);
-    this.subSessionLayouts = next;
+    this.subSessionTightGraphs = next;
   }
 
-  getTightLayout(subSessionId: string | null): TightLayout | null {
+  getTightGraph(subSessionId: string | null): GraphData | null {
     if (!subSessionId) return null;
-    return this.subSessionLayouts.get(subSessionId) ?? null;
+    return this.subSessionTightGraphs.get(subSessionId) ?? null;
   }
 
   cycleSearchResult(direction: 1 | -1 = 1): GraphNode | null {
