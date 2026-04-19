@@ -88,20 +88,23 @@
     }
   }
 
-  function activateSubSession(sub: SubSessionInfo) {
+  function activateSubSession(sub: SubSessionInfo, recenter: boolean = false) {
     graphStore.setGrayedNodes(sub.grayed_nodes, sub.cut_node, sub.cut_type, sub.ancestor_cuts);
     graphStore.setActiveSubSession(sub.id);
+    graphStore.selectNode(sub.cut_node);
     refreshRenderer();
-    // Animate camera to fit the non-grayed nodes
-    requestAnimationFrame(() => fitToSubSession());
+    if (recenter) {
+      requestAnimationFrame(() => fitToSubSession());
+    }
   }
 
-  function activateRoot() {
+  function activateRoot(recenter: boolean = false) {
     graphStore.clearGrayedNodes();
     graphStore.setActiveSubSession(null);
     refreshRenderer();
-    // Animate camera to fit the entire graph
-    requestAnimationFrame(() => fitToSubSession());
+    if (recenter) {
+      requestAnimationFrame(() => fitToSubSession());
+    }
   }
 
   async function deleteSubSession(e: MouseEvent, subId: string) {
@@ -120,9 +123,9 @@
           const deleted = subSessions.find(s => s.id === subId);
           const parent = deleted ? subSessions.find(s => s.id === deleted.parent_id) : null;
           if (parent) {
-            activateSubSession(parent);
+            activateSubSession(parent, true);
           } else {
-            activateRoot();
+            activateRoot(true);
           }
         }
         subSessions = subSessions.filter(s => !deletedIds.has(s.id));
@@ -149,7 +152,7 @@
 
   export function addSubSession(sub: SubSessionInfo) {
     subSessions = [...subSessions, sub];
-    activateSubSession(sub);
+    activateSubSession(sub, true);
   }
 
   $effect(() => {
@@ -185,7 +188,7 @@
         <button
           class="tree-item"
           class:active={activeSubSessionId === null}
-          onclick={activateRoot}
+          onclick={(e) => activateRoot(e.ctrlKey)}
         >
           <span class="tree-indent" style="width: 0px"></span>
           <span class="dot dot-root"></span>
@@ -196,8 +199,8 @@
           <div
             class="tree-item"
             class:active={activeSubSessionId === node.sub.id}
-            onclick={() => activateSubSession(node.sub)}
-            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activateSubSession(node.sub); }}}
+            onclick={(e) => activateSubSession(node.sub, e.ctrlKey)}
+            onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activateSubSession(node.sub, e.ctrlKey); }}}
             role="button"
             tabindex="0"
           >
