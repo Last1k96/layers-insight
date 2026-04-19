@@ -216,6 +216,12 @@ export interface SubSessionInfo {
   task_count: number;
   success_count: number;
   failed_count: number;
+  has_tight_layout?: boolean;
+}
+
+export interface TightLayout {
+  positions: Record<string, { x: number; y: number }>;
+  edges: Record<string, { waypoints: { x: number; y: number }[] }>;
 }
 
 export interface SubSessionCreatedMessage {

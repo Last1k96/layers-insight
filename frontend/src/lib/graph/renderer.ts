@@ -1,7 +1,7 @@
 /**
  * Graph renderer facade — WebGPU-based graph rendering.
  */
-import type { GraphData } from '../stores/types';
+import type { GraphData, TightLayout } from '../stores/types';
 import { graphStore } from '../stores/graph.svelte';
 import { GraphModel } from './graphModel';
 import { PanZoom } from './panZoom';
@@ -17,6 +17,12 @@ let hoveredNodeId: string | null = null;
 let hoveredEdgeIndex: number | null = null;
 let currentGraphData: GraphData | null = null;
 const rendererReadyListeners: Array<(r: WebGPURenderer) => void> = [];
+
+/** Original (parent-model) positions captured at initRenderer time,
+ *  so an applied tight layout can be fully reverted when the user
+ *  switches back to the full model or a sub-session without one. */
+const originalNodePositions = new Map<string, { x: number; y: number }>();
+const originalEdgeWaypoints = new Map<number, { x: number; y: number }[] | undefined>();
 
 /** Node dimensions cache (id -> {width, height}) */
 const nodeSizes = new Map<string, { width: number; height: number }>();
@@ -120,6 +126,16 @@ export function getHoveredEdge(): number | null {
 export async function initRenderer(container: HTMLElement, graphData: GraphData): Promise<void> {
   destroyRenderer();
   currentGraphData = graphData;
+
+  // Capture baseline layout so tight sub-session layouts can be reverted.
+  originalNodePositions.clear();
+  originalEdgeWaypoints.clear();
+  for (const node of graphData.nodes) {
+    originalNodePositions.set(node.id, { x: node.x, y: node.y });
+  }
+  for (let i = 0; i < graphData.edges.length; i++) {
+    originalEdgeWaypoints.set(i, graphData.edges[i].waypoints);
+  }
 
   // Build graph model and cache node sizes
   graphModel = new GraphModel();
@@ -265,6 +281,114 @@ export function destroyRenderer(): void {
   hoveredEdgeIndex = null;
   graphStore.hoveredNodeId = null;
   nodeSizes.clear();
+  originalNodePositions.clear();
+  originalEdgeWaypoints.clear();
+}
+
+/** Remove grayed nodes and their incident edges from the rendered graph
+ *  at their current positions — useful as an immediate filter while a
+ *  relayout request is in flight, so the user stops seeing out-of-subgraph
+ *  nodes right away instead of only after the new layout arrives. */
+export function hideGrayedNodes(grayedIds: Set<string>): void {
+  if (!currentGraphData || !gpuRenderer) return;
+  const visibleNodes = currentGraphData.nodes.filter(n => !grayedIds.has(n.id));
+  const visibleIds = new Set(visibleNodes.map(n => n.id));
+  const visibleEdges = currentGraphData.edges.filter(
+    e => visibleIds.has(e.source) && visibleIds.has(e.target),
+  );
+  const filtered: GraphData = {
+    ...currentGraphData,
+    nodes: visibleNodes,
+    edges: visibleEdges,
+  };
+  gpuRenderer.setGraph(filtered, getNodeSize);
+  doRefresh();
+}
+
+/** Swap node positions & edge waypoints between the parent-model baseline
+ *  and a sub-session's compact ("tighter") layout, then rebuild GPU
+ *  geometry. Pass null to restore the baseline.
+ *
+ *  When a tight layout is applied we also hide grayed (out-of-subgraph)
+ *  nodes: they're not part of the compact layout, so leaving them at
+ *  baseline positions would render them as stray floaters over the
+ *  subgraph. The filtering happens by passing a trimmed GraphData to
+ *  setGraph() — currentGraphData stays authoritative so reverting
+ *  restores the full graph cleanly. */
+export function applyTightLayout(layout: TightLayout | null): void {
+  if (!currentGraphData || !gpuRenderer) return;
+
+  if (layout === null) {
+    for (const node of currentGraphData.nodes) {
+      const orig = originalNodePositions.get(node.id);
+      if (orig) {
+        node.x = orig.x;
+        node.y = orig.y;
+      }
+    }
+    for (let i = 0; i < currentGraphData.edges.length; i++) {
+      currentGraphData.edges[i].waypoints = originalEdgeWaypoints.get(i);
+    }
+    if (graphModel) {
+      for (const node of currentGraphData.nodes) {
+        if (graphModel.hasNode(node.id)) {
+          const attrs = graphModel.getNodeAttributes(node.id);
+          attrs.x = node.x;
+          attrs.y = node.y;
+        }
+      }
+    }
+    gpuRenderer.setGraph(currentGraphData, getNodeSize);
+    doRefresh();
+    return;
+  }
+
+  const positions = layout.positions;
+  for (const node of currentGraphData.nodes) {
+    const pos = positions[node.id];
+    if (pos) {
+      node.x = pos.x;
+      node.y = pos.y;
+    } else {
+      // Non-visible nodes keep their baseline coords so that reverting to
+      // the full model doesn't lose them.
+      const orig = originalNodePositions.get(node.id);
+      if (orig) {
+        node.x = orig.x;
+        node.y = orig.y;
+      }
+    }
+  }
+  for (let i = 0; i < currentGraphData.edges.length; i++) {
+    const fresh = layout.edges[`e${i}`]?.waypoints;
+    currentGraphData.edges[i].waypoints = fresh ?? originalEdgeWaypoints.get(i);
+  }
+
+  if (graphModel) {
+    for (const node of currentGraphData.nodes) {
+      if (graphModel.hasNode(node.id)) {
+        const attrs = graphModel.getNodeAttributes(node.id);
+        attrs.x = node.x;
+        attrs.y = node.y;
+      }
+    }
+  }
+
+  // Pass only the visible subset to the GPU pipeline so grayed nodes and
+  // their edges don't render at all while the tight layout is active.
+  const visibleNodes = currentGraphData.nodes.filter(n => positions[n.id] !== undefined);
+  const visibleIds = new Set(visibleNodes.map(n => n.id));
+  const visibleEdges = currentGraphData.edges.filter(
+    e => visibleIds.has(e.source) && visibleIds.has(e.target),
+  );
+  const filtered: GraphData = {
+    ...currentGraphData,
+    nodes: visibleNodes,
+    edges: visibleEdges,
+  };
+
+  gpuRenderer.setGraph(filtered, getNodeSize);
+  doRefresh();
 }
 
 export function centerOnNode(nodeId: string, animate = true): void {

@@ -67,6 +67,7 @@ class SubSessionInfo(BaseModel):
     task_count: int = 0
     success_count: int = 0
     failed_count: int = 0
+    has_tight_layout: bool = False
 
 
 class RenameRequest(BaseModel):

@@ -12,36 +12,9 @@ import numpy as np
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response, StreamingResponse
 
+from backend.utils.zip_stream import ZipStreamBuffer
+
 router = APIRouter(prefix="/api/tensors", tags=["tensors"])
-
-
-class _ZipStreamBuffer:
-    """Write-only buffer for streaming ZIP generation.
-
-    Accumulates bytes written by zipfile and lets the caller drain them
-    after each entry, so the response can be streamed incrementally.
-    zipfile in write mode only needs write() and tell() — no seeking.
-    """
-
-    def __init__(self) -> None:
-        self._chunks: list[bytes] = []
-        self._pos = 0
-
-    def write(self, data: bytes) -> int:
-        self._chunks.append(data)
-        self._pos += len(data)
-        return len(data)
-
-    def tell(self) -> int:
-        return self._pos
-
-    def flush(self) -> None:
-        pass
-
-    def drain(self) -> bytes:
-        data = b"".join(self._chunks)
-        self._chunks.clear()
-        return data
 
 
 def _regenerate_cut_artifacts(
@@ -217,7 +190,7 @@ async def export_reproducer(
         raise HTTPException(status_code=500, detail=f"Failed to regenerate cut model: {e}")
 
     def _generate() -> Iterator[bytes]:
-        buf = _ZipStreamBuffer()
+        buf = ZipStreamBuffer()
         prefix = "reproducer/"
 
         try:

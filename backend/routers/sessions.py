@@ -1,12 +1,16 @@
 """Session management routes."""
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 import uuid
+import zipfile
 from pathlib import Path
+from typing import Iterator
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 
 from backend.schemas.session import (
     CloneEnqueueRequest,
@@ -20,7 +24,9 @@ from backend.schemas.session import (
     SubSessionInfo,
 )
 from backend.services.model_cut_service import CutResult
+from backend.utils import sanitize_filename
 from backend.utils.model_converter import convert_to_ir, detect_model_format
+from backend.utils.zip_stream import ZipStreamBuffer
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -334,3 +340,281 @@ async def delete_sub_session(session_id: str, sub_session_id: str, request: Requ
     if svc.delete_sub_session(session_id, sub_session_id):
         return {"deleted": True, "sub_session_id": sub_session_id}
     raise HTTPException(status_code=404, detail="Sub-session not found")
+
+
+@router.get("/{session_id}/sub-sessions/{sub_session_id}/export")
+async def export_sub_session(
+    session_id: str,
+    sub_session_id: str,
+    request: Request,
+) -> StreamingResponse:
+    """Stream a ZIP of the sub-session's cut model plus every input it needs.
+
+    Inputs are materialised the same way inference does: root session
+    inputs are merged with the sub-session's overrides, then
+    ``prepare_inputs`` is called over the cut model's parameters so
+    file-backed inputs are loaded and random ones are regenerated.
+
+    Layout inside the ZIP:
+        sub_session_<cut_node>/
+            cut_model.xml
+            cut_model.bin
+            input_<name>.bin         (raw bytes, one per cut-model parameter)
+            info.json
+    """
+    from backend.utils.input_generator import prepare_inputs
+
+    svc = _get_session_service(request)
+    session = svc.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    sub_meta = svc.get_sub_session_meta(session_id, sub_session_id)
+    if sub_meta is None:
+        raise HTTPException(status_code=404, detail="Sub-session not found")
+
+    model_rel = sub_meta.get("model_path")
+    if not model_rel:
+        raise HTTPException(status_code=404, detail="Sub-session cut model not on disk")
+
+    session_path = svc._session_path(session_id)
+    model_xml_abs = session_path / model_rel
+    model_bin_abs = model_xml_abs.with_suffix(".bin")
+    if not model_xml_abs.exists():
+        raise HTTPException(status_code=404, detail="Sub-session cut model not on disk")
+
+    ov_core = request.app.state.ov_core
+    if ov_core is None:
+        raise HTTPException(status_code=503, detail="OpenVINO not available")
+
+    # Merge root + sub-session input configs exactly like the inference
+    # path does (backend/main.py:108-126). Sub-session overrides are
+    # appended last so they win in prepare_inputs' name lookup.
+    merged_configs: list[dict] = []
+    if session.config.inputs:
+        merged_configs.extend(inp.model_dump() for inp in session.config.inputs)
+
+    resolved_sub = svc.get_sub_session_meta_resolved(session_id, sub_session_id) or {}
+    for cfg in resolved_sub.get("input_configs", []):
+        merged_configs.append(dict(cfg))
+
+    # Read the cut model so we can enumerate the exact parameters it
+    # needs. Reshape to any concrete bounds on the root inputs so
+    # dynamic dims materialise to fixed tensors before generation.
+    try:
+        cut_model = ov_core.read_model(str(model_xml_abs))
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Failed to read cut model: {err}")
+
+    model_params: list[dict] = []
+    for param in cut_model.get_parameters():
+        pshape = param.get_output_partial_shape(0)
+        shape = [d.get_length() if d.is_static else "?" for d in pshape]
+        model_params.append({
+            "name": param.get_friendly_name(),
+            "shape": shape,
+            "element_type": str(param.get_output_element_type(0)),
+        })
+    del cut_model
+
+    try:
+        inputs = prepare_inputs(
+            model_params,
+            input_path=None,
+            precision=session.config.input_precision or "fp32",
+            input_configs=merged_configs,
+        )
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Failed to prepare inputs: {err}")
+
+    cut_node = sub_meta.get("cut_node", "unknown")
+    cut_type = sub_meta.get("cut_type", "unknown")
+    info: dict = {
+        "sub_session_id": sub_session_id,
+        "cut_node": cut_node,
+        "cut_type": cut_type,
+        "parent_id": sub_meta.get("parent_id"),
+        "ancestor_cuts": sub_meta.get("ancestor_cuts", []),
+        "model_name": session.info.model_name,
+        "main_device": session.config.main_device,
+        "ref_device": session.config.ref_device,
+        "inputs": [],
+        "session_config": {
+            "ov_path": session.config.ov_path,
+            "main_device": session.config.main_device,
+            "ref_device": session.config.ref_device,
+            "input_precision": session.config.input_precision,
+        },
+    }
+
+    safe_cut = sanitize_filename(cut_node)
+
+    def _generate() -> Iterator[bytes]:
+        buf = ZipStreamBuffer()
+        prefix = f"sub_session_{safe_cut}/"
+
+        with zipfile.ZipFile(buf, "w") as zf:
+            # Model files — .bin is already compact weights, .xml is text.
+            zf.writestr(
+                f"{prefix}cut_model.xml",
+                model_xml_abs.read_bytes(),
+                compress_type=zipfile.ZIP_DEFLATED,
+            )
+            yield buf.drain()
+            if model_bin_abs.exists():
+                zf.writestr(
+                    f"{prefix}cut_model.bin",
+                    model_bin_abs.read_bytes(),
+                    compress_type=zipfile.ZIP_STORED,
+                )
+                yield buf.drain()
+
+            # Emit every input the cut model actually needs.
+            for name, tensor in inputs.items():
+                safe_name = sanitize_filename(name)
+                bin_name = f"input_{safe_name}.bin"
+                zf.writestr(
+                    f"{prefix}{bin_name}",
+                    tensor.tobytes(),
+                    compress_type=zipfile.ZIP_STORED,
+                )
+                info["inputs"].append({
+                    "name": name,
+                    "shape": list(tensor.shape),
+                    "dtype": str(tensor.dtype),
+                    "file": bin_name,
+                })
+                yield buf.drain()
+
+            zf.writestr(
+                f"{prefix}info.json",
+                json.dumps(info, indent=2),
+                compress_type=zipfile.ZIP_DEFLATED,
+            )
+            yield buf.drain()
+
+        tail = buf.drain()
+        if tail:
+            yield tail
+
+    filename = f"sub_session_{safe_cut}.zip"
+    return StreamingResponse(
+        _generate(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/{session_id}/sub-sessions/{sub_session_id}/relayout")
+async def relayout_sub_session(
+    session_id: str,
+    sub_session_id: str,
+    request: Request,
+) -> dict:
+    """Re-run layout over the non-grayed nodes of a sub-session.
+
+    Uses the same layout backend (dag / elk / block) the root session
+    originally used, via ``session.config.layout_mode``. Result is
+    persisted onto the sub-session so it survives a reload.
+
+    Response:
+        { "positions": { node_id: {x, y} },
+          "edges":     { "e<orig_idx>": {waypoints: [...]} } }
+    """
+    from backend.schemas.graph import GraphData, GraphNode, GraphEdge
+    from backend.services.graph_service import (
+        compute_block_aware_layout,
+        compute_elk_layout,
+        compute_layout,
+        should_use_block_layout,
+    )
+
+    svc = _get_session_service(request)
+    session = svc.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    sub_meta = svc.get_sub_session_meta(session_id, sub_session_id)
+    if sub_meta is None:
+        raise HTTPException(status_code=404, detail="Sub-session not found")
+
+    cached = svc.load_graph_cache(session_id)
+    if not cached:
+        raise HTTPException(status_code=400, detail="Graph not loaded yet")
+
+    grayed = set(sub_meta.get("grayed_nodes", []))
+    all_nodes = cached.get("nodes", [])
+    all_edges = cached.get("edges", [])
+
+    visible_nodes = [n for n in all_nodes if n.get("id") not in grayed]
+    if not visible_nodes:
+        raise HTTPException(status_code=400, detail="Sub-session has no visible nodes")
+
+    visible_ids = {n["id"] for n in visible_nodes}
+    visible_edges: list[tuple[int, dict]] = [
+        (i, e) for i, e in enumerate(all_edges)
+        if e.get("source") in visible_ids and e.get("target") in visible_ids
+    ]
+
+    # Reconstruct a GraphData with only the visible subset. We only set
+    # the fields the layout backends actually read — position fields stay
+    # at defaults since those are exactly what we're (re)computing.
+    sub_graph = GraphData(
+        nodes=[GraphNode(**n) for n in visible_nodes],
+        edges=[GraphEdge(**e) for _, e in visible_edges],
+    )
+
+    # Match the same resolution the initial graph route does.
+    layout_mode = session.config.layout_mode
+    if layout_mode == "auto":
+        if session.config.use_elk_layout:
+            layout_mode = "elk"
+        elif should_use_block_layout(sub_graph):
+            layout_mode = "block"
+        else:
+            layout_mode = "dag"
+
+    try:
+        if layout_mode == "block":
+            result = await compute_block_aware_layout(sub_graph)
+        elif layout_mode == "elk":
+            result = await compute_elk_layout(sub_graph)
+        else:
+            result = await compute_layout(sub_graph)
+    except RuntimeError as err:
+        raise HTTPException(status_code=500, detail=f"Layout failed: {err}")
+
+    # Layout backends key edges by their position in the filtered input
+    # array. Re-key them back to the original graph edge index so the
+    # client can match them up.
+    raw_edges = result.get("edges", {})
+    remapped_edges: dict[str, dict] = {}
+    for filtered_idx, (orig_idx, _edge) in enumerate(visible_edges):
+        key = f"e{filtered_idx}"
+        if key in raw_edges:
+            remapped_edges[f"e{orig_idx}"] = raw_edges[key]
+
+    tight_layout = {
+        "positions": result.get("nodes", {}),
+        "edges": remapped_edges,
+    }
+
+    svc.update_sub_session_meta(session_id, sub_session_id, {
+        "tight_layout": tight_layout,
+    })
+
+    return tight_layout
+
+
+@router.get("/{session_id}/sub-sessions/{sub_session_id}/tight-layout")
+async def get_sub_session_tight_layout(
+    session_id: str,
+    sub_session_id: str,
+    request: Request,
+) -> dict:
+    """Return the persisted tight layout for a sub-session, or {} if none."""
+    svc = _get_session_service(request)
+    sub_meta = svc.get_sub_session_meta(session_id, sub_session_id)
+    if sub_meta is None:
+        raise HTTPException(status_code=404, detail="Sub-session not found")
+    return sub_meta.get("tight_layout") or {}

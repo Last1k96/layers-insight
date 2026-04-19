@@ -1,4 +1,4 @@
-import type { GraphData, GraphNode, GraphEdge, TaskStatus, AccuracyMetrics, DeviceResult } from './types';
+import type { GraphData, GraphNode, GraphEdge, TaskStatus, AccuracyMetrics, DeviceResult, TightLayout } from './types';
 import { queueStore } from './queue.svelte';
 
 export interface NodeStatus {
@@ -36,6 +36,8 @@ class GraphStore {
   nodeOverrides = $state<Map<string, { name: string; type: string; color: string }>>(new Map());
   /** Bumped when a sub-session is created/deleted so watchers can re-fetch. */
   subSessionVersion = $state(0);
+  /** Per-sub-session compact layouts (positions + edge waypoints). */
+  subSessionLayouts = $state<Map<string, TightLayout>>(new Map());
   /** True while Alt is held — switches to accuracy flow visualization. */
   accuracyViewActive = $state(false);
   /** Currently selected edge (index into graphData.edges[]). */
@@ -179,6 +181,24 @@ class GraphStore {
 
   setActiveSubSession(id: string | null): void {
     this.activeSubSessionId = id;
+  }
+
+  setTightLayout(subSessionId: string, layout: TightLayout): void {
+    const next = new Map(this.subSessionLayouts);
+    next.set(subSessionId, layout);
+    this.subSessionLayouts = next;
+  }
+
+  removeTightLayout(subSessionId: string): void {
+    if (!this.subSessionLayouts.has(subSessionId)) return;
+    const next = new Map(this.subSessionLayouts);
+    next.delete(subSessionId);
+    this.subSessionLayouts = next;
+  }
+
+  getTightLayout(subSessionId: string | null): TightLayout | null {
+    if (!subSessionId) return null;
+    return this.subSessionLayouts.get(subSessionId) ?? null;
   }
 
   cycleSearchResult(direction: 1 | -1 = 1): GraphNode | null {

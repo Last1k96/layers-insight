@@ -309,24 +309,13 @@ def _find_node_binary() -> str:
     )
 
 
-async def compute_elk_layout(graph_data: GraphData) -> dict:
-    """Compute layout via the elkjs reference engine in a Node.js subprocess.
+async def run_elk_layout(elk_input: dict) -> dict:
+    """Invoke the elkjs Node.js subprocess on a raw input dict.
 
-    Slower than ``compute_layout`` for large graphs but useful as a
-    reference for visual comparison. Requires the project-local Node.js
-    install (see start.sh) and the ``elkjs`` package in node_modules.
+    ``elk_input`` must match the elk_layout.js contract:
+        {"nodes": [{"id", "width", "height"}, ...],
+         "edges": [{"source", "target"}, ...]}
     """
-    elk_input = {
-        "nodes": [
-            {"id": n.id, "width": n.width or 100, "height": n.height or NODE_HEIGHT}
-            for n in graph_data.nodes
-        ],
-        "edges": [
-            {"source": e.source, "target": e.target}
-            for e in graph_data.edges
-        ],
-    }
-
     node_bin = _find_node_binary()
     project_root = ELK_SCRIPT.parent.parent.parent  # cwd for node_modules resolution
 
@@ -344,6 +333,26 @@ async def compute_elk_layout(graph_data: GraphData) -> dict:
             f"ELK layout failed (rc={proc.returncode}): {stderr.decode().strip()}"
         )
     return json.loads(stdout.decode())
+
+
+async def compute_elk_layout(graph_data: GraphData) -> dict:
+    """Compute layout via the elkjs reference engine in a Node.js subprocess.
+
+    Slower than ``compute_layout`` for large graphs but useful as a
+    reference for visual comparison. Requires the project-local Node.js
+    install (see start.sh) and the ``elkjs`` package in node_modules.
+    """
+    elk_input = {
+        "nodes": [
+            {"id": n.id, "width": n.width or 100, "height": n.height or NODE_HEIGHT}
+            for n in graph_data.nodes
+        ],
+        "edges": [
+            {"source": e.source, "target": e.target}
+            for e in graph_data.edges
+        ],
+    }
+    return await run_elk_layout(elk_input)
 
 
 def apply_layout(graph_data: GraphData, layout_result: dict) -> GraphData:

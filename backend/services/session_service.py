@@ -474,7 +474,12 @@ class SessionService:
         """List sub-sessions for a session."""
         from backend.schemas.session import SubSessionInfo
         meta = self._read_metadata(session_id)
-        return [SubSessionInfo(**s) for s in meta.get("sub_sessions", [])]
+        results = []
+        for s in meta.get("sub_sessions", []):
+            payload = dict(s)
+            payload["has_tight_layout"] = bool(s.get("tight_layout"))
+            results.append(SubSessionInfo(**payload))
+        return results
 
     def delete_sub_session(self, session_id: str, sub_session_id: str) -> bool:
         """Delete a sub-session and all its descendants, files, and associated tasks."""
