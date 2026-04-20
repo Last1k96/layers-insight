@@ -253,6 +253,27 @@ export function uploadEdgeColors(
 }
 
 /**
+ * If the active draw target is a cached buffer, upload `colors` into the live
+ * buffer and switch to it. Call this before patchEdgeColor() when the current
+ * base is a cached buffer (e.g. accuracy-view 'dim') — otherwise patchEdgeColor
+ * would flip the draw target to a liveColorBuffer whose other vertices are
+ * stale from a previous mode.
+ */
+export function ensureLiveColorBuffer(
+  state: EdgesPipelineState,
+  device: GPUDevice,
+  colors: Float32Array,
+): void {
+  if (state.colorBuffer === state.liveColorBuffer) return;
+  if (state.vertexCount === 0) {
+    state.colorBuffer = state.liveColorBuffer;
+    return;
+  }
+  device.queue.writeBuffer(state.liveColorBuffer, 0, colors as Float32Array<ArrayBuffer>, 0, state.vertexCount * COLOR_FLOATS);
+  state.colorBuffer = state.liveColorBuffer;
+}
+
+/**
  * Patch a single edge's color in the live color buffer. Used for incremental
  * highlight changes — writes only the vertices belonging to one edge instead
  * of rebuilding the entire color array.

@@ -15,6 +15,7 @@ import {
   uploadEdgeData,
   uploadEdgeColors,
   patchEdgeColor,
+  ensureLiveColorBuffer,
   useCachedEdgeColors,
   updateEdgeViewport,
   drawEdges,
@@ -604,15 +605,30 @@ export class WebGPURenderer {
       }
       this._lastEdgeMode = isColored ? 'search' : 'default';
     } else if (edgeHighlightChanged && this.edgeGeometry) {
-      // Accuracy view: incremental patch when just changing highlight
+      // Accuracy view: incremental patch when just changing highlight.
+      // The active draw target is the cached 'dim' buffer; patchEdgeColor
+      // writes to liveColorBuffer, so we must first seed liveColorBuffer
+      // with the dim base — otherwise the patch swaps in a buffer whose
+      // other vertices are stale from a previous mode.
       fs?.beginPhase('appearance.edgeColorRebuild');
       const dimColor = { r: EDGE_COLOR.r, g: EDGE_COLOR.g, b: EDGE_COLOR.b, a: 0.15 };
       const hl = { r: 0.298, g: 0.553, b: 1.0, a: 0.9 };
+      const geom = this.edgeGeometry;
+      ensureLiveColorBuffer(
+        this.edgesPipeline,
+        this.device,
+        buildEdgeColors(
+          geom.edgeRanges,
+          edges,
+          geom.vertexCount,
+          () => ({ start: dimColor, end: dimColor }),
+        ),
+      );
       if (prevHighlight !== null && prevHighlight < edges.length) {
-        patchEdgeColor(this.edgesPipeline, this.device, this.edgeGeometry.edgeRanges, prevHighlight, dimColor);
+        patchEdgeColor(this.edgesPipeline, this.device, geom.edgeRanges, prevHighlight, dimColor);
       }
       if (highlightEdge !== null && highlightEdge < edges.length) {
-        patchEdgeColor(this.edgesPipeline, this.device, this.edgeGeometry.edgeRanges, highlightEdge, hl);
+        patchEdgeColor(this.edgesPipeline, this.device, geom.edgeRanges, highlightEdge, hl);
       }
       fs?.endPhase('appearance.edgeColorRebuild');
     }
