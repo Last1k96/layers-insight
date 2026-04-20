@@ -95,20 +95,26 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="fixed inset-0 z-[59] bg-black/30" onclick={onclose} role="presentation"></div>
-<div class="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[420px]">
-  <div class="bg-[--bg-panel] backdrop-blur border border-[--border-color] rounded-xl shadow-2xl">
-    <!-- Header -->
-    <div class="flex items-center justify-between px-4 py-3 border-b border-[--border-color]">
-      <h3 class="text-sm font-medium text-gray-200">Bisect</h3>
-      <button class="text-gray-300 hover:text-gray-100 text-xs" onclick={onclose}>Close</button>
+<div class="bp-backdrop" onclick={onclose} role="presentation"></div>
+<div class="bp-modal">
+  <div class="bp-shell">
+    <div class="bp-header">
+      <div class="bp-header__title">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">
+          <path d="M8 2v12M4 6l4-4 4 4" />
+        </svg>
+        <h3>Bisect</h3>
+      </div>
+      <button class="ll-icon-btn ll-icon-btn--sm" onclick={onclose} aria-label="Close">
+        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="4" x2="12" y2="12"/><line x1="12" y1="4" x2="4" y2="12"/></svg>
+      </button>
     </div>
 
-    <!-- Tabs -->
-    <div class="flex bg-surface-base/50">
+    <div class="bp-tabs">
       {#each (['all-outputs', 'from-node'] as const) as tab (tab)}
         <button
-          class="flex-1 px-2 py-2.5 text-xs text-center transition-all duration-100 {activeTab === tab ? 'text-accent border-b-2 border-accent' : 'text-content-secondary/40 hover:text-content-secondary'}"
+          class="bp-tab"
+          class:bp-tab--active={activeTab === tab}
           disabled={tab === 'from-node' && !endNodeId}
           onclick={() => { activeTab = tab; }}
         >
@@ -117,82 +123,212 @@
       {/each}
     </div>
 
-      <div class="p-4 space-y-3">
-        {#if activeTab === 'all-outputs'}
-          <div class="text-xs text-gray-300">
-            Start one bisect job per model output. Correct outputs finish in 1 inference. Graph-aware search follows actual data paths.
-          </div>
-        {:else if activeTab === 'from-node' && endNodeName}
-          <div class="text-xs text-gray-300">
-            End node: <span class="text-gray-200 font-mono">{endNodeName}</span>
-          </div>
-        {/if}
+    <div class="bp-body">
+      {#if activeTab === 'all-outputs'}
+        <p class="bp-hint">
+          Start one bisect job per model output. Correct outputs finish in 1 inference. Graph-aware search follows actual data paths.
+        </p>
+      {:else if activeTab === 'from-node' && endNodeName}
+        <div class="bp-hint">
+          End node: <span class="bp-node">{endNodeName}</span>
+        </div>
+      {/if}
 
-        <label class="block text-xs">
-          <span class="text-gray-300">Search for:</span>
+      <label class="bp-field">
+        <span class="bp-label">Search for</span>
+        <select
+          use:rangeScroll
+          value={bisectStore.searchFor}
+          onchange={onSearchForChange}
+          class="ll-field"
+        >
+          {#each Object.entries(searchForLabels) as [value, label]}
+            <option {value}>{label}</option>
+          {/each}
+        </select>
+      </label>
+
+      {#if bisectStore.searchFor === 'accuracy_drop'}
+        <label class="bp-field">
+          <span class="bp-label">Metric</span>
           <select
             use:rangeScroll
-            value={bisectStore.searchFor}
-            onchange={onSearchForChange}
-            class="w-full mt-1 px-2 py-1.5 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
+            value={bisectStore.metric}
+            onchange={onMetricChange}
+            class="ll-field"
           >
-            {#each Object.entries(searchForLabels) as [value, label]}
+            {#each Object.entries(metricLabels) as [value, label]}
               <option {value}>{label}</option>
             {/each}
           </select>
         </label>
 
-        {#if bisectStore.searchFor === 'accuracy_drop'}
-          <label class="block text-xs">
-            <span class="text-gray-300">Metric:</span>
-            <select
-              use:rangeScroll
-              value={bisectStore.metric}
-              onchange={onMetricChange}
-              class="w-full mt-1 px-2 py-1.5 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none"
-            >
-              {#each Object.entries(metricLabels) as [value, label]}
-                <option {value}>{label}</option>
-              {/each}
-            </select>
-          </label>
+        <label class="bp-field">
+          <span class="bp-label">Threshold</span>
+          <input
+            type="number"
+            step="0.01"
+            bind:value={bisectStore.threshold}
+            onwheel={(e) => {
+              e.preventDefault();
+              const step = e.shiftKey ? 0.1 : 0.01;
+              const delta = e.deltaY < 0 ? step : -step;
+              bisectStore.threshold = Math.round((bisectStore.threshold + delta) * 1000) / 1000;
+            }}
+            class="ll-field ll-field--mono"
+          />
+        </label>
+      {/if}
 
-          <label class="block text-xs">
-            <span class="text-gray-300">Threshold:</span>
-            <input
-              type="number"
-              step="0.01"
-              bind:value={bisectStore.threshold}
-              onwheel={(e) => {
-                e.preventDefault();
-                const step = e.shiftKey ? 0.1 : 0.01;
-                const delta = e.deltaY < 0 ? step : -step;
-                bisectStore.threshold = Math.round((bisectStore.threshold + delta) * 1000) / 1000;
-              }}
-              class="w-full mt-1 px-2 py-1.5 bg-[--bg-panel] border border-[--border-color] rounded text-xs focus:border-blue-500 focus:outline-none font-mono"
-            />
-          </label>
-        {/if}
-
-        <div class="text-xs text-gray-400">
-          {#if activeTab === 'all-outputs'}
-            Mode: per-output graph-aware bisect
-          {:else if activeTab === 'from-node' && endNodeName}
-            Range: start &rarr; {endNodeName}
-          {/if}
-        </div>
-
-        <button
-          class="w-full py-2 bg-accent hover:bg-accent-hover disabled:bg-[--bg-panel] disabled:text-content-secondary rounded text-sm font-medium transition-colors"
-          disabled={bisectStore.busy}
-          onclick={startBisect}
-        >
-          {bisectStore.busy ? 'Starting...' : activeTab === 'all-outputs' ? 'Bisect All Outputs' : 'Start Bisection'}
-        </button>
-
-        {#if bisectStore.error}
-          <div class="text-xs text-red-400 mt-1">{bisectStore.error}</div>
+      <div class="bp-summary">
+        {#if activeTab === 'all-outputs'}
+          <span class="ll-chip ll-chip--accent ll-chip--tiny">Graph-aware</span>
+          <span>per-output bisect</span>
+        {:else if activeTab === 'from-node' && endNodeName}
+          <span class="ll-chip ll-chip--accent ll-chip--tiny">Range</span>
+          <span>start → <span class="bp-node">{endNodeName}</span></span>
         {/if}
       </div>
+
+      <button
+        class="ll-btn ll-btn--primary ll-btn--block"
+        disabled={bisectStore.busy}
+        onclick={startBisect}
+      >
+        {#if bisectStore.busy}
+          <svg class="ll-spin" width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4 31.4" stroke-linecap="round"/>
+          </svg>
+          Starting…
+        {:else}
+          {activeTab === 'all-outputs' ? 'Bisect All Outputs' : 'Start Bisection'}
+        {/if}
+      </button>
+
+      {#if bisectStore.error}
+        <div class="bp-error">{bisectStore.error}</div>
+      {/if}
+    </div>
   </div>
 </div>
+
+<style>
+  .bp-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 59;
+    background: rgba(10, 12, 20, 0.55);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+  }
+  .bp-modal {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 60;
+    width: 440px;
+    max-width: 92vw;
+  }
+  .bp-shell {
+    background: rgba(35, 38, 54, 0.97);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-modal);
+    overflow: hidden;
+  }
+
+  .bp-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .bp-header__title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--accent-soft);
+  }
+  .bp-header__title h3 {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    letter-spacing: 0.01em;
+  }
+
+  .bp-tabs {
+    display: flex;
+    background: var(--bg-primary);
+  }
+  .bp-tab {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-muted);
+    border: 0;
+    background: transparent;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color var(--dur-fast) ease, background var(--dur-fast) ease, border-color var(--dur-fast) ease;
+  }
+  .bp-tab:hover:not(:disabled) { color: var(--text-primary); background: var(--accent-bg-soft); }
+  .bp-tab--active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+    background: var(--accent-bg-soft);
+  }
+  .bp-tab:disabled { opacity: 0.4; cursor: default; }
+
+  .bp-body {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .bp-hint {
+    margin: 0;
+    font-size: 12px;
+    color: var(--text-muted-strong);
+    line-height: 1.5;
+  }
+  .bp-node {
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+  }
+
+  .bp-field { display: flex; flex-direction: column; gap: 5px; }
+  .bp-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .bp-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-muted-strong);
+  }
+
+  .bp-error {
+    margin-top: 2px;
+    font-size: 11.5px;
+    color: var(--status-err);
+    background: var(--status-err-bg);
+    border: 1px solid var(--status-err-border);
+    padding: 7px 10px;
+    border-radius: var(--radius-md);
+  }
+</style>

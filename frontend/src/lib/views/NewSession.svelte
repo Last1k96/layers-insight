@@ -1359,7 +1359,7 @@
   }
 
   .title-model {
-    color: #4C8DFF;
+    color: var(--accent);
   }
 
   /* ── Form Body ── */
@@ -1491,7 +1491,7 @@
   }
 
   .session-name-input:focus {
-    border-color: #4C8DFF;
+    border-color: var(--accent);
     outline: none;
   }
 
@@ -1626,7 +1626,7 @@
   }
 
   .ctrl-select:focus {
-    border-color: #4C8DFF;
+    border-color: var(--accent);
     outline: none;
   }
 
@@ -1679,7 +1679,7 @@
   }
 
   .dg-input:focus {
-    border-color: #4C8DFF;
+    border-color: var(--accent);
     outline: none;
   }
 
@@ -1703,7 +1703,7 @@
   }
 
   :global(.file-input) :global(input:focus) {
-    border-color: #4C8DFF;
+    border-color: var(--accent);
     outline: none;
   }
 
@@ -1760,7 +1760,7 @@
   }
 
   .device-select:focus {
-    border-color: #4C8DFF;
+    border-color: var(--accent);
     outline: none;
   }
 
@@ -1810,7 +1810,7 @@
   .plugin-changed-count {
     margin-left: auto;
     font-size: 0.65rem;
-    color: #4C8DFF;
+    color: var(--accent);
     font-weight: 500;
   }
 
@@ -1884,7 +1884,7 @@
   }
 
   .plugin-tab.active .plugin-tab-device {
-    color: #4C8DFF;
+    color: var(--accent);
   }
 
   .plugin-tab-badge {
@@ -1896,7 +1896,7 @@
     padding: 0 0.3rem;
     border-radius: 99px;
     background: rgba(76, 141, 255, 0.15);
-    color: #4C8DFF;
+    color: var(--accent);
     font-size: 0.6rem;
     font-weight: 600;
     line-height: 1;
@@ -1973,7 +1973,7 @@
   }
 
   .plugin-prop-input:focus {
-    border-color: #4C8DFF;
+    border-color: var(--accent);
     outline: none;
   }
 
@@ -2019,7 +2019,7 @@
 
   .plugin-prop-reset:hover {
     opacity: 1;
-    color: #4C8DFF;
+    color: var(--accent);
     background: rgba(76, 141, 255, 0.12);
   }
 
@@ -2083,7 +2083,7 @@
     padding: 0.85rem 1rem;
     background: rgba(229, 77, 77, 0.12);
     border: 1px solid rgba(229, 77, 77, 0.35);
-    border-left: 3px solid #E54D4D;
+    border-left: 3px solid var(--status-err);
     border-radius: 0.75rem;
     color: #F0A0A0;
     font-size: 0.8rem;
@@ -2095,7 +2095,7 @@
   .form-error svg {
     flex-shrink: 0;
     margin-top: 1px;
-    color: #E54D4D;
+    color: var(--status-err);
     animation: error-icon-pulse 2s ease-in-out infinite;
   }
 
@@ -2119,7 +2119,7 @@
   .submit-btn {
     width: 100%;
     padding: 0.75rem 1rem;
-    background: #4C8DFF;
+    background: var(--accent);
     border: none;
     border-radius: 0.75rem;
     color: white;

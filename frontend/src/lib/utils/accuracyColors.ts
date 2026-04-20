@@ -30,16 +30,33 @@ export const DEFAULT_RANGES: Record<AccuracyMetricKey, AccuracyRange> = {
  *
  * @returns CSS hex color string (e.g. "#10B981")
  */
+/**
+ * Memoization cache for {@link getAccuracyColor}. Keys are stringified
+ * `metric|value|range.min|range.max` tuples. The cache is bounded — if it
+ * grows past {@link _COLOR_CACHE_MAX} entries we clear it rather than LRU,
+ * because bounded clear is O(1) and the cache re-fills within one frame.
+ */
+const _COLOR_CACHE_MAX = 4096;
+const _colorCache = new Map<string, string>();
+
 export function getAccuracyColor(
   metric: AccuracyMetricKey,
   value: number,
   range: AccuracyRange,
 ): string {
+  const key = `${metric}|${value}|${range.min}|${range.max}`;
+  const hit = _colorCache.get(key);
+  if (hit !== undefined) return hit;
+
   const { r, g, b } = getAccuracyColorRgb(metric, value, range);
   const ri = Math.round(r * 255);
   const gi = Math.round(g * 255);
   const bi = Math.round(b * 255);
-  return '#' + ((1 << 24) | (ri << 16) | (gi << 8) | bi).toString(16).slice(1);
+  const out = '#' + ((1 << 24) | (ri << 16) | (gi << 8) | bi).toString(16).slice(1);
+
+  if (_colorCache.size >= _COLOR_CACHE_MAX) _colorCache.clear();
+  _colorCache.set(key, out);
+  return out;
 }
 
 /**

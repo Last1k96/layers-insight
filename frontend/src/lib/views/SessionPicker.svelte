@@ -31,8 +31,8 @@
   function completionColor(success: number, total: number): string {
     if (total === 0) return 'var(--edge)';
     const pct = success / total;
-    if (pct >= 1) return '#34C77B';
-    if (pct >= 0.5) return '#4C8DFF';
+    if (pct >= 1) return 'var(--status-ok)';
+    if (pct >= 0.5) return 'var(--accent)';
     if (pct > 0) return '#E8A849';
     return 'var(--edge)';
   }
@@ -456,7 +456,7 @@
     background: rgba(76, 141, 255, 0.12);
     border: 1px solid rgba(76, 141, 255, 0.2);
     border-radius: 0.75rem;
-    color: #4C8DFF;
+    color: var(--accent);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
@@ -518,12 +518,12 @@
   }
 
   .session-card.is-last .card-accent-bar {
-    background: #4C8DFF;
+    background: var(--accent);
     opacity: 0.9;
   }
 
   .session-card.is-compare-selected {
-    box-shadow: 0 0 0 2px #4C8DFF;
+    box-shadow: 0 0 0 2px var(--accent);
   }
 
   /* ── Accent Bar ── */
@@ -592,7 +592,7 @@
 
   .rename-btn:hover {
     opacity: 1 !important;
-    color: #4C8DFF;
+    color: var(--accent);
     background: rgba(76, 141, 255, 0.1);
   }
 
@@ -602,7 +602,7 @@
     font-size: 0.95rem;
     color: var(--text-primary);
     background: var(--bg-primary);
-    border: 1px solid #4C8DFF;
+    border: 1px solid var(--accent);
     border-radius: 0.25rem;
     padding: 0 0.3rem;
     outline: none;
@@ -739,12 +739,12 @@
   }
 
   .act-icon:hover {
-    color: #4C8DFF;
+    color: var(--accent);
     background: rgba(76, 141, 255, 0.1);
   }
 
   .act-delete:hover {
-    color: #E54D4D;
+    color: var(--status-err);
     background: rgba(229, 77, 77, 0.1);
   }
 
@@ -764,7 +764,7 @@
   }
 
   .act-confirm {
-    color: #E54D4D;
+    color: var(--status-err);
     background: rgba(229, 77, 77, 0.12);
   }
 
@@ -788,8 +788,8 @@
   }
 
   .compare-checkbox.checked {
-    background: #4C8DFF;
-    border-color: #4C8DFF;
+    background: var(--accent);
+    border-color: var(--accent);
     opacity: 1;
   }
 
@@ -819,7 +819,7 @@
   .new-btn:hover {
     background: rgba(76, 141, 255, 0.14);
     border-color: rgba(76, 141, 255, 0.3);
-    color: #4C8DFF;
+    color: var(--accent);
     transform: translateY(-1px);
     box-shadow: 0 4px 16px rgba(76, 141, 255, 0.1);
   }
@@ -842,7 +842,7 @@
   }
 
   .compare-toggle.active {
-    color: #4C8DFF;
+    color: var(--accent);
     opacity: 1;
     background: rgba(76, 141, 255, 0.08);
   }
@@ -851,7 +851,7 @@
     width: 100%;
     margin-top: 0.5rem;
     padding: 0.75rem;
-    background: #4C8DFF;
+    background: var(--accent);
     border: none;
     border-radius: 0.75rem;
     color: white;
@@ -888,7 +888,7 @@
     padding: 0.85rem 1rem;
     background: rgba(229, 77, 77, 0.12);
     border: 1px solid rgba(229, 77, 77, 0.35);
-    border-left: 3px solid #E54D4D;
+    border-left: 3px solid var(--status-err);
     border-radius: 0.75rem;
     color: #F0A0A0;
     font-size: 0.85rem;
@@ -899,7 +899,7 @@
 
   .error-icon {
     flex-shrink: 0;
-    color: #E54D4D;
+    color: var(--status-err);
     margin-top: 1px;
     animation: error-pulse 2s ease-in-out infinite;
   }

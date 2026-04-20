@@ -176,26 +176,19 @@
   });
 </script>
 
-<div class="absolute bottom-4 right-4 z-20 flex flex-col items-end">
+<div class="mm-root">
   {#if !collapsed}
-    <div
-      class="relative border border-[--border-color] rounded-t bg-[--bg-primary] overflow-hidden shadow-lg"
-      style="width: {mmWidth}px; height: {mmHeight}px;"
-    >
-      <!-- Resize handle (top-left corner) -->
+    <div class="mm-frame" style="width: {mmWidth}px; height: {mmHeight}px;">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div
-        class="absolute top-0 left-0 w-3 h-3 z-10 cursor-nw-resize"
-        onmousedown={handleResizeDown}
-      >
-        <svg class="w-3 h-3 text-muted-soft rotate-180" viewBox="0 0 12 12">
+      <div class="mm-resize" onmousedown={handleResizeDown} aria-label="Resize minimap">
+        <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
           <path d="M2 10L10 10L10 2" fill="none" stroke="currentColor" stroke-width="1.5"/>
           <path d="M5 10L10 10L10 5" fill="none" stroke="currentColor" stroke-width="1.5"/>
         </svg>
       </div>
       <canvas
         bind:this={canvas}
-        class="absolute inset-0 cursor-crosshair"
+        class="mm-canvas"
         style="width: {mmWidth}px; height: {mmHeight}px;"
         onmousedown={handleMouseDown}
         onwheel={handleWheel}
@@ -203,9 +196,82 @@
     </div>
   {/if}
   <button
-    class="px-2 py-0.5 text-xs text-muted hover:text-content-primary bg-[--bg-panel] border border-[--border-color] {collapsed ? 'rounded' : 'rounded-b border-t-0'} hover:bg-[--bg-menu] transition-colors"
+    class="mm-toggle"
+    class:mm-toggle--collapsed={collapsed}
     onclick={() => { collapsed = !collapsed; localStorage.setItem('minimap-collapsed', String(collapsed)); }}
+    title={collapsed ? 'Show minimap' : 'Hide minimap'}
   >
-    {collapsed ? 'Map' : 'Hide'}
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <rect x="2" y="2" width="12" height="12" rx="1.5" />
+      <path d="M6 6h4v4H6z" fill="currentColor" stroke="none" />
+    </svg>
+    {collapsed ? 'Map' : 'Hide map'}
   </button>
 </div>
+
+<style>
+  .mm-root {
+    position: absolute;
+    bottom: 14px;
+    right: 14px;
+    z-index: 20;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+  .mm-frame {
+    position: relative;
+    overflow: hidden;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    box-shadow: var(--shadow-elevated);
+  }
+  .mm-resize {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    padding: 1px;
+    border-radius: var(--radius-xs);
+    color: var(--text-muted-soft);
+    cursor: nw-resize;
+    transform: rotate(180deg);
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color var(--dur-fast) ease, background var(--dur-fast) ease;
+  }
+  .mm-resize:hover {
+    color: var(--accent);
+    background: var(--accent-bg-soft);
+  }
+  .mm-canvas {
+    position: absolute;
+    inset: 0;
+    cursor: crosshair;
+  }
+  .mm-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 9px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted-strong);
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    transition: color var(--dur-fast) ease, background var(--dur-fast) ease, border-color var(--dur-fast) ease;
+  }
+  .mm-toggle--collapsed {
+    border-radius: var(--radius-md);
+  }
+  .mm-toggle:hover {
+    color: var(--text-primary);
+    background: var(--bg-menu);
+    border-color: var(--accent-border);
+  }
+</style>

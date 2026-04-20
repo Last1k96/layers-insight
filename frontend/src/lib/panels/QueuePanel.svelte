@@ -580,14 +580,18 @@
     justify-content: center;
     width: 28px;
     height: 28px;
-    border-radius: 8px;
-    color: var(--text-secondary);
-    transition: all 0.12s ease;
+    border-radius: var(--radius-md);
+    color: var(--text-muted-strong);
+    transition:
+      background var(--dur-fast) ease,
+      border-color var(--dur-fast) ease,
+      color var(--dur-fast) ease,
+      transform 80ms ease;
     border: 1px solid transparent;
   }
   .q-icon-btn:hover {
     background: var(--accent-bg);
-    border-color: var(--accent-bg-strong);
+    border-color: var(--accent-border);
     color: var(--text-primary);
   }
   .q-icon-btn:active {
@@ -673,23 +677,27 @@
     padding: 6px 0;
     font-size: 11px;
     font-weight: 500;
-    color: var(--text-muted);
-    border-radius: 7px;
-    border: 1px solid var(--border-color);
+    color: var(--text-muted-strong);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-soft);
     background: rgba(27, 30, 43, 0.4);
-    transition: all 0.12s ease;
+    transition:
+      background var(--dur-fast) ease,
+      border-color var(--dur-fast) ease,
+      color var(--dur-fast) ease,
+      transform 80ms ease;
   }
   .q-action-btn:hover {
     color: var(--text-primary);
-    background: var(--accent-bg-soft);
-    border-color: var(--accent-bg-strong);
+    background: var(--accent-bg);
+    border-color: var(--accent-border);
   }
   .q-action-btn:active {
     transform: scale(0.97);
   }
   .q-action-btn--active {
-    color: var(--status-info);
-    border-color: var(--accent-bg-strong);
+    color: var(--accent);
+    border-color: var(--accent-border);
     background: var(--accent-bg);
   }
 
@@ -757,6 +765,7 @@
   .q-status-tab--active {
     color: var(--accent);
     background: var(--accent-bg);
+    box-shadow: 0 0 0 1px var(--accent-border) inset;
   }
   .q-status-dot {
     width: 6px;

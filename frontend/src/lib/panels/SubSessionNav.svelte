@@ -547,12 +547,15 @@
     position: absolute;
     top: 0;
     z-index: 20;
-    background: var(--bg-panel);
-    border-radius: 0 0 12px 0;
-    box-shadow: 4px 4px 18px -4px rgba(0, 0, 0, 0.35);
-    min-width: 180px;
-    max-width: 260px;
-    backdrop-filter: blur(24px);
+    background: rgba(35, 38, 54, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: 1px solid var(--border-soft);
+    border-bottom: 1px solid var(--border-soft);
+    border-radius: 0 0 var(--radius-md) 0;
+    box-shadow: var(--shadow-panel);
+    min-width: 200px;
+    max-width: 280px;
     overflow: hidden;
   }
 
@@ -583,9 +586,11 @@
   }
 
   .panel-title {
-    font-size: 11px;
+    font-family: var(--font-display);
+    font-size: 11.5px;
     font-weight: 500;
-    color: var(--text-secondary);
+    letter-spacing: 0.02em;
+    color: var(--text-primary);
     flex: 1;
   }
 
@@ -673,11 +678,13 @@
   }
 
   .dot-output {
-    background: #E5A820;
+    background: var(--cut-output-color);
+    box-shadow: 0 0 6px var(--cut-output-color);
   }
 
   .dot-input {
-    background: #34C77B;
+    background: var(--cut-input-color);
+    box-shadow: 0 0 6px var(--cut-input-color);
   }
 
   .tree-label {
@@ -698,13 +705,15 @@
   }
 
   .tag-output {
-    background: rgba(229, 168, 32, 0.15);
-    color: #E5A820;
+    background: var(--cut-output-bg);
+    color: var(--cut-output-color);
+    border: 1px solid var(--status-warn-border);
   }
 
   .tag-input {
-    background: rgba(52, 199, 123, 0.15);
-    color: #34C77B;
+    background: var(--cut-input-bg);
+    color: var(--cut-input-color);
+    border: 1px solid var(--status-ok-border);
   }
 
   .delete-btn {

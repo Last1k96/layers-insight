@@ -2,47 +2,103 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * ================================================================
+ *  Layers-Insight — Unified Design Tokens
+ * ================================================================
+ *  A single source of truth for every surface, accent, status tint,
+ *  radius, shadow, motion curve, and interactive affordance in the
+ *  application. Components should NEVER introduce raw hex values
+ *  for anything that has a token here — doing so is how drift
+ *  starts. When in doubt, extend this file, not a component.
+ * ---------------------------------------------------------------- */
 :root {
+  /* ── Surfaces ───────────────────────────────────────────────── */
   --bg-primary: #1B1E2B;
-  --bg-panel: #232636;
-  --bg-menu: #2A2E41;
-  --bg-input: #1E2130;
+  --bg-panel:   #232636;
+  --bg-menu:    #2A2E41;
+  --bg-input:   #1E2130;
+  --bg-elevated:#2D3145;
+
   --border-color: #2F3347;
-  --border-soft: rgba(47, 51, 71, 0.5);
-  --text-primary: #E1E4ED;
+  --border-soft:  rgba(47, 51, 71, 0.5);
+  --border-strong:rgba(155, 161, 181, 0.18);
+
+  /* ── Content ────────────────────────────────────────────────── */
+  --text-primary:   #E1E4ED;
   --text-secondary: #9BA1B5;
+  --text-on-light:  #1B1E2B;       /* dark text on light op-category chips */
 
   /* Muted text ladder — four fixed steps derived from --text-secondary */
   --text-muted-strong: rgba(155, 161, 181, 0.85);
-  --text-muted: rgba(155, 161, 181, 0.70);
-  --text-muted-soft: rgba(155, 161, 181, 0.55);
-  --text-muted-faint: rgba(155, 161, 181, 0.40);
+  --text-muted:        rgba(155, 161, 181, 0.70);
+  --text-muted-soft:   rgba(155, 161, 181, 0.55);
+  --text-muted-faint:  rgba(155, 161, 181, 0.40);
 
-  /* Accent + tints */
-  --accent: #4C8DFF;
-  --accent-hover: #6BA1FF;
-  --accent-bg-strong: rgba(76, 141, 255, 0.12);
-  --accent-bg: rgba(76, 141, 255, 0.08);
-  --accent-bg-soft: rgba(76, 141, 255, 0.04);
-  --accent-glow: rgba(76, 141, 255, 0.30);
+  /* ── Accent ladder (indigo/blue) ─────────────────────────────── */
+  --accent:           #4C8DFF;
+  --accent-hover:     #6BA1FF;
+  --accent-active:    #3A7AEB;
+  --accent-soft:      #8FB8FF;
+  --accent-bg-strong: rgba(76, 141, 255, 0.16);
+  --accent-bg:        rgba(76, 141, 255, 0.10);
+  --accent-bg-soft:   rgba(76, 141, 255, 0.05);
+  --accent-border:    rgba(76, 141, 255, 0.40);
+  --accent-glow:      rgba(76, 141, 255, 0.30);
 
-  /* Status palette — shared across queue badges and node-status boxes */
-  --status-info: #60A5FA;
-  --status-info-bg: rgba(96, 165, 250, 0.08);
-  --status-warn: #FBBF24;
-  --status-warn-bg: rgba(251, 191, 36, 0.08);
-  --status-ok: #34D399;
-  --status-ok-bg: rgba(52, 211, 153, 0.08);
-  --status-err: #F87171;
-  --status-err-bg: rgba(248, 113, 113, 0.08);
+  /* ── Status palette — shared across queue, node-status, badges ─ */
+  --status-info:     #60A5FA;
+  --status-info-bg:  rgba(96, 165, 250, 0.10);
+  --status-warn:     #FBBF24;
+  --status-warn-bg:  rgba(251, 191, 36, 0.10);
+  --status-warn-border: rgba(251, 191, 36, 0.25);
+  --status-ok:       #34D399;
+  --status-ok-bg:    rgba(52, 211, 153, 0.10);
+  --status-ok-border:rgba(52, 211, 153, 0.25);
+  --status-err:      #F87171;
+  --status-err-bg:   rgba(248, 113, 113, 0.10);
+  --status-err-border:rgba(248, 113, 113, 0.25);
+  --status-hint:     #F9CF5E;       /* dynamic shape hints (ex-yellow-400) */
+  --status-const:    #F9CF5E;
 
-  --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+  /* Cut-direction semantics (sub-session nav) */
+  --cut-input-color: var(--status-ok);
+  --cut-input-bg:    var(--status-ok-bg);
+  --cut-output-color:var(--status-warn);
+  --cut-output-bg:   var(--status-warn-bg);
+
+  /* ── Typography ─────────────────────────────────────────────── */
+  --font-sans:    'DM Sans', system-ui, -apple-system, sans-serif;
   --font-display: 'Outfit', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
+  --font-mono:    'JetBrains Mono', ui-monospace, 'Cascadia Code', monospace;
 
-  --shadow-panel: 0 4px 24px rgba(0, 0, 0, 0.25), 0 1px 4px rgba(0, 0, 0, 0.15);
-  --shadow-modal: 0 8px 40px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
-  --shadow-elevated: 0 2px 12px rgba(0, 0, 0, 0.2);
+  /* ── Radii ──────────────────────────────────────────────────── */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-pill: 999px;
+
+  /* ── Shadows / elevation ────────────────────────────────────── */
+  --shadow-panel:    0 4px 24px rgba(0, 0, 0, 0.25), 0 1px 4px rgba(0, 0, 0, 0.15);
+  --shadow-modal:    0 8px 40px rgba(0, 0, 0, 0.40), 0 2px 8px rgba(0, 0, 0, 0.20);
+  --shadow-elevated: 0 2px 12px rgba(0, 0, 0, 0.20);
+  --shadow-accent:   0 0 12px rgba(76, 141, 255, 0.20);
+
+  /* ── Motion ─────────────────────────────────────────────────── */
+  --ease-out:   cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-quick: cubic-bezier(0.25, 0.9, 0.3, 1);
+  --dur-fast:   120ms;
+  --dur-med:    180ms;
+  --dur-slow:   320ms;
+
+  /* ── Focus ring ─────────────────────────────────────────────── */
+  --focus-ring: 0 0 0 2px var(--bg-primary), 0 0 0 4px var(--accent-border);
+}
+
+html, body, #app {
+  height: 100%;
 }
 
 body {
@@ -52,6 +108,8 @@ body {
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv11', 'ss01';
 }
 
 /* Monospace override */
@@ -59,87 +117,260 @@ code, pre, .font-mono, [class*="font-mono"] {
   font-family: var(--font-mono) !important;
 }
 
-/* Scrollbar styling */
-::-webkit-scrollbar {
-  width: 5px;
+/* ── Scrollbar (unified) ──────────────────────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(155, 161, 181, 0.22) transparent;
 }
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: #3A3F56;
-  border-radius: 99px;
+  background: rgba(155, 161, 181, 0.22);
+  border-radius: var(--radius-pill);
+  transition: background var(--dur-fast) ease;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: #4A5070;
+::-webkit-scrollbar-thumb:hover { background: rgba(155, 161, 181, 0.42); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ── Global focus ring (keyboard only) ────────────────────────── */
+:focus { outline: none; }
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
 }
 
-/* Pulsing animation for executing status */
+/* ── Forms baseline ───────────────────────────────────────────── */
+button { font-family: inherit; background: none; border: 0; color: inherit; cursor: pointer; }
+input, select, textarea { font-family: inherit; color: inherit; }
+input[type="number"] { font-variant-numeric: tabular-nums; }
+
+/* ─────────────────────────────────────────────────────────────── *
+ *  Reusable utility classes                                       *
+ *  Panels should prefer these over one-off Tailwind incantations. *
+ * ─────────────────────────────────────────────────────────────── */
+
+/* Surface cards — small content containers inside panels */
+.ll-card {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+.ll-card--interactive { cursor: pointer; }
+.ll-card--interactive:hover {
+  background: var(--bg-input);
+  border-color: var(--accent-border);
+}
+
+/* Divider line — thin, respects theme */
+.ll-divider {
+  height: 1px;
+  background: var(--border-soft);
+}
+
+/* Chip / tag (category, status) */
+.ll-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+  white-space: nowrap;
+  background: var(--bg-menu);
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+}
+.ll-chip--pill      { border-radius: var(--radius-pill); padding: 2px 9px; }
+.ll-chip--tiny      { font-size: 9px; padding: 1px 6px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600; }
+.ll-chip--info      { background: var(--status-info-bg);  color: var(--status-info); }
+.ll-chip--warn      { background: var(--status-warn-bg);  color: var(--status-warn); }
+.ll-chip--ok        { background: var(--status-ok-bg);    color: var(--status-ok); }
+.ll-chip--err       { background: var(--status-err-bg);   color: var(--status-err); }
+.ll-chip--accent    { background: var(--accent-bg);       color: var(--accent); }
+.ll-chip--muted     { background: rgba(155,161,181,0.08); color: var(--text-muted-strong); }
+
+/* Buttons — all variants share a common shell for consistency */
+.ll-btn {
+  --_fg: var(--text-primary);
+  --_bg: var(--bg-menu);
+  --_bd: var(--border-soft);
+  --_fg-hover: var(--text-primary);
+  --_bg-hover: var(--accent-bg);
+  --_bd-hover: var(--accent-border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--_fg);
+  background: var(--_bg);
+  border: 1px solid var(--_bd);
+  border-radius: var(--radius-md);
+  transition:
+    background var(--dur-fast) var(--ease-quick),
+    border-color var(--dur-fast) var(--ease-quick),
+    color var(--dur-fast) var(--ease-quick),
+    transform 80ms ease;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+}
+.ll-btn:hover:not(:disabled) {
+  color: var(--_fg-hover);
+  background: var(--_bg-hover);
+  border-color: var(--_bd-hover);
+}
+.ll-btn:active:not(:disabled) { transform: scale(0.97); }
+.ll-btn:disabled { opacity: 0.5; cursor: default; }
+.ll-btn:focus-visible { box-shadow: var(--focus-ring); }
+
+.ll-btn--primary {
+  --_fg: #FFFFFF;
+  --_bg: var(--accent);
+  --_bd: transparent;
+  --_fg-hover: #FFFFFF;
+  --_bg-hover: var(--accent-hover);
+  --_bd-hover: transparent;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.04) inset, var(--shadow-accent);
+}
+.ll-btn--primary:disabled { box-shadow: none; }
+
+.ll-btn--ghost {
+  --_bg: transparent;
+  --_bd: transparent;
+  --_fg: var(--text-muted-strong);
+}
+.ll-btn--ghost:hover:not(:disabled) {
+  --_bg: var(--accent-bg-soft);
+  --_bd: transparent;
+}
+
+.ll-btn--danger {
+  --_fg: var(--status-err);
+  --_bg: transparent;
+  --_bd: transparent;
+  --_fg-hover: var(--status-err);
+  --_bg-hover: var(--status-err-bg);
+  --_bd-hover: var(--status-err-border);
+}
+
+.ll-btn--active {
+  --_fg: var(--accent);
+  --_bg: var(--accent-bg);
+  --_bd: var(--accent-border);
+}
+
+.ll-btn--sm { padding: 4px 9px; font-size: 11px; border-radius: var(--radius-sm); }
+.ll-btn--xs { padding: 3px 8px; font-size: 10.5px; border-radius: var(--radius-sm); gap: 4px; }
+.ll-btn--block { width: 100%; }
+
+/* Icon-only square button */
+.ll-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-md);
+  color: var(--text-muted-strong);
+  background: transparent;
+  border: 1px solid transparent;
+  transition:
+    background var(--dur-fast) ease,
+    border-color var(--dur-fast) ease,
+    color var(--dur-fast) ease,
+    transform 80ms ease;
+  cursor: pointer;
+}
+.ll-icon-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+.ll-icon-btn:active:not(:disabled) { transform: scale(0.93); }
+.ll-icon-btn:disabled { opacity: 0.35; cursor: default; }
+.ll-icon-btn:focus-visible { box-shadow: var(--focus-ring); }
+.ll-icon-btn--sm { width: 22px; height: 22px; border-radius: var(--radius-sm); }
+
+/* Form fields (inputs, selects, textareas) — unified look */
+.ll-field {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease, background var(--dur-fast) ease;
+}
+.ll-field::placeholder { color: var(--text-muted-soft); }
+.ll-field:hover { border-color: var(--border-strong); }
+.ll-field:focus,
+.ll-field:focus-visible {
+  border-color: var(--accent);
+  background: var(--bg-primary);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.ll-field--mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* Native checkbox/radio recolor — keeps forms consistent without @tailwindcss/forms visuals */
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+
+/* Row hover */
+.row-hover {
+  transition: background-color var(--dur-fast) ease;
+}
+.row-hover:hover { background-color: var(--accent-bg-soft); }
+
+/* Lift-on-hover for small chips / action tiles */
+.hover-lift {
+  transition: transform var(--dur-med) var(--ease-quick),
+              box-shadow var(--dur-med) var(--ease-quick);
+}
+.hover-lift:hover { transform: translateY(-1px); box-shadow: var(--shadow-elevated); }
+
+/* ── Selection highlight ──────────────────────────────────────── */
+::selection { background: var(--accent-bg-strong); color: var(--text-primary); }
+
+/* ── Animations ───────────────────────────────────────────────── */
 @keyframes pulse-ring {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50%      { opacity: 0.4; }
 }
-.pulse-ring {
-  animation: pulse-ring 1.5s ease-in-out infinite;
-}
+.pulse-ring { animation: pulse-ring 1.5s ease-in-out infinite; }
 
-/* Glow effect for active status dots */
 @keyframes glow-pulse {
   0%, 100% { box-shadow: 0 0 4px 1px currentColor; }
-  50% { box-shadow: 0 0 8px 3px currentColor; }
+  50%      { box-shadow: 0 0 8px 3px currentColor; }
 }
-.status-glow {
-  animation: glow-pulse 2s ease-in-out infinite;
-}
+.status-glow { animation: glow-pulse 2s ease-in-out infinite; }
 
-/* Button base reset for consistent styling */
-button {
-  font-family: inherit;
-}
-
-/* Subtle row hover for lists */
-.row-hover {
-  transition: background-color 0.1s ease, transform 0.1s ease;
-}
-.row-hover:hover {
-  background-color: rgba(76, 141, 255, 0.04);
-}
-
-/* Interactive element hover lift */
-.hover-lift {
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.hover-lift:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-elevated);
-}
-
-/* Card entrance animation */
 @keyframes card-enter {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* Subtle pulse for empty state node */
 @keyframes node-breathe {
-  0%, 100% { transform: scale(1); opacity: 0.25; }
-  50% { transform: scale(1.6); opacity: 0; }
+  0%, 100% { transform: scale(1);   opacity: 0.25; }
+  50%      { transform: scale(1.6); opacity: 0;   }
 }
 
-/* Fade-in for header */
 @keyframes fade-down {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.ll-spin { animation: spin 0.9s linear infinite; }

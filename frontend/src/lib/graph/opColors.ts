@@ -133,14 +133,41 @@ export function getStatusColor(status: string): string {
   return STATUS_COLORS[status] ?? 'transparent';
 }
 
-/** Check if a node color is light (needs dark text) */
+/**
+ * Check if a node color is light (needs dark text).
+ *
+ * Hot path — this is called per row in QueuePanel / NodeStatus lists.
+ * Results are memoized in a module-level Map so parsing happens once
+ * per distinct color string across the whole app lifetime.
+ */
+const _lightCache = new Map<string, boolean>();
 export function isLightNodeColor(color: string): boolean {
-  // Parse hex color and check brightness
+  const cached = _lightCache.get(color);
+  if (cached !== undefined) return cached;
   const hex = color.replace('#', '');
-  if (hex.length !== 6) return false;
-  const r = parseInt(hex.slice(0, 2), 16);
-  const g = parseInt(hex.slice(2, 4), 16);
-  const b = parseInt(hex.slice(4, 6), 16);
-  // Perceived brightness
-  return (r * 299 + g * 587 + b * 114) / 1000 > 180;
+  let result = false;
+  if (hex.length === 6) {
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    result = (r * 299 + g * 587 + b * 114) / 1000 > 180;
+  }
+  _lightCache.set(color, result);
+  return result;
+}
+
+/**
+ * Return the themed foreground hex to render on top of a node-category color.
+ * Resolves to either `--text-on-light` (dark) or `--text-primary` (light).
+ * Cached alongside `isLightNodeColor`.
+ */
+const _fgCache = new Map<string, string>();
+export const TEXT_ON_LIGHT = '#1B1E2B';
+export const TEXT_ON_DARK = '#E1E4ED';
+export function getTextOnNodeColor(color: string): string {
+  const cached = _fgCache.get(color);
+  if (cached !== undefined) return cached;
+  const fg = isLightNodeColor(color) ? TEXT_ON_LIGHT : TEXT_ON_DARK;
+  _fgCache.set(color, fg);
+  return fg;
 }
