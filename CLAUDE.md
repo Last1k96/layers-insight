@@ -58,7 +58,7 @@ Services are accessed in routers via `request.app.state.<name>`. Routers live in
 
 Graph layout runs through a Node.js subprocess that shells out to `elkjs` (`backend/utils/elk_layout.js`). Layout results are cached on the session.
 
-Inference task model (`backend/schemas/inference.py`) has extensibility hooks that are in active use: `batch_id`, `sub_session_id`, `bisect_id`. `metadata.json` carries a `schema_version` and migrates legacy `bisect_job` → `bisect_jobs` on read.
+Inference task model (`backend/schemas/inference.py`) has extensibility hooks that are in active use: `batch_id`, `sub_session_id`, `bisect_id`.
 
 ## Frontend architecture
 

@@ -727,12 +727,9 @@ async def relayout_sub_session(
         session_id, sub_session_id, tight_graph,
     )
 
-    # Drop any legacy positions-only payload from older schemas — the
-    # standalone tight_graph.json is now the single source of truth.
     svc.update_sub_session_meta(session_id, sub_session_id, {
         "tight_graph_path": rel_path,
         "tight_mode": True,
-        "tight_layout": None,
     })
 
     return {"graph": tight_graph, "tight_mode": True}

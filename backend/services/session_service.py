@@ -171,7 +171,6 @@ class SessionService:
         )
 
         metadata = {
-            "schema_version": 2,
             "info": info.model_dump(),
             "config": config.model_dump(),
             "original_model_path": str(original_xml),
@@ -830,13 +829,7 @@ class SessionService:
     def load_bisect_jobs(self, session_id: str) -> dict[str, dict]:
         """Load all persisted bisect jobs from session metadata."""
         meta = self._read_metadata(session_id)
-        if "bisect_jobs" in meta:
-            return meta["bisect_jobs"]
-        # Legacy single-job format
-        if "bisect_job" in meta:
-            job = meta["bisect_job"]
-            return {job["job_id"]: job} if "job_id" in job else {}
-        return {}
+        return meta.get("bisect_jobs", {})
 
     def merge_bisect_tasks(self, session_id: str, job_id: str) -> int:
         """Clear batch_id from bisect tasks so they appear as regular tasks.
@@ -873,16 +866,8 @@ class SessionService:
     def clear_bisect_job(self, session_id: str, job_id: str) -> None:
         """Remove a specific persisted bisect job from session metadata."""
         meta = self._read_metadata(session_id)
-        changed = False
         if "bisect_jobs" in meta and job_id in meta["bisect_jobs"]:
             del meta["bisect_jobs"][job_id]
-            changed = True
-        # Also clean up legacy key if present
-        if "bisect_job" in meta:
-            if meta["bisect_job"].get("job_id") == job_id:
-                del meta["bisect_job"]
-                changed = True
-        if changed:
             self._write_metadata(session_id, meta)
 
     def rename_session(self, session_id: str, new_name: str) -> Optional[str]:

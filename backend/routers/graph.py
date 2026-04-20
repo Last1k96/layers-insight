@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from backend.services.graph_service import (
-    _ET_ALIASES,
     apply_layout,
     compute_block_aware_layout,
     compute_elk_layout,
@@ -16,23 +15,6 @@ from backend.services.graph_service import (
     search_nodes,
     should_use_block_layout,
 )
-
-
-def _normalize_cached_element_types(graph: dict) -> None:
-    """Rewrite ``element_type`` fields in a cached graph dict using ``_ET_ALIASES``.
-
-    Older caches were written before OV integer-type names (``int64_t`` etc.)
-    were normalised to numpy spellings; this upgrades them on load so the
-    frontend never sees a stale spelling.
-    """
-    for node in graph.get("nodes", []):
-        et = node.get("element_type")
-        if isinstance(et, str) and et in _ET_ALIASES:
-            node["element_type"] = _ET_ALIASES[et]
-        for inp in node.get("inputs", []) or []:
-            iet = inp.get("element_type")
-            if isinstance(iet, str) and iet in _ET_ALIASES:
-                inp["element_type"] = _ET_ALIASES[iet]
 
 router = APIRouter(prefix="/api/sessions/{session_id}/graph", tags=["graph"])
 
@@ -137,7 +119,6 @@ async def get_graph(session_id: str, request: Request) -> JSONResponse:
     # Check for cached graph
     cached = session_svc.load_graph_cache(session_id)
     if cached:
-        _normalize_cached_element_types(cached)
         return JSONResponse(content=cached)
 
     if ov_core is None:
