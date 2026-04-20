@@ -2,7 +2,8 @@
   import GraphCanvas from '../graph/GraphCanvas.svelte';
   import Minimap from '../graph/Minimap.svelte';
   import GraphSearch from '../graph/GraphSearch.svelte';
-  import AccuracyToggle from '../graph/AccuracyToggle.svelte';
+  import AccuracyControls from '../graph/AccuracyControls.svelte';
+  import AccuracySettings from '../graph/AccuracySettings.svelte';
   import SubSessionNav from '../panels/SubSessionNav.svelte';
   import FloatingPanel from '../panels/FloatingPanel.svelte';
   import QueuePanel from '../panels/QueuePanel.svelte';
@@ -33,6 +34,7 @@
   let renameValue = $state('');
   let showAccuracyView = $state(false);
   let accuracyOutputIndex = $state(0);
+  let accuracySettingsOpen = $state(false);
   let showBatchQueue = $state(false);
   let showBisectPanel = $state(false);
   let bisectEndNodeId = $state<string | null>(null);
@@ -238,9 +240,6 @@
   <Minimap />
 
 
-  <!-- Accuracy toggle (top-right of graph canvas) -->
-  <AccuracyToggle />
-
   <!-- Search overlay -->
   <GraphSearch />
 
@@ -288,6 +287,14 @@
   </FloatingPanel>
 
   <FloatingPanel side="right" title="Node Status">
+    {#snippet header()}
+      <span class="right-panel-title">Node Status</span>
+      <span class="header-spacer"></span>
+      <AccuracyControls bind:settingsOpen={accuracySettingsOpen} />
+    {/snippet}
+    {#if accuracySettingsOpen}
+      <AccuracySettings />
+    {/if}
     <NodeStatus
       onshowaccuracy={(outputIdx?: number) => { accuracyOutputIndex = outputIdx ?? 0; showAccuracyView = true; }}
       onshowbatchqueue={() => { batchQueueInitialMode = 'from-selection'; showBatchQueue = true; }}
@@ -409,6 +416,16 @@
     outline: none;
     width: 100%;
   }
+
+  .right-panel-title {
+    font-family: var(--font-display);
+    font-size: 12.5px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    color: var(--text-primary);
+    white-space: nowrap;
+  }
+  .header-spacer { flex: 1; }
 </style>
 
 {#if showBisectPanel}

@@ -33,7 +33,7 @@
     if (!panel) return;
 
     function sync() {
-      leftOffset = panel!.offsetLeft + panel!.offsetWidth + 4;
+      leftOffset = panel!.offsetLeft + panel!.offsetWidth;
     }
     sync();
 
@@ -545,11 +545,11 @@
 <style>
   .sub-session-panel {
     position: absolute;
-    top: 8px;
+    top: 0;
     z-index: 20;
     background: var(--bg-panel);
-    border-radius: 0 12px 12px 12px;
-    box-shadow: var(--shadow-panel);
+    border-radius: 0 0 12px 0;
+    box-shadow: 4px 4px 18px -4px rgba(0, 0, 0, 0.35);
     min-width: 180px;
     max-width: 260px;
     backdrop-filter: blur(24px);
