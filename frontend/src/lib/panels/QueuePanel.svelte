@@ -13,7 +13,42 @@
   import { tick } from 'svelte';
 
   let listEl = $state<HTMLDivElement | null>(null);
+  let filterInputEl = $state<HTMLInputElement | null>(null);
   let atBottom = $state(true);
+
+  const scopeLabels: Record<string, string> = {
+    nodes: 'All',
+    all: 'Inferred',
+    success: 'Success',
+    failed: 'Failed',
+  };
+
+  $effect(() => {
+    const _ = queueStore.focusFilterRequest;
+    if (_ > 0 && filterInputEl) {
+      filterInputEl.focus();
+      filterInputEl.select();
+    }
+  });
+
+  // Feed 'nodes' scope results into the renderer so matching nodes are
+  // highlighted in the graph the same way the old global search did.
+  $effect(() => {
+    if (queueStore.filterStatus === 'nodes' && queueStore.filterText.trim()) {
+      graphStore.searchResults = queueStore.filteredGraphNodes;
+      graphStore.searchVisible = true;
+    } else {
+      graphStore.searchResults = [];
+      graphStore.searchVisible = false;
+    }
+    refreshRenderer();
+  });
+
+  function selectGraphNode(node: import('../stores/types').GraphNode, e?: MouseEvent) {
+    graphStore.selectNode(node.id);
+    centerOnNode(node.id);
+    refreshRenderer();
+  }
 
   function onListScroll() {
     if (!listEl) return;
@@ -257,8 +292,9 @@
           </svg>
           <input
             type="text"
+            bind:this={filterInputEl}
             bind:value={queueStore.filterText}
-            placeholder="Filter..."
+            placeholder={queueStore.filterStatus === 'nodes' ? 'Search nodes…' : 'Filter…'}
             class="q-search-input"
           />
         </div>
@@ -273,7 +309,7 @@
         </button>
       </div>
       <div class="q-status-tabs">
-        {#each ['all', 'success', 'failed'] as status (status)}
+        {#each ['nodes', 'all', 'success', 'failed'] as status (status)}
           <button
             class="q-status-tab {queueStore.filterStatus === status ? 'q-status-tab--active' : ''}"
             onclick={() => queueStore.filterStatus = status as any}
@@ -283,13 +319,35 @@
             {:else if status === 'failed'}
               <span class="q-status-dot" style:background="#E54D4D"></span>
             {/if}
-            {status === 'all' ? 'All' : status.charAt(0).toUpperCase() + status.slice(1)}
+            {scopeLabels[status]}
           </button>
         {/each}
       </div>
     {/if}
   </div>
 
+  {#if queueStore.filterStatus === 'nodes'}
+    <!-- Graph-node suggestion list (styled after PathInput suggestions) -->
+    <div class="q-node-list">
+      {#each queueStore.filteredGraphNodes as n (n.id)}
+        <button
+          class="q-node-row"
+          class:q-node-row--selected={graphStore.selectedNodeId === n.id}
+          onclick={(e) => selectGraphNode(n, e)}
+          onmouseenter={() => setHoveredNode(n.id)}
+          onmouseleave={() => setHoveredNode(null)}
+        >
+          <span class="q-node-icon" style:background={n.color}></span>
+          <span class="q-node-name">{n.name}</span>
+          <span class="q-node-type">{n.type}</span>
+        </button>
+      {:else}
+        <div class="q-empty">
+          <span class="q-empty-text">No matching nodes</span>
+        </div>
+      {/each}
+    </div>
+  {:else}
   <!-- Column headers -->
   <div class="q-colheaders">
     <div class="q-col-status"></div>
@@ -549,6 +607,7 @@
       {/each}
     {/if}
   </div>
+  {/if}
 </div>
 
 <style>
@@ -771,6 +830,54 @@
     width: 6px;
     height: 6px;
     border-radius: 99px;
+    flex-shrink: 0;
+  }
+
+  /* ── Node suggestion list (nodes scope) ── */
+  .q-node-list {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding: 4px 0;
+  }
+  .q-node-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 5px 12px;
+    font-size: 12px;
+    color: var(--text-primary);
+    background: transparent;
+    border: 0;
+    border-left: 2px solid transparent;
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--dur-fast) ease;
+  }
+  .q-node-row:hover { background: rgba(76, 141, 255, 0.12); }
+  .q-node-row--selected {
+    background: rgba(76, 141, 255, 0.18);
+    border-left-color: var(--accent);
+  }
+  .q-node-icon {
+    width: 8px;
+    height: 8px;
+    border-radius: 99px;
+    flex-shrink: 0;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.25);
+  }
+  .q-node-name {
+    flex: 1;
+    font-family: var(--font-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .q-node-type {
+    font-size: 11px;
+    color: var(--text-muted-soft);
     flex-shrink: 0;
   }
 

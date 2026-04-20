@@ -45,11 +45,31 @@ def load_model(model_path: str, ov_core: Any) -> Any:
     return ov_core.read_model(model_path)
 
 
+_ET_ALIASES: dict[str, str] = {
+    # OV prints integer types as C typedef names; numpy uses the short form.
+    "int8_t": "int8",
+    "int16_t": "int16",
+    "int32_t": "int32",
+    "int64_t": "int64",
+    "uint8_t": "uint8",
+    "uint16_t": "uint16",
+    "uint32_t": "uint32",
+    "uint64_t": "uint64",
+    "char": "bool",
+}
+
+
 def _normalize_element_type(et: Any) -> str:
-    """Extract inner type name from OV's str(element_type) like \"<Type: 'float32'>\"."""
+    """Extract inner type name from OV's str(element_type) like \"<Type: 'float32'>\".
+
+    OV is inconsistent: floats use friendly names (``float32``), but integers
+    come out as C typedefs (``int64_t``, ``uint8_t``). We canonicalise so
+    graph display and numpy-derived stats agree on the same spelling.
+    """
     s = str(et)
     m = re.search(r"'([^']+)'", s)
-    return m.group(1) if m else s
+    inner = m.group(1) if m else s
+    return _ET_ALIASES.get(inner, inner)
 
 
 def _find_root_constant(op: Any) -> str | None:

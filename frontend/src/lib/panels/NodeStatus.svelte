@@ -57,16 +57,8 @@
   let constDataLoading = $state(new Set<string>());
   let constDataExpanded = $state(new Set<string>());
 
-  async function toggleConstData(constNodeName: string) {
-    const key = constNodeName;
-    if (constDataExpanded.has(key)) {
-      constDataExpanded = new Set([...constDataExpanded].filter(k => k !== key));
-      return;
-    }
-    constDataExpanded = new Set([...constDataExpanded, key]);
-
-    if (constDataCache.has(key)) return;
-
+  async function ensureConstData(key: string) {
+    if (constDataCache.has(key) || constDataLoading.has(key)) return;
     const session = sessionStore.currentSession;
     if (!session) return;
 
@@ -83,6 +75,26 @@
       constDataLoading = new Set([...constDataLoading].filter(k => k !== key));
     }
   }
+
+  function toggleConstValues(key: string) {
+    if (constDataExpanded.has(key)) {
+      constDataExpanded = new Set([...constDataExpanded].filter(k => k !== key));
+    } else {
+      constDataExpanded = new Set([...constDataExpanded, key]);
+    }
+  }
+
+  // Auto-fetch general stats for every const input of the selected node so the
+  // right-side info block can show dtype/min/max/mean/std without a click.
+  $effect(() => {
+    const inputs = selectedNode?.inputs;
+    if (!inputs) return;
+    for (const inp of inputs) {
+      if (inp.is_const && inp.const_node_name) {
+        ensureConstData(inp.const_node_name);
+      }
+    }
+  });
 
   function formatFloat(v: number): string {
     if (v === 0) return '0';
@@ -393,10 +405,12 @@
           Infer
         </button>
         <button class="ll-btn ll-btn--block" onclick={onshowbatchqueue}>Batch Queue</button>
-        <button class="ll-btn ll-btn--block" onclick={() => handleCut('input_random')}>
-          Cut as Input<span class="ns-btn-hint">(random)</span>
-        </button>
-        <button class="ll-btn ll-btn--block" onclick={() => handleCut('output')}>Cut as Output</button>
+        <div class="flex gap-2">
+          <button class="ll-btn ll-btn--block" onclick={() => handleCut('input_random')}>
+            Cut as Input<span class="ns-btn-hint">(random)</span>
+          </button>
+          <button class="ll-btn ll-btn--block" onclick={() => handleCut('output')}>Cut as Output</button>
+        </div>
       </div>
 
     {:else if nodeStatus.status === 'waiting'}
@@ -488,7 +502,7 @@
                   { label: 'Mean', key: 'mean_val' as const },
                   { label: 'Std', key: 'std_val' as const },
                 ] as row}
-                  <tr class="border-t border-content-secondary/5">
+                  <tr class="border-t border-edge-soft">
                     <td class="py-1.5 text-muted">{row.label}</td>
                     {#if main}<td class="py-1.5 text-right font-mono truncate tabular-nums">{fmt4(main[row.key])}</td>{/if}
                     {#if ref}<td class="py-1.5 text-right font-mono truncate tabular-nums">{fmt4(ref[row.key])}</td>{/if}
@@ -605,7 +619,7 @@
                     { label: 'Mean', key: 'mean_val' as const },
                     { label: 'Std', key: 'std_val' as const },
                   ] as row}
-                    <tr class="border-t border-content-secondary/5">
+                    <tr class="border-t border-edge-soft">
                       <td class="py-1 text-muted">{row.label}</td>
                       {#if outMain}<td class="py-1 text-right font-mono truncate tabular-nums">{fmt4(outMain[row.key])}</td>{/if}
                       {#if outRef}<td class="py-1 text-right font-mono truncate tabular-nums">{fmt4(outRef[row.key])}</td>{/if}
@@ -693,6 +707,7 @@
         <div class="mt-1.5 space-y-1">
           {#each selectedNode.inputs as inp, idx}
             {@const sourceNode = graphStore.graphData?.nodes.find(n => n.name === inp.name)}
+            {@const constCd = inp.is_const && inp.const_node_name ? constDataCache.get(inp.const_node_name) : undefined}
             <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
             <div
               class="ns-card text-xs {sourceNode ? 'ns-card--interactive' : ''}"
@@ -713,59 +728,60 @@
                 }
               }}
             >
-              <div class="flex items-center gap-1.5">
-                <span class="text-muted-soft font-mono w-4 shrink-0">{idx}</span>
-                {#if !inp.is_const}
-                  <span class="text-accent font-mono truncate text-left">{inp.name}</span>
-                {:else}
-                  <span class="text-muted font-mono truncate" title={inp.name}>{inp.name}</span>
-                {/if}
-              </div>
-              {#if sourceNode}
-                <div class="w-fit text-xs font-medium mt-0.5 ml-5 px-2 py-0.5 rounded-md" style="background-color: {sourceNode.color}; color: {getTextOnNodeColor(sourceNode.color)};">{sourceNode.type}</div>
-              {:else if inp.is_const}
-                <div class="ml-5 mt-0.5"><span class="ll-chip ll-chip--warn ll-chip--tiny ll-chip--pill">const</span></div>
-              {/if}
-              {#if inp.shape}
-                <div class="text-muted-soft ml-5 mt-0.5">
-                  [{#each inp.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-status-hint">{dim}</span>{:else}{dim}{/if}{/each}] {#if inp.element_type}<span class="text-muted-soft">{inp.element_type}</span>{/if}
-                </div>
-              {/if}
-              {#if inp.is_const && inp.const_node_name}
-                <button
-                  class="ml-5 mt-1 text-[10px] text-accent hover:text-accent-hover transition-colors"
-                  onclick={(e) => { e.stopPropagation(); toggleConstData(inp.const_node_name!); }}
-                >
-                  {constDataExpanded.has(inp.const_node_name) ? 'Hide data' : 'View data'}
-                </button>
-                {#if constDataExpanded.has(inp.const_node_name)}
-                  {#if constDataLoading.has(inp.const_node_name)}
-                    <div class="ml-5 mt-1 text-muted-soft text-[10px]">Loading...</div>
-                  {:else if constDataCache.has(inp.const_node_name)}
-                    {@const cd = constDataCache.get(inp.const_node_name)!}
-                    <div class="ml-5 mt-1 space-y-1">
-                      <div class="grid grid-cols-2 gap-x-3 text-[10px]">
-                        <span class="text-muted-soft">dtype</span>
-                        <span class="text-muted font-mono text-right">{cd.dtype}</span>
-                        <span class="text-muted-soft">min</span>
-                        <span class="text-muted font-mono text-right">{formatFloat(cd.stats.min)}</span>
-                        <span class="text-muted-soft">max</span>
-                        <span class="text-muted font-mono text-right">{formatFloat(cd.stats.max)}</span>
-                        <span class="text-muted-soft">mean</span>
-                        <span class="text-muted font-mono text-right">{formatFloat(cd.stats.mean)}</span>
-                        <span class="text-muted-soft">std</span>
-                        <span class="text-muted font-mono text-right">{formatFloat(cd.stats.std)}</span>
-                      </div>
-                      <details>
-                        <summary class="text-[10px] text-muted-soft cursor-pointer hover:text-muted transition-colors">
-                          Values ({cd.total_elements}{cd.truncated ? ', truncated' : ''})
-                        </summary>
-                        <pre class="mt-1 bg-surface-base rounded-lg p-2 text-[9px] text-muted font-mono overflow-x-auto max-h-40 whitespace-pre-wrap leading-tight">{cd.data.map(v => formatFloat(v)).join(', ')}</pre>
-                      </details>
+              <div class="flex items-start gap-3">
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-muted-soft font-mono w-4 shrink-0">{idx}</span>
+                    {#if !inp.is_const}
+                      <span class="text-accent font-mono truncate text-left">{inp.name}</span>
+                    {:else}
+                      <span class="text-muted font-mono truncate" title={inp.name}>{inp.name}</span>
+                    {/if}
+                  </div>
+                  {#if sourceNode}
+                    <div class="w-fit text-xs font-medium mt-0.5 ml-5 px-2 py-0.5 rounded-md" style="background-color: {sourceNode.color}; color: {getTextOnNodeColor(sourceNode.color)};">{sourceNode.type}</div>
+                  {:else if inp.is_const}
+                    <div class="ml-5 mt-0.5"><span class="ll-chip ll-chip--warn ll-chip--tiny ll-chip--pill">const</span></div>
+                  {/if}
+                  {#if inp.shape}
+                    <div class="ml-5 mt-0.5 text-xs">
+                      <span class="font-mono text-muted">[{#each inp.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-status-hint">{dim}</span>{:else}{dim}{/if}{/each}]</span>
+                      {#if inp.element_type}
+                        <span class="text-muted-soft ml-1">{constCd && constCd.dtype && constCd.dtype !== inp.element_type ? `${constCd.dtype} → ${inp.element_type}` : inp.element_type}</span>
+                      {/if}
                     </div>
                   {/if}
+                  {#if inp.is_const && inp.const_node_name}
+                    <button
+                      class="ml-5 mt-1 text-[10px] text-accent hover:text-accent-hover transition-colors"
+                      onclick={(e) => { e.stopPropagation(); toggleConstValues(inp.const_node_name!); }}
+                    >
+                      {constDataExpanded.has(inp.const_node_name) ? 'Hide values' : 'Show values'}{constCd ? ` (${constCd.total_elements}${constCd.truncated ? ', truncated' : ''})` : ''}
+                    </button>
+                    {#if constDataExpanded.has(inp.const_node_name) && constCd}
+                      <pre class="ml-5 mt-1 bg-surface-base rounded-lg p-2 text-[9px] text-muted font-mono overflow-x-auto max-h-40 whitespace-pre-wrap leading-tight">{constCd.data.map(v => formatFloat(v)).join(', ')}</pre>
+                    {/if}
+                  {/if}
+                </div>
+                {#if inp.is_const && inp.const_node_name}
+                  <div class="shrink-0 pt-0.5">
+                    {#if constCd}
+                      <div class="grid grid-cols-[auto_auto] gap-x-2 gap-y-0.5 text-[10px]">
+                        <span class="text-muted-soft">min</span>
+                        <span class="text-muted font-mono text-right">{formatFloat(constCd.stats.min)}</span>
+                        <span class="text-muted-soft">max</span>
+                        <span class="text-muted font-mono text-right">{formatFloat(constCd.stats.max)}</span>
+                        <span class="text-muted-soft">mean</span>
+                        <span class="text-muted font-mono text-right">{formatFloat(constCd.stats.mean)}</span>
+                        <span class="text-muted-soft">std</span>
+                        <span class="text-muted font-mono text-right">{formatFloat(constCd.stats.std)}</span>
+                      </div>
+                    {:else if constDataLoading.has(inp.const_node_name)}
+                      <div class="text-muted-soft text-[10px]">Loading…</div>
+                    {/if}
+                  </div>
                 {/if}
-              {/if}
+              </div>
             </div>
           {/each}
         </div>
@@ -801,8 +817,9 @@
               {#if out.targetNode}
                 <div class="w-fit text-xs font-medium mt-0.5 ml-5 px-2 py-0.5 rounded-md" style="background-color: {out.targetNode.color}; color: {getTextOnNodeColor(out.targetNode.color)};">{out.targetNode.type}</div>
                 {#if out.targetNode.shape}
-                  <div class="text-muted-soft ml-5 mt-0.5">
-                    [{#each out.targetNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-status-hint">{dim}</span>{:else}{dim}{/if}{/each}] {#if out.targetNode.element_type}<span class="text-muted-soft">{out.targetNode.element_type}</span>{/if}
+                  <div class="ml-5 mt-0.5 text-xs">
+                    <span class="font-mono text-muted">[{#each out.targetNode.shape as dim, idx}{#if idx > 0}, {/if}{#if typeof dim === 'string'}<span class="text-status-hint">{dim}</span>{:else}{dim}{/if}{/each}]</span>
+                    {#if out.targetNode.element_type}<span class="text-muted-soft ml-1">{out.targetNode.element_type}</span>{/if}
                   </div>
                 {/if}
               {/if}
@@ -874,6 +891,12 @@
   .ns-status--warn { color: var(--status-warn); background: var(--status-warn-bg); border-color: var(--status-warn-border); }
   .ns-status--ok   { color: var(--status-ok);   background: var(--status-ok-bg);   border-color: var(--status-ok-border); }
   .ns-status--err  { color: var(--status-err);  background: var(--status-err-bg);  border-color: var(--status-err-border); }
+
+  /* Bump button height inside the Node Status panel — default .ll-btn felt too small here */
+  .ll-btn {
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
 
   /* Secondary hint inline inside a .ll-btn (e.g. "Cut as Input (random)") */
   .ns-btn-hint {

@@ -232,18 +232,18 @@
 
   async function handleDownload() {
     const session = sessionStore.currentSession;
-    if (!session || !activeSub || downloading || relayouting) return;
+    if (!session || downloading || relayouting) return;
     downloading = true;
     try {
       const a = document.createElement('a');
-      a.href = `/api/sessions/${session.id}/sub-sessions/${activeSub.id}/export`;
+      a.href = activeSub
+        ? `/api/sessions/${session.id}/sub-sessions/${activeSub.id}/export`
+        : `/api/sessions/${session.id}/export`;
       a.rel = 'noopener';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
     } finally {
-      // No load event on <a download> — give the browser a moment to start
-      // the stream before clearing the button's busy state.
       setTimeout(() => { downloading = false; }, 800);
     }
   }
@@ -466,45 +466,30 @@
         {/each}
       </div>
 
-      {#if activeSub}
-        <div class="active-card">
-          <div class="active-label">Active sub-session</div>
-          <div class="active-head">
-            <span
-              class="dot"
-              class:dot-output={activeSub.cut_type === 'output'}
-              class:dot-input={activeSub.cut_type === 'input'}
-            ></span>
-            <span class="active-name" title={activeSub.cut_node}>{activeSub.cut_node}</span>
-            <span
-              class="cut-type-tag"
-              class:tag-output={activeSub.cut_type === 'output'}
-              class:tag-input={activeSub.cut_type === 'input'}
-            >
-              {activeSub.cut_type === 'output' ? 'out' : 'in'}
-            </span>
-          </div>
+      <div class="active-card">
+        <button
+          class="action-btn"
+          onclick={handleDownload}
+          disabled={downloading || relayouting}
+          title={activeSub
+            ? 'Download the sub-session cut model as a zipped reproducer'
+            : 'Download the full model as a zipped reproducer'}
+        >
+          {#if downloading}
+            <svg class="icon spin" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4 31.4" stroke-linecap="round"/>
+            </svg>
+            Preparing…
+          {:else}
+            <svg class="icon" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 1a.5.5 0 0 1 .5.5v8.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V1.5A.5.5 0 0 1 8 1z"/>
+              <path d="M2 13.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5z"/>
+            </svg>
+            {activeSub ? 'Download cut model' : 'Download model'}
+          {/if}
+        </button>
 
-          <button
-            class="action-btn"
-            onclick={handleDownload}
-            disabled={downloading || relayouting}
-            title="Download the sub-session cut model as a zipped reproducer"
-          >
-            {#if downloading}
-              <svg class="icon spin" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4 31.4" stroke-linecap="round"/>
-              </svg>
-              Preparing…
-            {:else}
-              <svg class="icon" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M8 1a.5.5 0 0 1 .5.5v8.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 10.293V1.5A.5.5 0 0 1 8 1z"/>
-                <path d="M2 13.5a.5.5 0 0 1 .5-.5h11a.5.5 0 0 1 0 1h-11a.5.5 0 0 1-.5-.5z"/>
-              </svg>
-              Download cut model
-            {/if}
-          </button>
-
+        {#if activeSub}
           <button
             class="action-btn"
             class:active={activeSub.tight_mode}
@@ -536,8 +521,8 @@
               <div class="progress-fill"></div>
             </div>
           {/if}
-        </div>
-      {/if}
+        {/if}
+      </div>
     {/if}
   </div>
 {/if}
@@ -563,7 +548,8 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 8px 10px;
+    padding: 8px 6px 8px 12px;
+    min-height: 40px;
     color: var(--text-secondary);
     width: 100%;
     border: none;

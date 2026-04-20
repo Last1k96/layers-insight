@@ -115,6 +115,11 @@
 
   let shortcutKey = $derived(side === 'left' ? '[' : ']');
 
+  function handleExternalExpand(e: Event) {
+    const detail = (e as CustomEvent).detail;
+    if (detail?.side === side) expand();
+  }
+
   onMount(() => {
     registerShortcut({
       key: shortcutKey,
@@ -124,10 +129,12 @@
         toggle();
       },
     });
+    window.addEventListener('floating-panel-expand', handleExternalExpand);
   });
 
   onDestroy(() => {
     unregisterShortcut(shortcutKey);
+    window.removeEventListener('floating-panel-expand', handleExternalExpand);
   });
 
   let displayWidth = $derived(collapsed ? RAIL_W : width);

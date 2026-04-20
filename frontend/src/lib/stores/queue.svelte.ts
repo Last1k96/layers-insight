@@ -1,16 +1,22 @@
-import type { InferenceTask, TaskStatus } from './types';
+import type { GraphNode, InferenceTask, TaskStatus } from './types';
 import { graphStore } from './graph.svelte';
 import { advancedFilterStore } from './advancedFilter.svelte';
 
 export type SortColumn = 'topo' | 'type' | 'cosine' | 'mse';
 export type SortDirection = 'asc' | 'desc';
 
+/** Filter scope. 'nodes' searches the full graph; the rest scope inferred tasks.
+ *  The UI labels 'nodes' as "All" and 'all' as "Inferred". */
+export type FilterScope = TaskStatus | 'all' | 'nodes';
+
 class QueueStore {
   /** All tasks across all sub-sessions. */
   tasks = $state<InferenceTask[]>([]);
   selectedTaskId = $state<string | null>(null);
   filterText = $state('');
-  filterStatus = $state<TaskStatus | 'all'>('all');
+  filterStatus = $state<FilterScope>('all');
+  /** Incremented to request that the filter input grab focus. */
+  focusFilterRequest = $state(0);
 
   /** Sorting state */
   sortColumn = $state<SortColumn>('topo');
@@ -97,11 +103,30 @@ class QueueStore {
           t.node_name.toLowerCase().includes(q) || t.node_type.toLowerCase().includes(q)
         );
       }
-      if (this.filterStatus !== 'all') {
+      if (this.filterStatus === 'success' || this.filterStatus === 'failed') {
         result = result.filter(t => t.status === this.filterStatus);
       }
     }
     return result;
+  }
+
+  /** Graph nodes matching the filter text. Used when filterStatus === 'nodes'. */
+  get filteredGraphNodes(): GraphNode[] {
+    const nodes = graphStore.graphData?.nodes ?? [];
+    const q = this.filterText.trim().toLowerCase();
+    if (!q) return nodes.slice(0, 200);
+    const matches: GraphNode[] = [];
+    for (const n of nodes) {
+      if (n.name.toLowerCase().includes(q) || n.type.toLowerCase().includes(q)) {
+        matches.push(n);
+        if (matches.length >= 200) break;
+      }
+    }
+    return matches;
+  }
+
+  requestFilterFocus(): void {
+    this.focusFilterRequest = this.focusFilterRequest + 1;
   }
 
   /** Returns the number of waiting tasks */

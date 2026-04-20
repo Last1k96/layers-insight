@@ -506,6 +506,132 @@ async def export_sub_session(
     )
 
 
+@router.get("/{session_id}/export")
+async def export_session(
+    session_id: str,
+    request: Request,
+) -> StreamingResponse:
+    """Stream a ZIP of the full (uncut) model plus every input it needs.
+
+    Mirrors ``export_sub_session`` but without any sub-session merging —
+    inputs come solely from the session config.
+    """
+    from backend.utils.input_generator import prepare_inputs
+
+    svc = _get_session_service(request)
+    session = svc.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    model_xml_abs = Path(session.config.model_path)
+    model_bin_abs = model_xml_abs.with_suffix(".bin")
+    if not model_xml_abs.exists():
+        raise HTTPException(status_code=404, detail="Session model not on disk")
+
+    ov_core = request.app.state.ov_core
+    if ov_core is None:
+        raise HTTPException(status_code=503, detail="OpenVINO not available")
+
+    input_configs: list[dict] = []
+    if session.config.inputs:
+        input_configs.extend(inp.model_dump() for inp in session.config.inputs)
+
+    try:
+        model = ov_core.read_model(str(model_xml_abs))
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Failed to read model: {err}")
+
+    model_params: list[dict] = []
+    for param in model.get_parameters():
+        pshape = param.get_output_partial_shape(0)
+        shape = [d.get_length() if d.is_static else "?" for d in pshape]
+        model_params.append({
+            "name": param.get_friendly_name(),
+            "shape": shape,
+            "element_type": str(param.get_output_element_type(0)),
+        })
+    del model
+
+    try:
+        inputs = prepare_inputs(
+            model_params,
+            input_path=None,
+            precision=session.config.input_precision or "fp32",
+            input_configs=input_configs,
+        )
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Failed to prepare inputs: {err}")
+
+    info: dict = {
+        "session_id": session_id,
+        "model_name": session.info.model_name,
+        "main_device": session.config.main_device,
+        "ref_device": session.config.ref_device,
+        "inputs": [],
+        "session_config": {
+            "ov_path": session.config.ov_path,
+            "main_device": session.config.main_device,
+            "ref_device": session.config.ref_device,
+            "input_precision": session.config.input_precision,
+        },
+    }
+
+    safe_name = sanitize_filename(session.info.model_name or "model")
+
+    def _generate() -> Iterator[bytes]:
+        buf = ZipStreamBuffer()
+        prefix = f"{safe_name}/"
+
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr(
+                f"{prefix}model.xml",
+                model_xml_abs.read_bytes(),
+                compress_type=zipfile.ZIP_DEFLATED,
+            )
+            yield buf.drain()
+            if model_bin_abs.exists():
+                zf.writestr(
+                    f"{prefix}model.bin",
+                    model_bin_abs.read_bytes(),
+                    compress_type=zipfile.ZIP_STORED,
+                )
+                yield buf.drain()
+
+            for name, tensor in inputs.items():
+                safe_input = sanitize_filename(name)
+                bin_name = f"input_{safe_input}.bin"
+                zf.writestr(
+                    f"{prefix}{bin_name}",
+                    tensor.tobytes(),
+                    compress_type=zipfile.ZIP_STORED,
+                )
+                info["inputs"].append({
+                    "name": name,
+                    "shape": list(tensor.shape),
+                    "dtype": str(tensor.dtype),
+                    "file": bin_name,
+                })
+                yield buf.drain()
+
+            zf.writestr(
+                f"{prefix}info.json",
+                json.dumps(info, indent=2),
+                compress_type=zipfile.ZIP_DEFLATED,
+            )
+            yield buf.drain()
+
+        tail = buf.drain()
+        if tail:
+            yield tail
+
+    filename = f"{safe_name}.zip"
+    return StreamingResponse(
+        _generate(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/{session_id}/sub-sessions/{sub_session_id}/relayout")
 async def relayout_sub_session(
     session_id: str,

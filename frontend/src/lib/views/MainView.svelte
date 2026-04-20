@@ -1,7 +1,6 @@
 <script lang="ts">
   import GraphCanvas from '../graph/GraphCanvas.svelte';
   import Minimap from '../graph/Minimap.svelte';
-  import GraphSearch from '../graph/GraphSearch.svelte';
   import AccuracyControls from '../graph/AccuracyControls.svelte';
   import AccuracySettings from '../graph/AccuracySettings.svelte';
   import SubSessionNav from '../panels/SubSessionNav.svelte';
@@ -208,11 +207,13 @@
 
     registerShortcut({
       key: 'Ctrl+F',
-      description: 'Open search',
+      description: 'Search nodes',
       allowInInput: true,
       handler(e) {
         e.preventDefault();
-        graphStore.searchVisible = !graphStore.searchVisible;
+        window.dispatchEvent(new CustomEvent('floating-panel-expand', { detail: { side: 'left' } }));
+        queueStore.filterStatus = 'nodes';
+        queueStore.requestFilterFocus();
       },
     });
   });
@@ -239,9 +240,6 @@
   <!-- Minimap -->
   <Minimap />
 
-
-  <!-- Search overlay -->
-  <GraphSearch />
 
   <!-- Sub-session navigation (Phase 2) -->
   <SubSessionNav />

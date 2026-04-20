@@ -16,6 +16,21 @@
   let target: MinimapTargetType | null = null;
   let unsubReady: (() => void) | null = null;
 
+  // Track right panel's left edge so we can sit flush against it, mirroring
+  // how SubSessionNav hugs the right edge of the left panel.
+  let rightOffset = $state(0);
+  $effect(() => {
+    const panel = document.querySelector('[data-panel-side="right"]') as HTMLElement | null;
+    if (!panel) return;
+    function sync() {
+      rightOffset = panel!.offsetWidth;
+    }
+    sync();
+    const ro = new ResizeObserver(sync);
+    ro.observe(panel);
+    return () => ro.disconnect();
+  });
+
   const MIN_W = 150, MIN_H = 100, MAX_W = 600, MAX_H = 500;
   let mmWidth = $state(parseInt(localStorage.getItem('minimap-w') ?? '200') || 200);
   let mmHeight = $state(parseInt(localStorage.getItem('minimap-h') ?? '150') || 150);
@@ -176,7 +191,19 @@
   });
 </script>
 
-<div class="mm-root">
+<div class="mm-root" style="right: {rightOffset}px">
+  <button
+    class="mm-toggle"
+    class:mm-toggle--collapsed={collapsed}
+    onclick={() => { collapsed = !collapsed; localStorage.setItem('minimap-collapsed', String(collapsed)); }}
+    title={collapsed ? 'Show minimap' : 'Hide minimap'}
+  >
+    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <rect x="2" y="2" width="12" height="12" rx="1.5" />
+      <path d="M6 6h4v4H6z" fill="currentColor" stroke="none" />
+    </svg>
+    {collapsed ? 'Map' : 'Hide map'}
+  </button>
   {#if !collapsed}
     <div class="mm-frame" style="width: {mmWidth}px; height: {mmHeight}px;">
       <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -195,25 +222,12 @@
       ></canvas>
     </div>
   {/if}
-  <button
-    class="mm-toggle"
-    class:mm-toggle--collapsed={collapsed}
-    onclick={() => { collapsed = !collapsed; localStorage.setItem('minimap-collapsed', String(collapsed)); }}
-    title={collapsed ? 'Show minimap' : 'Hide minimap'}
-  >
-    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-      <rect x="2" y="2" width="12" height="12" rx="1.5" />
-      <path d="M6 6h4v4H6z" fill="currentColor" stroke="none" />
-    </svg>
-    {collapsed ? 'Map' : 'Hide map'}
-  </button>
 </div>
 
 <style>
   .mm-root {
     position: absolute;
-    bottom: 14px;
-    right: 14px;
+    bottom: 0;
     z-index: 20;
     display: flex;
     flex-direction: column;
@@ -224,7 +238,9 @@
     overflow: hidden;
     background: var(--bg-primary);
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    border-right: none;
+    border-bottom: none;
+    border-radius: var(--radius-md) 0 0 0;
     box-shadow: var(--shadow-elevated);
   }
   .mm-resize {
@@ -263,11 +279,10 @@
     color: var(--text-muted-strong);
     background: var(--bg-panel);
     border: 1px solid var(--border-color);
-    border-radius: 0 0 var(--radius-md) var(--radius-md);
+    border-right: none;
+    border-bottom: none;
+    border-radius: var(--radius-md) 0 0 0;
     transition: color var(--dur-fast) ease, background var(--dur-fast) ease, border-color var(--dur-fast) ease;
-  }
-  .mm-toggle--collapsed {
-    border-radius: var(--radius-md);
   }
   .mm-toggle:hover {
     color: var(--text-primary);
