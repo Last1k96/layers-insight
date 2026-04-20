@@ -11,6 +11,21 @@ import {
 const STORAGE_KEY_PREFIX = 'layers-insight-advanced-filter:';
 const storageKeyFor = (sessionId: string): string => `${STORAGE_KEY_PREFIX}${sessionId}`;
 
+function isTaskBoundField(field: FilterField): boolean {
+  return field === 'status'
+    || field === 'mse'
+    || field === 'cosine_similarity'
+    || field === 'max_abs_diff';
+}
+
+/** Numeric rules are active even with an empty value — the empty input is
+ *  interpreted as 0 (matches the placeholder shown in the UI). String/enum
+ *  rules still require an explicit value to avoid contains-'' matching all. */
+function isRuleActive(rule: FilterRule): boolean {
+  if (FILTER_FIELD_META[rule.field].type === 'number') return true;
+  return rule.value !== '';
+}
+
 class AdvancedFilterStore {
   private _active = $state(false);
   rules = $state<FilterRule[]>([]);
@@ -125,16 +140,16 @@ class AdvancedFilterStore {
     this.persist();
   }
 
-  /** True when at least one rule has a non-empty value. */
+  /** True when at least one rule would take effect (see `isRuleActive`). */
   get hasActiveRules(): boolean {
-    return this.rules.some(r => r.value !== '');
+    return this.rules.some(r => isRuleActive(r));
   }
 
   /** Split active rules into AND-groups separated by OR connectors.
    *  (AND binds tighter than OR.) Returns [] when no rules are active. */
   private buildGroups(): FilterRule[][] {
     const activeIndices = this.rules
-      .map((r, i) => (r.value !== '' ? i : -1))
+      .map((r, i) => (isRuleActive(r) ? i : -1))
       .filter(i => i >= 0);
     if (activeIndices.length === 0) return [];
 
@@ -163,14 +178,17 @@ class AdvancedFilterStore {
     return tasks.filter(task => groups.some(group => group.every(rule => this.evaluateRule(rule, task))));
   }
 
-  /** Apply the active rules to graph nodes. Metric/status rules fall back to
-   *  the corresponding task (if any) in `taskByNodeId`; nodes without a task
-   *  evaluate those fields against `undefined`. */
+  /** Apply the active rules to graph nodes. When any active rule references a
+   *  task-bound field (status, mse, cosine_similarity, max_abs_diff), nodes
+   *  without a corresponding task are excluded outright — a metric filter
+   *  can't meaningfully match a node that hasn't been inferred. */
   applyFilterToNodes(nodes: GraphNode[], taskByNodeId: Map<string, InferenceTask>): GraphNode[] {
     const groups = this.buildGroups();
     if (groups.length === 0) return nodes;
+    const requiresTask = groups.some(group => group.some(rule => isTaskBoundField(rule.field)));
     return nodes.filter(node => {
       const task = taskByNodeId.get(node.id);
+      if (requiresTask && !task) return false;
       const taskLike = {
         node_name: node.name,
         node_type: node.type,
@@ -208,7 +226,8 @@ class AdvancedFilterStore {
     if (meta.type === 'number') {
       if (taskValue === undefined || taskValue === null) return false;
       const nv = Number(taskValue);
-      const rv = Number(rule.value);
+      const rawValue = rule.value === '' ? (meta.defaultValue ?? '0') : rule.value;
+      const rv = Number(rawValue);
       if (isNaN(nv) || isNaN(rv)) return false;
       switch (rule.operator) {
         case '>': return nv > rv;

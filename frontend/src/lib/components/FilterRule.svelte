@@ -39,24 +39,28 @@
     onUpdate({ value: (e.target as HTMLSelectElement).value });
   }
 
+  function currentNumericValue(): number {
+    if (rule.value !== '') return parseFloat(rule.value) || 0;
+    const def = meta.defaultValue;
+    return def !== undefined ? parseFloat(def) || 0 : 0;
+  }
+
   function handleWheel(e: WheelEvent) {
     e.preventDefault();
     const step = meta.step ?? 0.01;
-    const current = parseFloat(rule.value) || 0;
     const delta = e.deltaY < 0 ? step : -step;
-    const newVal = +(current + delta).toFixed(6);
+    const newVal = +(currentNumericValue() + delta).toFixed(6);
     onUpdate({ value: String(newVal) });
   }
 
   function handleNumberKeydown(e: KeyboardEvent) {
     const step = meta.step ?? 0.01;
-    const current = parseFloat(rule.value) || 0;
     if (e.key === 'ArrowUp') {
       e.preventDefault();
-      onUpdate({ value: String(+(current + step).toFixed(6)) });
+      onUpdate({ value: String(+(currentNumericValue() + step).toFixed(6)) });
     } else if (e.key === 'ArrowDown') {
       e.preventDefault();
-      onUpdate({ value: String(+(current - step).toFixed(6)) });
+      onUpdate({ value: String(+(currentNumericValue() - step).toFixed(6)) });
     }
   }
 
@@ -115,7 +119,7 @@
       inputmode="decimal"
       class="flex-1 px-1.5 py-1 bg-[--bg-input] rounded-md text-xs text-[--text-primary] focus:outline-none focus:ring-2 focus:ring-accent/30 min-w-0 font-mono tabular-nums transition-shadow"
       value={rule.value}
-      placeholder="0"
+      placeholder={meta.defaultValue ?? '0'}
       oninput={handleValueInput}
       onwheel={handleWheel}
       onkeydown={handleNumberKeydown}

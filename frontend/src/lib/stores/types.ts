@@ -304,13 +304,19 @@ export interface FilterFieldMeta {
   label: string;
   step?: number;
   enumValues?: string[];
+  /** Used when the rule value is empty: shown as the input placeholder and
+   *  substituted into the filter so the rule takes effect without typing. */
+  defaultValue?: string;
 }
 
 export const FILTER_FIELD_META: Record<FilterField, FilterFieldMeta> = {
   node_name:         { type: 'string', operators: ['contains', 'equals', '!='], label: 'Node Name' },
   node_type:         { type: 'string', operators: ['contains', 'equals', '!='], label: 'Node Type' },
   status:            { type: 'enum',   operators: ['=', '!='], label: 'Status', enumValues: ['waiting', 'executing', 'success', 'failed'] },
-  cosine_similarity: { type: 'number', operators: ['>', '<', '=', '!=', '>=', '<='], label: 'Cosine Sim', step: 0.001 },
-  mse:               { type: 'number', operators: ['>', '<', '=', '!=', '>=', '<='], label: 'MSE', step: 0.01 },
-  max_abs_diff:      { type: 'number', operators: ['>', '<', '=', '!=', '>=', '<='], label: 'Max Abs Diff', step: 0.01 },
+  // Cosine similarity: 1 = perfect match, so the natural filter is "< 1" to
+  // surface any deviation. MSE and max-abs-diff are non-negative errors where
+  // 0 = perfect match, so "> 0" with default 0 is the natural filter.
+  cosine_similarity: { type: 'number', operators: ['<', '>', '=', '!=', '>=', '<='], label: 'Cosine Sim', step: 0.001, defaultValue: '1' },
+  mse:               { type: 'number', operators: ['>', '<', '=', '!=', '>=', '<='], label: 'MSE', step: 0.01, defaultValue: '0' },
+  max_abs_diff:      { type: 'number', operators: ['>', '<', '=', '!=', '>=', '<='], label: 'Max Abs Diff', step: 0.01, defaultValue: '0' },
 };
