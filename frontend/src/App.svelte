@@ -9,6 +9,7 @@
   import { sessionStore } from './lib/stores/session.svelte';
   import { graphStore } from './lib/stores/graph.svelte';
   import { configStore } from './lib/stores/config.svelte';
+  import { advancedFilterStore } from './lib/stores/advancedFilter.svelte';
   import type { SessionConfig } from './lib/stores/types';
   import {
     pickInitialView,
@@ -153,6 +154,12 @@
     if (currentView === 'main' && sessionStore.currentSession) {
       syncHash('main');
     }
+  });
+
+  // Bind the advanced filter to the active session, so each session keeps
+  // its own rules in localStorage instead of sharing a single global slot.
+  $effect(() => {
+    advancedFilterStore.loadForSession(sessionStore.currentSession?.id ?? null);
   });
 
   function onSessionSelected(sessionId: string) {

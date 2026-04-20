@@ -141,7 +141,7 @@
       <div class="flex">
         <div class="{CONN_COL_W} shrink-0"></div>
         <button
-          class="flex-1 min-w-0 py-2 text-xs rounded-lg border border-dashed border-content-secondary/10 text-content-secondary/30 hover:text-accent hover:border-accent/30 transition-colors"
+          class="flex-1 min-w-0 py-2 text-xs rounded-lg border border-dashed border-edge text-muted-strong hover:text-content-primary hover:border-accent-border hover:bg-accent-bg transition-colors"
           onclick={() => advancedFilterStore.addRule()}
         >+ Add Filter</button>
       </div>
@@ -151,7 +151,7 @@
         <div class="flex mb-1.5">
           <div class="{CONN_COL_W} shrink-0"></div>
           <button
-            class="flex-1 min-w-0 py-2 text-xs rounded-lg border border-dashed transition-colors {advancedFilterStore.rules.length >= 10 ? 'text-content-secondary/20 border-content-secondary/5 cursor-not-allowed' : 'text-content-secondary/30 border-content-secondary/10 hover:text-accent hover:border-accent/30'}"
+            class="flex-1 min-w-0 py-2 text-xs rounded-lg border border-dashed transition-colors {advancedFilterStore.rules.length >= 10 ? 'text-muted-soft border-edge-soft cursor-not-allowed' : 'text-muted-strong border-edge hover:text-content-primary hover:border-accent-border hover:bg-accent-bg'}"
             disabled={advancedFilterStore.rules.length >= 10}
             onclick={() => advancedFilterStore.addRule()}
           >+ Add Filter{advancedFilterStore.rules.length >= 10 ? ' (max 10)' : ''}</button>

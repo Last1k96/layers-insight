@@ -34,12 +34,16 @@
   // Feed 'nodes' scope results into the renderer so matching nodes are
   // highlighted in the graph the same way the old global search did.
   $effect(() => {
-    if (queueStore.filterStatus === 'nodes' && queueStore.filterText.trim()) {
+    const hasAdvanced = advancedFilterStore.active && advancedFilterStore.hasActiveRules;
+    const hasText = queueStore.filterText.trim() !== '';
+    if (queueStore.filterStatus === 'nodes' && (hasText || hasAdvanced)) {
       graphStore.searchResults = queueStore.filteredGraphNodes;
       graphStore.searchVisible = true;
+      graphStore.searchHasQuery = true;
     } else {
       graphStore.searchResults = [];
       graphStore.searchVisible = false;
+      graphStore.searchHasQuery = false;
     }
     refreshRenderer();
   });
@@ -249,7 +253,7 @@
       {/if}
     </div>
 
-    <span class="q-task-count">{queueStore.filteredTasks.length}</span>
+    <span class="q-task-count">{queueStore.displayedCount}</span>
   </div>
 
   <!-- Actions -->
@@ -308,22 +312,22 @@
           </svg>
         </button>
       </div>
-      <div class="q-status-tabs">
-        {#each ['nodes', 'all', 'success', 'failed'] as status (status)}
-          <button
-            class="q-status-tab {queueStore.filterStatus === status ? 'q-status-tab--active' : ''}"
-            onclick={() => queueStore.filterStatus = status as any}
-          >
-            {#if status === 'success'}
-              <span class="q-status-dot" style:background="#34C77B"></span>
-            {:else if status === 'failed'}
-              <span class="q-status-dot" style:background="#E54D4D"></span>
-            {/if}
-            {scopeLabels[status]}
-          </button>
-        {/each}
-      </div>
     {/if}
+    <div class="q-status-tabs">
+      {#each ['nodes', 'all', 'success', 'failed'] as status (status)}
+        <button
+          class="q-status-tab {queueStore.filterStatus === status ? 'q-status-tab--active' : ''}"
+          onclick={() => queueStore.filterStatus = status as any}
+        >
+          {#if status === 'success'}
+            <span class="q-status-dot" style:background="#34C77B"></span>
+          {:else if status === 'failed'}
+            <span class="q-status-dot" style:background="#E54D4D"></span>
+          {/if}
+          {scopeLabels[status]}
+        </button>
+      {/each}
+    </div>
   </div>
 
   {#if queueStore.filterStatus === 'nodes'}

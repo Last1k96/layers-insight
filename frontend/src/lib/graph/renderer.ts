@@ -360,6 +360,7 @@ function doRefresh(): void {
     hoveredNodeId,
     graphStore.searchResults,
     graphStore.searchVisible,
+    graphStore.searchHasQuery,
     graphStore.grayedNodes,
     panZoom.ratio,
     graphStore.nodeOverrides,

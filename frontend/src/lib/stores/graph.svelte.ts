@@ -28,6 +28,10 @@ class GraphStore {
   searchQuery = $state('');
   searchVisible = $state(false);
   searchIndex = $state(0);
+  /** True when the user has supplied a query/filter — distinguishes
+   *  "filter active with zero matches" (gray every node) from
+   *  "search panel just opened, no query yet" (don't gray anything). */
+  searchHasQuery = $state(false);
   loading = $state(false);
   loadingStage = $state('');
   loadingDetail = $state('');
@@ -83,6 +87,7 @@ class GraphStore {
     this.searchVisible = false;
     this.searchQuery = '';
     this.searchResults = [];
+    this.searchHasQuery = false;
     try {
       const res = await fetch(`/api/sessions/${sessionId}/graph`);
       if (!res.ok) throw new Error(`Failed to fetch graph: ${res.statusText}`);
@@ -158,7 +163,9 @@ class GraphStore {
 
   async searchNodes(sessionId: string, query: string): Promise<void> {
     this.searchQuery = query;
-    if (!query.trim()) {
+    const trimmed = query.trim();
+    this.searchHasQuery = trimmed !== '';
+    if (!trimmed) {
       this.searchResults = [];
       return;
     }

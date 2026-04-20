@@ -181,6 +181,7 @@
         if (graphStore.searchVisible) {
           graphStore.searchVisible = false;
           graphStore.searchResults = [];
+          graphStore.searchHasQuery = false;
           refreshRenderer();
           return;
         }

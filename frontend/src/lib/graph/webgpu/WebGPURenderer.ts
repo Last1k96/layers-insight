@@ -408,6 +408,7 @@ export class WebGPURenderer {
     hoveredNodeId: string | null,
     searchResults: { id: string }[] | null,
     searchVisible: boolean,
+    searchHasQuery: boolean,
     grayedNodes: Set<string>,
     zoomRatio: number,
     nodeOverrides?: Map<string, { name: string; type: string; color: string }>,
@@ -467,8 +468,11 @@ export class WebGPURenderer {
 
     const nodes = this.graphData.nodes;
     const edges = this.graphData.edges;
-    const searchActive = !!(searchVisible && searchResults && searchResults.length > 0);
-    const searchSet = searchActive ? new Set(searchResults!.map(r => r.id)) : null;
+    // A query/filter is "active" whenever the user has typed something or set
+    // rules — even if it currently matches zero nodes. In that case `searchSet`
+    // is empty, so every node falls into the dimmed branch (correct).
+    const searchActive = !!(searchVisible && (searchHasQuery || (searchResults && searchResults.length > 0)));
+    const searchSet = searchActive ? new Set((searchResults ?? []).map(r => r.id)) : null;
 
     // Edge-connected node highlighting
     const edgeEndpoints = new Set<string>();

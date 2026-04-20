@@ -43,6 +43,8 @@
   function close() {
     graphStore.searchVisible = false;
     graphStore.searchResults = [];
+    graphStore.searchHasQuery = false;
+    graphStore.searchQuery = '';
     query = '';
     refreshRenderer();
   }

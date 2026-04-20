@@ -4,44 +4,55 @@ import {
   type FilterField,
   type FilterOperator,
   type FilterRule,
+  type GraphNode,
   type InferenceTask,
 } from './types';
 
-const STORAGE_KEY = 'layers-insight-advanced-filter';
+const STORAGE_KEY_PREFIX = 'layers-insight-advanced-filter:';
+const storageKeyFor = (sessionId: string): string => `${STORAGE_KEY_PREFIX}${sessionId}`;
 
 class AdvancedFilterStore {
   private _active = $state(false);
   rules = $state<FilterRule[]>([]);
   connectors = $state<FilterConnector[]>([]);
+  /** The session whose filter state currently lives in this store. Null when
+   *  no session is loaded — in that mode persist() is a no-op so the UI can
+   *  still be inspected without leaking state to a global key. */
+  private _sessionId: string | null = null;
 
   get active(): boolean { return this._active; }
   set active(v: boolean) { this._active = v; this.persist(); }
 
-  constructor() {
-    this.restore();
-  }
-
   private persist(): void {
+    if (!this._sessionId) return;
     try {
       const snapshot = {
         active: this.active,
         rules: this.rules,
         connectors: this.connectors,
       };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+      localStorage.setItem(storageKeyFor(this._sessionId), JSON.stringify(snapshot));
     } catch {
       // localStorage full or unavailable
     }
   }
 
-  private restore(): void {
+  /** Switch the store to a different session: drops in-memory state and
+   *  reloads from that session's localStorage slot (if any). Pass `null`
+   *  when leaving the main view / no session is active. */
+  loadForSession(sessionId: string | null): void {
+    if (this._sessionId === sessionId) return;
+    this._sessionId = sessionId;
+    this._active = false;
+    this.rules = [];
+    this.connectors = [];
+    if (!sessionId) return;
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(storageKeyFor(sessionId));
       if (!raw) return;
       const data = JSON.parse(raw);
       if (typeof data.active === 'boolean') this._active = data.active;
       if (Array.isArray(data.rules)) {
-        // Validate rules have valid fields
         this.rules = data.rules.filter(
           (r: any) => r.id && r.field && r.field in FILTER_FIELD_META
         );
@@ -51,7 +62,6 @@ class AdvancedFilterStore {
           .filter((c: any) => c === 'AND' || c === 'OR')
           .slice(0, Math.max(0, this.rules.length - 1));
       }
-      // Ensure connector count matches
       while (this.connectors.length < Math.max(0, this.rules.length - 1)) {
         this.connectors.push('AND');
       }
@@ -115,28 +125,25 @@ class AdvancedFilterStore {
     this.persist();
   }
 
-  applyFilter(tasks: InferenceTask[]): InferenceTask[] {
-    const activeRules = this.rules.filter(r => r.value !== '');
-    if (activeRules.length === 0) return tasks;
+  /** True when at least one rule has a non-empty value. */
+  get hasActiveRules(): boolean {
+    return this.rules.some(r => r.value !== '');
+  }
 
-    // Build groups: split by OR connectors. AND binds tighter.
-    // Map active rules back to their original indices to get connectors
+  /** Split active rules into AND-groups separated by OR connectors.
+   *  (AND binds tighter than OR.) Returns [] when no rules are active. */
+  private buildGroups(): FilterRule[][] {
     const activeIndices = this.rules
       .map((r, i) => (r.value !== '' ? i : -1))
       .filter(i => i >= 0);
+    if (activeIndices.length === 0) return [];
 
-    // Build groups from active rules, using connectors between original indices
     const groups: FilterRule[][] = [[]];
     for (let ai = 0; ai < activeIndices.length; ai++) {
       const origIdx = activeIndices[ai];
       groups[groups.length - 1].push(this.rules[origIdx]);
-
       if (ai < activeIndices.length - 1) {
-        // Find the connector between this active rule and the next
-        // Use the connector at the position of the current original index
-        // (connector[i] is between rules[i] and rules[i+1])
         const nextOrigIdx = activeIndices[ai + 1];
-        // Check if there's an OR connector between origIdx and nextOrigIdx
         let hasOr = false;
         for (let ci = origIdx; ci < nextOrigIdx; ci++) {
           if (ci < this.connectors.length && this.connectors[ci] === 'OR') {
@@ -144,13 +151,34 @@ class AdvancedFilterStore {
             break;
           }
         }
-        if (hasOr) {
-          groups.push([]);
-        }
+        if (hasOr) groups.push([]);
       }
     }
+    return groups;
+  }
 
+  applyFilter(tasks: InferenceTask[]): InferenceTask[] {
+    const groups = this.buildGroups();
+    if (groups.length === 0) return tasks;
     return tasks.filter(task => groups.some(group => group.every(rule => this.evaluateRule(rule, task))));
+  }
+
+  /** Apply the active rules to graph nodes. Metric/status rules fall back to
+   *  the corresponding task (if any) in `taskByNodeId`; nodes without a task
+   *  evaluate those fields against `undefined`. */
+  applyFilterToNodes(nodes: GraphNode[], taskByNodeId: Map<string, InferenceTask>): GraphNode[] {
+    const groups = this.buildGroups();
+    if (groups.length === 0) return nodes;
+    return nodes.filter(node => {
+      const task = taskByNodeId.get(node.id);
+      const taskLike = {
+        node_name: node.name,
+        node_type: node.type,
+        status: task?.status,
+        metrics: task?.metrics,
+      } as InferenceTask;
+      return groups.some(group => group.every(rule => this.evaluateRule(rule, taskLike)));
+    });
   }
 
   private evaluateRule(rule: FilterRule, task: InferenceTask): boolean {

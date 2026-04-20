@@ -94,35 +94,47 @@ class QueueStore {
 
   get filteredTasks(): InferenceTask[] {
     let result = this.sortedTasks;
-    if (advancedFilterStore.active && advancedFilterStore.rules.length > 0) {
+    if (advancedFilterStore.active && advancedFilterStore.hasActiveRules) {
       result = advancedFilterStore.applyFilter(result);
-    } else {
-      if (this.filterText) {
-        const q = this.filterText.toLowerCase();
-        result = result.filter(t =>
-          t.node_name.toLowerCase().includes(q) || t.node_type.toLowerCase().includes(q)
-        );
-      }
-      if (this.filterStatus === 'success' || this.filterStatus === 'failed') {
-        result = result.filter(t => t.status === this.filterStatus);
-      }
+    } else if (this.filterText) {
+      const q = this.filterText.toLowerCase();
+      result = result.filter(t =>
+        t.node_name.toLowerCase().includes(q) || t.node_type.toLowerCase().includes(q)
+      );
+    }
+    if (this.filterStatus === 'success' || this.filterStatus === 'failed') {
+      result = result.filter(t => t.status === this.filterStatus);
     }
     return result;
   }
 
-  /** Graph nodes matching the filter text. Used when filterStatus === 'nodes'. */
+  /** Graph nodes matching the active filter. Used when filterStatus === 'nodes'. */
   get filteredGraphNodes(): GraphNode[] {
     const nodes = graphStore.graphData?.nodes ?? [];
-    const q = this.filterText.trim().toLowerCase();
-    if (!q) return nodes.slice(0, 200);
-    const matches: GraphNode[] = [];
-    for (const n of nodes) {
-      if (n.name.toLowerCase().includes(q) || n.type.toLowerCase().includes(q)) {
-        matches.push(n);
-        if (matches.length >= 200) break;
+
+    let matches: GraphNode[];
+    if (advancedFilterStore.active && advancedFilterStore.hasActiveRules) {
+      const taskByNodeId = new Map<string, InferenceTask>();
+      for (const t of this.visibleTasks) taskByNodeId.set(t.node_id, t);
+      matches = advancedFilterStore.applyFilterToNodes(nodes, taskByNodeId);
+    } else {
+      const q = this.filterText.trim().toLowerCase();
+      if (!q) return nodes.slice(0, 200);
+      matches = [];
+      for (const n of nodes) {
+        if (n.name.toLowerCase().includes(q) || n.type.toLowerCase().includes(q)) {
+          matches.push(n);
+          if (matches.length >= 200) break;
+        }
       }
+      return matches;
     }
-    return matches;
+    return matches.slice(0, 200);
+  }
+
+  /** Count for the top-of-panel badge: matches whichever list is rendered. */
+  get displayedCount(): number {
+    return this.filterStatus === 'nodes' ? this.filteredGraphNodes.length : this.filteredTasks.length;
   }
 
   requestFilterFocus(): void {
