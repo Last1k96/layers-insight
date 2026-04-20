@@ -72,7 +72,7 @@ def node_bin_dir() -> Path:
 def npm_cmd() -> Path:
     if IS_WINDOWS:
         return Path.cwd() / NODE_DIR / "npm.cmd"
-    return NODE_DIR / "bin" / "npm"
+    return Path.cwd() / NODE_DIR / "bin" / "npm"
 
 
 # ── Node.js install ─────────────────────────────────────────────────────
@@ -133,7 +133,7 @@ def _extract_tar(archive: Path) -> None:
             if len(parts) <= 1:
                 continue
             member.name = str(Path(*parts[1:]))
-            tar.extract(member, NODE_DIR, filter="data")
+            tar.extract(member, NODE_DIR, filter="tar")
 
 
 def _extract_zip(archive: Path, top_dir: str) -> None:
